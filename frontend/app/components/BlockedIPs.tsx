@@ -43,7 +43,7 @@ export default function BlockedIPs() {
     fetchBlockedIPs();
     
     // Refresh every 10 seconds
-    const interval = setInterval(fetchBlockedIPs, 10000);
+    const interval = setInterval(fetchBlockedIPs, 5000);
     return () => clearInterval(interval);
   }, []);
 
