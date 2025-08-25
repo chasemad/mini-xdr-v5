@@ -1,0 +1,27 @@
+{
+  "name": "mini-xdr-backend",
+  "version": "1.0.0",
+  "description": "Mini-XDR Backend with MCP Tools",
+  "main": "index.js",
+  "scripts": {
+    "mcp": "ts-node app/mcp_server.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "xdr",
+    "security",
+    "mcp"
+  ],
+  "author": "Chase",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+  }
+}
