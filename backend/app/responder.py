@@ -199,7 +199,7 @@ async def block_ip(ip: str, duration_seconds: int = None) -> Tuple[str, str]:
     if not _is_valid_ip(ip):
         return "failed", f"Invalid IP address: {ip}"
     
-    if _is_private_ip(ip):
+    if _is_private_ip(ip) and not settings.allow_private_ip_blocking:
         logger.warning(f"Refusing to block private IP: {ip}")
         return "failed", f"Refusing to block private IP: {ip}"
     
