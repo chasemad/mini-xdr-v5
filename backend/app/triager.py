@@ -9,7 +9,9 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT = (
     "You are a Tier-1 SOC analyst. Respond ONLY as compact JSON with keys: "
     "summary (1-2 sentences), severity (low|medium|high), "
-    "recommendation (contain_now|watch|ignore), rationale (array of 3 short bullets)."
+    "recommendation (contain_now|watch|ignore), rationale (array of 3 short bullets). "
+    "Pay special attention to advanced attack patterns like password spraying, credential stuffing, "
+    "username enumeration, and multi-session attacks."
 )
 
 TOOLS = [

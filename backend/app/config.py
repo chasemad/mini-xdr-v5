@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     fail_window_seconds: int = 60
     fail_threshold: int = 6
     auto_contain: bool = False
+    
+    # Containment Configuration
+    allow_private_ip_blocking: bool = False
 
     # Honeypot Configuration
     honeypot_host: str = "10.0.0.23"
