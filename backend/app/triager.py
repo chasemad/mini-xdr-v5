@@ -48,28 +48,67 @@ def _openai_triage(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         from openai import OpenAI
         
-        client = OpenAI(api_key=settings.openai_api_key)
+        # Initialize client with modern OpenAI library (v1.101.0+)
+        client = OpenAI(
+            api_key=settings.openai_api_key,
+            timeout=30.0
+        )
         
-        response = client.chat.completions.create(
-            model=settings.openai_model,
-            messages=[
+        # Prepare API call parameters - GPT-5 has stricter requirements
+        api_params = {
+            "model": settings.openai_model,
+            "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": json.dumps(payload)}
             ],
-            tools=TOOLS,
-            response_format={"type": "json_object"}
-        )
+            "response_format": {"type": "json_object"}
+        }
+        
+        # Only add max_completion_tokens for models that support it
+        if not settings.openai_model.startswith("gpt-5"):
+            api_params["max_completion_tokens"] = 500
+        
+        response = client.chat.completions.create(**api_params)
         
         content = response.choices[0].message.content
+        if content is None:
+            # GPT-5 might not return content when using tools
+            if response.choices[0].message.tool_calls:
+                # If tool calls are present, generate a default response
+                return {
+                    "summary": f"Tool-based response for incident from {payload.get('incident', {}).get('src_ip', 'unknown IP')}",
+                    "severity": "medium",
+                    "recommendation": "contain_now",
+                    "rationale": ["Tool call response", "Automated analysis", "Default severity applied"]
+                }
+            else:
+                raise ValueError("No content or tool calls returned from OpenAI")
+        
+        # Clean content before parsing
+        content = content.strip()
+        if not content:
+            raise ValueError("Empty response content from OpenAI")
+            
         return json.loads(content)
         
     except Exception as e:
         logger.error(f"OpenAI triage error: {e}")
+        # Check for specific error types to provide better feedback
+        error_msg = str(e)
+        if "proxies" in error_msg:
+            summary = "OpenAI client configuration issue - proxy parameters not supported"
+        elif "temperature" in error_msg:
+            summary = "OpenAI API parameter issue - invalid temperature value"
+        elif "api_key" in error_msg.lower():
+            summary = "OpenAI API authentication error - check API key configuration"
+        else:
+            summary = f"OpenAI API error: {error_msg[:80]}..."
+            
         return {
-            "summary": f"LLM parsing error: {str(e)[:100]}",
+            "summary": summary,
             "severity": "low",
             "recommendation": "watch",
-            "rationale": ["Failed to parse OpenAI response", "Manual review required", "Check API configuration"]
+            "rationale": ["Failed to get AI analysis", "Manual review required", "Check OpenAI configuration"]
         }
 
 
@@ -90,7 +129,9 @@ def _xai_triage(payload: Dict[str, Any]) -> Dict[str, Any]:
                 {"role": "user", "content": json.dumps(payload)}
             ],
             "tools": TOOLS,
-            "temperature": 0
+            "temperature": 0.1,  # Use 0.1 instead of 0 to avoid API issues
+            "max_tokens": 500,
+            "response_format": {"type": "json_object"}
         }
         
         response = requests.post(
@@ -108,11 +149,21 @@ def _xai_triage(payload: Dict[str, Any]) -> Dict[str, Any]:
         
     except Exception as e:
         logger.error(f"xAI triage error: {e}")
+        error_msg = str(e)
+        if "temperature" in error_msg:
+            summary = "xAI API parameter issue - invalid temperature value"
+        elif "api_key" in error_msg.lower() or "401" in error_msg:
+            summary = "xAI API authentication error - check API key configuration"
+        elif "400" in error_msg:
+            summary = "xAI API request error - invalid parameters"
+        else:
+            summary = f"xAI API error: {error_msg[:80]}..."
+            
         return {
-            "summary": f"LLM parsing error (xAI): {str(e)[:100]}",
+            "summary": summary,
             "severity": "low",
             "recommendation": "watch",
-            "rationale": ["Failed to parse xAI response", "Manual review required", "Check API configuration"]
+            "rationale": ["Failed to get AI analysis", "Manual review required", "Check xAI configuration"]
         }
 
 

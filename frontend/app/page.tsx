@@ -39,8 +39,8 @@ export default function Overview() {
   useEffect(() => {
     fetchStats();
     
-    // Refresh stats every 10 seconds
-    const interval = setInterval(fetchStats, 10000);
+    // Refresh stats every 5 seconds for more real-time updates
+    const interval = setInterval(fetchStats, 5000);
     return () => clearInterval(interval);
   }, []);
 
