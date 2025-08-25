@@ -1,0 +1,44 @@
+[
+  {
+    "eventid": "cowrie.login.failed",
+    "src_ip": "192.168.1.100",
+    "username": "admin",
+    "password": "password",
+    "timestamp": "2024-08-25T04:30:00.000000Z"
+  },
+  {
+    "eventid": "cowrie.login.failed", 
+    "src_ip": "192.168.1.100",
+    "username": "root",
+    "password": "123456",
+    "timestamp": "2024-08-25T04:30:15.000000Z"
+  },
+  {
+    "eventid": "cowrie.login.failed",
+    "src_ip": "192.168.1.100", 
+    "username": "admin",
+    "password": "admin",
+    "timestamp": "2024-08-25T04:30:30.000000Z"
+  },
+  {
+    "eventid": "cowrie.login.failed",
+    "src_ip": "192.168.1.100",
+    "username": "user",
+    "password": "password",
+    "timestamp": "2024-08-25T04:30:45.000000Z"
+  },
+  {
+    "eventid": "cowrie.login.failed",
+    "src_ip": "192.168.1.100",
+    "username": "test",
+    "password": "test",
+    "timestamp": "2024-08-25T04:31:00.000000Z"
+  },
+  {
+    "eventid": "cowrie.login.failed",
+    "src_ip": "192.168.1.100",
+    "username": "administrator",
+    "password": "password123",
+    "timestamp": "2024-08-25T04:31:15.000000Z"
+  }
+]
