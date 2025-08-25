@@ -1,0 +1,99 @@
+# Security - Never commit these!
+*.env
+.env.local
+.env.production.local
+.env.development.local
+
+# API Keys and Secrets
+**/config/secrets.json
+**/*secret*
+**/*key*
+!**/package*.json
+!**/tsconfig.json
+!**/README.md
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Node.js
+node_modules/
+.npm
+.eslintcache
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.venv/
+venv/
+ENV/
+env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Build outputs
+.next/
+out/
+build/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# SSH Keys (just in case)
+id_rsa*
+id_ed25519*
+*.pem
+*.key
+
+# Backup files
+*.bak
+*.backup
