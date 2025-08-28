@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mini-xdr-backend
+  namespace: mini-xdr
+  labels:
+    app: mini-xdr-backend
+    component: backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: mini-xdr-backend
+  template:
+    metadata:
+      labels:
+        app: mini-xdr-backend
+        component: backend
+    spec:
+      containers:
+      - name: backend
+        image: mini-xdr-backend:latest
+        ports:
+        - containerPort: 8000
+          name: http
+        - containerPort: 9090
+          name: metrics
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: mini-xdr-config
+              key: DATABASE_URL
+        - name: API_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: mini-xdr-config
+              key: API_HOST
+        - name: API_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: mini-xdr-config
+              key: API_PORT
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mini-xdr-secrets
+              key: openai-api-key
+              optional: true
+        - name: XAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mini-xdr-secrets
+              key: xai-api-key
+              optional: true
+        - name: HONEYPOT_SSH_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mini-xdr-secrets
+              key: honeypot-ssh-key
+        volumeMounts:
+        - name: policies
+          mountPath: /app/policies
+          readOnly: true
+        - name: models
+          mountPath: /app/models
+        - name: data
+          mountPath: /app/data
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: policies
+        configMap:
+          name: mini-xdr-policies
+      - name: models
+        persistentVolumeClaim:
+          claimName: mini-xdr-models-pvc
+      - name: data
+        persistentVolumeClaim:
+          claimName: mini-xdr-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mini-xdr-backend-service
+  namespace: mini-xdr
+  labels:
+    app: mini-xdr-backend
+spec:
+  selector:
+    app: mini-xdr-backend
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+  type: ClusterIP

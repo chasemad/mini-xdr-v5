@@ -1,0 +1,98 @@
+policies:
+  - name: "high_risk_ssh_brute_force"
+    priority: 10
+    description: "High-risk SSH brute force attacks requiring immediate containment"
+    conditions:
+      risk_score: 
+        min: 0.8
+      threat_category: 
+        - "brute_force"
+        - "password_spray"
+        - "credential_stuffing"
+      escalation_level: 
+        - "high"
+        - "critical"
+      event_count:
+        min: 10
+    actions:
+      block_ip: 
+        duration: 3600
+        immediate: true
+      notify_analyst: 
+        urgency: "high"
+        message: "Critical SSH brute force detected"
+    agent_override: true
+    escalation_threshold: 0.9
+
+  - name: "medium_risk_ssh_activity"
+    priority: 5
+    description: "Medium-risk SSH activity requiring monitoring"
+    conditions:
+      risk_score: 
+        min: 0.5
+        max: 0.8
+      threat_category: 
+        - "brute_force"
+        - "suspicious_login"
+      escalation_level: 
+        - "medium"
+      event_count:
+        min: 5
+    actions:
+      monitor: 
+        duration: 1800
+      log_event: 
+        level: "warning"
+    agent_override: true
+    escalation_threshold: 0.7
+
+  - name: "low_risk_monitoring"
+    priority: 1
+    description: "Low-risk activity requiring basic monitoring"
+    conditions:
+      risk_score: 
+        min: 0.1
+        max: 0.5
+      escalation_level: 
+        - "low"
+      event_count:
+        min: 3
+    actions:
+      log_event: 
+        level: "info"
+      monitor: 
+        duration: 900
+    agent_override: false
+    escalation_threshold: 0.3
+
+  - name: "threat_intel_blacklist"
+    priority: 15
+    description: "Known malicious IPs from threat intelligence"
+    conditions:
+      threat_intel_score: 
+        min: 0.7
+      is_blacklisted: true
+    actions:
+      block_ip: 
+        duration: 7200
+        immediate: true
+      notify_analyst: 
+        urgency: "critical"
+        message: "Known malicious IP detected"
+    agent_override: false
+    escalation_threshold: 1.0
+
+  - name: "internal_network_exception"
+    priority: 20
+    description: "Allow internal network traffic with monitoring"
+    conditions:
+      src_ip_range: 
+        - "10.0.0.0/8"
+        - "172.16.0.0/12"
+        - "192.168.0.0/16"
+    actions:
+      log_event: 
+        level: "debug"
+      allow: true
+    agent_override: true
+    escalation_threshold: 0.5

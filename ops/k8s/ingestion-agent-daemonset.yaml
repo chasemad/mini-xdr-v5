@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: mini-xdr-ingestion-agent
+  namespace: mini-xdr
+  labels:
+    app: mini-xdr-ingestion-agent
+    component: agent
+spec:
+  selector:
+    matchLabels:
+      app: mini-xdr-ingestion-agent
+  template:
+    metadata:
+      labels:
+        app: mini-xdr-ingestion-agent
+        component: agent
+    spec:
+      hostNetwork: true
+      containers:
+      - name: ingestion-agent
+        image: mini-xdr-ingestion-agent:latest
+        env:
+        - name: BACKEND_URL
+          value: "http://mini-xdr-backend-service:8000"
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mini-xdr-secrets
+              key: agent-api-key
+        - name: SOURCE_TYPE
+          value: "cowrie"
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        volumeMounts:
+        - name: cowrie-logs
+          mountPath: /var/log/cowrie
+          readOnly: true
+        - name: suricata-logs
+          mountPath: /var/log/suricata
+          readOnly: true
+        - name: syslog
+          mountPath: /var/log
+          readOnly: true
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+      volumes:
+      - name: cowrie-logs
+        hostPath:
+          path: /var/log/cowrie
+          type: DirectoryOrCreate
+      - name: suricata-logs
+        hostPath:
+          path: /var/log/suricata
+          type: DirectoryOrCreate
+      - name: syslog
+        hostPath:
+          path: /var/log
+          type: Directory
+      tolerations:
+      - effect: NoSchedule
+        operator: Exists
+      - effect: NoExecute
+        operator: Exists
