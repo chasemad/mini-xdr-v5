@@ -219,8 +219,114 @@ class AdvancedCorrelationEngine:
         return None
 
 
+class WebAttackDetector:
+    """Detects web application attacks"""
+    
+    def __init__(self, window_seconds: int = 300, threshold: int = 3):
+        self.window_seconds = window_seconds  # 5 minutes
+        self.threshold = threshold  # 3 attack indicators
+    
+    async def evaluate(self, db: AsyncSession, src_ip: str) -> Optional[Dict[str, Any]]:
+        """
+        Evaluate if the src_ip has triggered web attack detection
+        """
+        # Check if there's already an open incident for this IP
+        existing_incident = await self._get_open_incident(db, src_ip)
+        if existing_incident:
+            logger.debug(f"Open incident already exists for {src_ip}: {existing_incident.id}")
+            return None
+        
+        # Count web attack indicators in the window
+        window_start = datetime.now(timezone.utc) - timedelta(seconds=self.window_seconds)
+        
+        # Look for events with attack indicators (from webhoneypot)
+        query = select(Event).where(
+            and_(
+                Event.src_ip == src_ip,
+                Event.ts >= window_start,
+                Event.raw.contains("attack_indicators")  # Events with attack indicators
+            )
+        )
+        
+        result = await db.execute(query)
+        events = result.scalars().all()
+        
+        # Analyze attack indicators
+        attack_indicators = []
+        sql_injection_count = 0
+        admin_scan_count = 0
+        
+        for event in events:
+            try:
+                raw_data = event.raw if isinstance(event.raw, dict) else json.loads(event.raw) if event.raw else {}
+                indicators = raw_data.get('attack_indicators', [])
+                
+                for indicator in indicators:
+                    attack_indicators.append(indicator)
+                    if 'sql' in indicator.lower() or 'injection' in indicator.lower():
+                        sql_injection_count += 1
+                    elif 'admin' in indicator.lower() or 'scan' in indicator.lower():
+                        admin_scan_count += 1
+                        
+            except (json.JSONDecodeError, AttributeError, TypeError):
+                continue
+        
+        total_indicators = len(attack_indicators)
+        
+        logger.info(f"Web attack check: {src_ip} has {total_indicators} attack indicators in last {self.window_seconds}s (threshold: {self.threshold})")
+        
+        if total_indicators >= self.threshold:
+            # Determine attack type and severity
+            attack_types = []
+            if sql_injection_count > 0:
+                attack_types.append(f"SQL injection ({sql_injection_count})")
+            if admin_scan_count > 0:
+                attack_types.append(f"Admin scan ({admin_scan_count})")
+            
+            attack_description = ", ".join(attack_types) if attack_types else "Web application attacks"
+            severity = "high" if sql_injection_count > 0 else "medium"
+            
+            # Create incident
+            incident_data = {
+                "src_ip": src_ip,
+                "reason": f"Web attack detected: {attack_description} ({total_indicators} indicators in {self.window_seconds//60}min)",
+                "status": "open",
+                "auto_contained": False
+            }
+            
+            incident = Incident(**incident_data)
+            db.add(incident)
+            await db.flush()  # Get the ID without committing
+            
+            logger.warning(f"NEW WEB INCIDENT #{incident.id}: {attack_description} from {src_ip}")
+            
+            return {
+                "incident_id": incident.id,
+                "src_ip": src_ip,
+                "attack_indicators": total_indicators,
+                "threshold": self.threshold,
+                "window_seconds": self.window_seconds,
+                "attack_types": attack_types
+            }
+        
+        return None
+    
+    async def _get_open_incident(self, db: AsyncSession, src_ip: str) -> Optional[Incident]:
+        """Check if there's an open incident for the given IP"""
+        query = select(Incident).where(
+            and_(
+                Incident.src_ip == src_ip,
+                Incident.status == "open"
+            )
+        ).order_by(Incident.created_at.desc())
+        
+        result = await db.execute(query)
+        return result.scalars().first()
+
+
 # Global detector instances
 ssh_bruteforce_detector = SlidingWindowDetector()
+web_attack_detector = WebAttackDetector()
 correlation_engine = AdvancedCorrelationEngine()
 
 
@@ -237,7 +343,12 @@ async def run_detection(db: AsyncSession, src_ip: str) -> Optional[int]:
         if detection_result:
             return detection_result["incident_id"]
         
-        # If no traditional brute-force detected, run correlation analysis
+        # Run web attack detection
+        web_detection_result = await web_attack_detector.evaluate(db, src_ip)
+        if web_detection_result:
+            return web_detection_result["incident_id"]
+        
+        # If no specific attacks detected, run correlation analysis
         patterns = await correlation_engine.analyze_ip(db, src_ip)
         if patterns:
             # Create incident for the most severe pattern
