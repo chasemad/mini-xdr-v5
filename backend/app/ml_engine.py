@@ -8,6 +8,9 @@ from torch.utils.data import DataLoader, TensorDataset
 from sklearn.ensemble import IsolationForest
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from sklearn.svm import OneClassSVM
+from sklearn.neighbors import LocalOutlierFactor
+from sklearn.cluster import DBSCAN
 import xgboost as xgb
 import numpy as np
 import pandas as pd
@@ -416,18 +419,200 @@ class LSTMDetector(BaseMLDetector):
         return False
 
 
-class EnsembleMLDetector:
-    """Ensemble of multiple ML detectors for robust anomaly detection"""
+class EnhancedMLDetector:
+    """Enhanced ML detector with multiple model ensemble"""
     
     def __init__(self):
-        self.isolation_forest = IsolationForestDetector()
-        self.lstm_detector = LSTMDetector()
+        # Ensemble of anomaly detection models
+        self.models = {
+            'isolation_forest': IsolationForest(contamination=0.1, random_state=42),
+            'one_class_svm': OneClassSVM(nu=0.1),
+            'local_outlier_factor': LocalOutlierFactor(novelty=True, contamination=0.1),
+            'dbscan_clustering': DBSCAN(eps=0.5, min_samples=5)
+        }
+        
+        # Feature engineering pipeline
+        self.scaler = StandardScaler()
+        self.is_trained = False
+        self.last_confidence = 0.0
         self.logger = logging.getLogger(__name__)
         
         # Model weights for ensemble
         self.weights = {
-            'isolation_forest': 0.4,
-            'lstm': 0.6
+            'isolation_forest': 0.3,
+            'one_class_svm': 0.25,
+            'local_outlier_factor': 0.25,
+            'dbscan_clustering': 0.2
+        }
+    
+    async def analyze_events(self, events: List[Event]) -> float:
+        """Analyze events and return anomaly score"""
+        if not self.is_trained or not events:
+            return 0.0
+        
+        try:
+            # Extract features using the existing feature extraction method
+            detector = BaseMLDetector()
+            features = detector._extract_features(events[0].src_ip, events)
+            
+            # Convert to numpy array for sklearn
+            feature_vector = np.array([list(features.values())]).reshape(1, -1)
+            
+            # Scale features
+            features_scaled = self.scaler.transform(feature_vector)
+            
+            # Get predictions from each model
+            scores = {}
+            total_weight = 0
+            
+            # Isolation Forest
+            if 'isolation_forest' in self.models:
+                try:
+                    iso_score = self.models['isolation_forest'].decision_function(features_scaled)[0]
+                    # Convert to 0-1 scale (higher = more anomalous)
+                    scores['isolation_forest'] = max(0, -iso_score / 2 + 0.5)
+                    total_weight += self.weights['isolation_forest']
+                except Exception as e:
+                    self.logger.warning(f"Isolation Forest prediction failed: {e}")
+            
+            # One-Class SVM
+            if 'one_class_svm' in self.models:
+                try:
+                    svm_prediction = self.models['one_class_svm'].predict(features_scaled)[0]
+                    svm_score = self.models['one_class_svm'].decision_function(features_scaled)[0]
+                    # Convert to 0-1 scale
+                    scores['one_class_svm'] = 1.0 if svm_prediction == -1 else max(0, -svm_score / 2 + 0.5)
+                    total_weight += self.weights['one_class_svm']
+                except Exception as e:
+                    self.logger.warning(f"One-Class SVM prediction failed: {e}")
+            
+            # Local Outlier Factor
+            if 'local_outlier_factor' in self.models:
+                try:
+                    lof_score = self.models['local_outlier_factor'].decision_function(features_scaled)[0]
+                    # Convert to 0-1 scale
+                    scores['local_outlier_factor'] = max(0, -lof_score / 2 + 0.5)
+                    total_weight += self.weights['local_outlier_factor']
+                except Exception as e:
+                    self.logger.warning(f"LOF prediction failed: {e}")
+            
+            # Calculate weighted ensemble score
+            if scores and total_weight > 0:
+                weighted_sum = sum(score * self.weights[model] for model, score in scores.items())
+                ensemble_score = weighted_sum / total_weight
+                
+                # Store confidence based on model agreement
+                self.last_confidence = self._calculate_model_agreement(scores)
+                
+                return min(ensemble_score, 1.0)
+            
+            return 0.0
+            
+        except Exception as e:
+            self.logger.error(f"Enhanced ML analysis error: {e}")
+            return 0.0
+    
+    def _calculate_model_agreement(self, scores: Dict[str, float]) -> float:
+        """Calculate confidence based on model agreement"""
+        if len(scores) < 2:
+            return 0.5
+        
+        score_values = list(scores.values())
+        mean_score = np.mean(score_values)
+        score_variance = np.var(score_values)
+        
+        # High agreement = low variance
+        agreement = 1.0 - min(score_variance, 1.0)
+        return agreement
+    
+    async def train_ensemble(self, training_data: List[Dict[str, float]]) -> bool:
+        """Train all models in the ensemble"""
+        try:
+            if len(training_data) < 50:
+                self.logger.warning("Insufficient training data for enhanced ML ensemble")
+                return False
+            
+            # Use existing feature extraction logic
+            detector = BaseMLDetector()
+            
+            # Convert training data to feature vectors
+            feature_vectors = []
+            for data_point in training_data:
+                feature_vector = [data_point.get(col, 0.0) for col in detector.feature_columns]
+                feature_vectors.append(feature_vector)
+            
+            X = np.array(feature_vectors)
+            
+            # Fit scaler
+            X_scaled = self.scaler.fit_transform(X)
+            
+            # Train each model
+            successful_models = 0
+            
+            # Isolation Forest
+            try:
+                self.models['isolation_forest'].fit(X_scaled)
+                successful_models += 1
+                self.logger.info("Enhanced Isolation Forest trained successfully")
+            except Exception as e:
+                self.logger.error(f"Enhanced Isolation Forest training failed: {e}")
+                if 'isolation_forest' in self.models:
+                    del self.models['isolation_forest']
+            
+            # One-Class SVM
+            try:
+                self.models['one_class_svm'].fit(X_scaled)
+                successful_models += 1
+                self.logger.info("One-Class SVM trained successfully")
+            except Exception as e:
+                self.logger.error(f"One-Class SVM training failed: {e}")
+                if 'one_class_svm' in self.models:
+                    del self.models['one_class_svm']
+            
+            # Local Outlier Factor
+            try:
+                self.models['local_outlier_factor'].fit(X_scaled)
+                successful_models += 1
+                self.logger.info("LOF trained successfully")
+            except Exception as e:
+                self.logger.error(f"LOF training failed: {e}")
+                if 'local_outlier_factor' in self.models:
+                    del self.models['local_outlier_factor']
+            
+            if successful_models > 0:
+                self.is_trained = True
+                self.logger.info(f"Enhanced ML ensemble trained with {successful_models} models")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"Enhanced ML ensemble training failed: {e}")
+            return False
+    
+    def get_model_status(self) -> Dict[str, bool]:
+        """Get training status of all models"""
+        return {
+            'enhanced_ml_trained': self.is_trained,
+            'available_models': list(self.models.keys()),
+            'last_confidence': self.last_confidence
+        }
+
+
+class EnsembleMLDetector:
+    """Legacy ensemble detector - now includes enhanced ML detector"""
+    
+    def __init__(self):
+        self.isolation_forest = IsolationForestDetector()
+        self.lstm_detector = LSTMDetector()
+        self.enhanced_detector = EnhancedMLDetector()
+        self.logger = logging.getLogger(__name__)
+        
+        # Model weights for ensemble
+        self.weights = {
+            'isolation_forest': 0.3,
+            'lstm': 0.3,
+            'enhanced_ml': 0.4
         }
     
     async def calculate_anomaly_score(self, src_ip: str, events: List[Event]) -> float:
@@ -440,6 +625,10 @@ class EnsembleMLDetector:
         
         lstm_score = await self.lstm_detector.calculate_anomaly_score(src_ip, events)
         scores['lstm'] = lstm_score
+        
+        # Get enhanced ML score
+        enhanced_score = await self.enhanced_detector.analyze_events(events)
+        scores['enhanced_ml'] = enhanced_score
         
         # Calculate weighted average
         total_weight = 0
@@ -461,13 +650,14 @@ class EnsembleMLDetector:
         """Train all models in the ensemble"""
         results = {}
         
-        # Train Isolation Forest
+        # Train original models
         results['isolation_forest'] = await self.isolation_forest.train_model(training_data)
-        
-        # Train LSTM
         results['lstm'] = await self.lstm_detector.train_model(training_data)
         
-        self.logger.info(f"Ensemble training results: {results}")
+        # Train enhanced ML ensemble
+        results['enhanced_ml'] = await self.enhanced_detector.train_ensemble(training_data)
+        
+        self.logger.info(f"Full ensemble training results: {results}")
         return results
     
     def load_models(self) -> Dict[str, bool]:
@@ -476,16 +666,20 @@ class EnsembleMLDetector:
         
         results['isolation_forest'] = self.isolation_forest.load_model()
         results['lstm'] = self.lstm_detector.load_model()
+        # Enhanced detector doesn't have persistent storage yet
+        results['enhanced_ml'] = self.enhanced_detector.is_trained
         
         self.logger.info(f"Model loading results: {results}")
         return results
     
     def get_model_status(self) -> Dict[str, bool]:
         """Get training status of all models"""
-        return {
+        status = {
             'isolation_forest': self.isolation_forest.is_trained,
             'lstm': self.lstm_detector.is_trained
         }
+        status.update(self.enhanced_detector.get_model_status())
+        return status
 
 
 # Global ensemble detector instance
