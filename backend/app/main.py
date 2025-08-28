@@ -140,6 +140,284 @@ async def _recent_events_for_ip(db: AsyncSession, src_ip: str, seconds: int = 60
     return result.scalars().all()
 
 
+async def _get_detailed_events_for_ip(db: AsyncSession, src_ip: str, hours: int = 24):
+    """Get detailed events for an IP with extended timeframe for forensic analysis"""
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    query = select(Event).where(
+        and_(Event.src_ip == src_ip, Event.ts >= since)
+    ).order_by(Event.ts.asc())
+    
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+def _extract_iocs_from_events(events):
+    """Extract Indicators of Compromise from events"""
+    import re
+    
+    iocs = {
+        "ip_addresses": [],
+        "domains": [],
+        "urls": [],
+        "file_hashes": [],
+        "user_agents": [],
+        "sql_injection_patterns": [],
+        "command_patterns": [],
+        "file_paths": [],
+        "privilege_escalation_indicators": [],
+        "data_exfiltration_indicators": [],
+        "persistence_mechanisms": [],
+        "lateral_movement_indicators": [],
+        "database_access_patterns": [],
+        "successful_auth_indicators": [],
+        "reconnaissance_patterns": []
+    }
+    
+    for event in events:
+        # Extract from raw data
+        if event.raw and isinstance(event.raw, dict):
+            raw_data = event.raw
+            
+            # Extract user agents
+            if 'user_agent' in raw_data:
+                iocs["user_agents"].append(raw_data['user_agent'])
+            
+            # Extract file hashes
+            if 'hash' in raw_data:
+                iocs["file_hashes"].append(raw_data['hash'])
+            if 'md5' in raw_data:
+                iocs["file_hashes"].append(raw_data['md5'])
+            if 'sha256' in raw_data:
+                iocs["file_hashes"].append(raw_data['sha256'])
+            
+            # Extract HTTP request details for web attacks
+            if 'path' in raw_data:
+                iocs["urls"].append(raw_data['path'])
+            if 'query_string' in raw_data:
+                iocs["urls"].append(raw_data['query_string'])
+        
+        # Extract from message field
+        if event.message:
+            msg = event.message
+            
+            # SQL injection patterns
+            sql_patterns = [
+                r"'\s*OR\s+1\s*=\s*1",
+                r"UNION\s+SELECT",
+                r"DROP\s+TABLE",
+                r"';.*--",
+                r"information_schema",
+                r"CONCAT\(",
+                r"SLEEP\s*\(",
+                r"BENCHMARK\s*\("
+            ]
+            
+            for pattern in sql_patterns:
+                if re.search(pattern, msg, re.IGNORECASE):
+                    iocs["sql_injection_patterns"].append(pattern)
+            
+            # Database access patterns (successful exploitation indicators)
+            database_patterns = [
+                r"SELECT.*FROM.*users",
+                r"SELECT.*password.*FROM",
+                r"SHOW\s+TABLES",
+                r"DESCRIBE\s+\w+",
+                r"INSERT\s+INTO",
+                r"UPDATE.*SET",
+                r"admin.*password",
+                r"root.*mysql",
+                r"information_schema\.tables"
+            ]
+            
+            for pattern in database_patterns:
+                if re.search(pattern, msg, re.IGNORECASE):
+                    iocs["database_access_patterns"].append(pattern)
+            
+            # Privilege escalation indicators
+            privesc_patterns = [
+                r"sudo\s+",
+                r"su\s+root",
+                r"passwd\s+",
+                r"usermod\s+-a\s+-G",
+                r"chmod\s+\+s",
+                r"setuid",
+                r"GRANT\s+ALL",
+                r"ALTER\s+USER.*IDENTIFIED"
+            ]
+            
+            for pattern in privesc_patterns:
+                if re.search(pattern, msg, re.IGNORECASE):
+                    iocs["privilege_escalation_indicators"].append(pattern)
+            
+            # Data exfiltration indicators
+            exfil_patterns = [
+                r"wget\s+.*://",
+                r"curl\s+.*://",
+                r"nc\s+.*\s+\d+\s+<",
+                r"base64\s+.*\|",
+                r"tar\s+.*\|.*ssh",
+                r"mysqldump",
+                r"SELECT.*INTO\s+OUTFILE",
+                r"cp\s+.*\.sql",
+                r"scp\s+.*@"
+            ]
+            
+            for pattern in exfil_patterns:
+                if re.search(pattern, msg, re.IGNORECASE):
+                    iocs["data_exfiltration_indicators"].append(pattern)
+            
+            # Persistence mechanisms
+            persistence_patterns = [
+                r"crontab\s+-e",
+                r"echo.*>>\s*/etc/",
+                r"systemctl\s+enable",
+                r"chkconfig.*on",
+                r"\.bashrc",
+                r"\.ssh/authorized_keys",
+                r"CREATE\s+USER",
+                r"adduser\s+",
+                r"useradd\s+"
+            ]
+            
+            for pattern in persistence_patterns:
+                if re.search(pattern, msg, re.IGNORECASE):
+                    iocs["persistence_mechanisms"].append(pattern)
+            
+            # Lateral movement indicators
+            lateral_patterns = [
+                r"ssh\s+.*@\d+\.\d+\.\d+\.\d+",
+                r"scp\s+.*@\d+\.\d+\.\d+\.\d+",
+                r"nmap\s+",
+                r"ping\s+\d+\.\d+\.\d+\.\d+",
+                r"telnet\s+\d+\.\d+\.\d+\.\d+",
+                r"net\s+use\s+\\\\",
+                r"psexec",
+                r"wmiexec"
+            ]
+            
+            for pattern in lateral_patterns:
+                if re.search(pattern, msg, re.IGNORECASE):
+                    iocs["lateral_movement_indicators"].append(pattern)
+            
+            # Reconnaissance patterns
+            recon_patterns = [
+                r"whoami",
+                r"id\s*$",
+                r"uname\s+-a",
+                r"ps\s+aux",
+                r"netstat\s+",
+                r"ifconfig",
+                r"ip\s+addr",
+                r"cat\s+/etc/passwd",
+                r"ls\s+-la\s+/",
+                r"find\s+/.*-name"
+            ]
+            
+            for pattern in recon_patterns:
+                if re.search(pattern, msg, re.IGNORECASE):
+                    iocs["reconnaissance_patterns"].append(pattern)
+            
+            # Command patterns
+            if event.eventid == "cowrie.command.input":
+                iocs["command_patterns"].append(msg)
+            
+            # File paths
+            file_path_pattern = r'[/\\][\w\-_./\\]+'
+            file_paths = re.findall(file_path_pattern, msg)
+            iocs["file_paths"].extend(file_paths)
+        
+        # Check for successful authentication indicators
+        if event.eventid == "cowrie.login.success":
+            iocs["successful_auth_indicators"].append(f"Successful login from {event.src_ip}")
+        elif "200" in str(event.raw.get("status_code", "")) and "admin" in str(event.raw.get("path", "")):
+            iocs["successful_auth_indicators"].append(f"Potential admin access: {event.raw.get('path', '')}")
+        
+        # Add source IPs
+        if event.src_ip:
+            iocs["ip_addresses"].append(event.src_ip)
+        if event.dst_ip:
+            iocs["ip_addresses"].append(event.dst_ip)
+    
+    # Remove duplicates and empty values
+    for key in iocs:
+        iocs[key] = list(set(filter(None, iocs[key])))
+    
+    return iocs
+
+
+def _build_attack_timeline(events):
+    """Build detailed attack timeline from events"""
+    timeline = []
+    
+    for event in events:
+        timeline_entry = {
+            "timestamp": event.ts.isoformat() if event.ts else None,
+            "event_id": event.eventid,
+            "description": event.message or "No description",
+            "source_ip": event.src_ip,
+            "event_type": event.eventid.split('.')[-1] if '.' in event.eventid else event.eventid,
+            "raw_data": event.raw if isinstance(event.raw, dict) else {},
+            "severity": _classify_event_severity(event)
+        }
+        
+        # Add attack classification
+        if event.eventid in ["cowrie.login.failed", "cowrie.login.success"]:
+            timeline_entry["attack_category"] = "authentication"
+        elif "command" in event.eventid:
+            timeline_entry["attack_category"] = "command_execution"
+        elif "file" in event.eventid:
+            timeline_entry["attack_category"] = "file_operations"
+        elif "session" in event.eventid:
+            timeline_entry["attack_category"] = "session_management"
+        elif event.raw and isinstance(event.raw, dict) and 'attack_indicators' in event.raw:
+            timeline_entry["attack_category"] = "web_attack"
+        else:
+            timeline_entry["attack_category"] = "unknown"
+        
+        timeline.append(timeline_entry)
+    
+    return timeline
+
+
+def _classify_event_severity(event):
+    """Classify event severity based on type and content"""
+    if not event.eventid:
+        return "low"
+    
+    high_severity_events = [
+        "cowrie.login.success",
+        "cowrie.command.input",
+        "cowrie.session.file_download",
+        "cowrie.session.file_upload"
+    ]
+    
+    medium_severity_events = [
+        "cowrie.login.failed",
+        "cowrie.session.connect",
+        "cowrie.session.closed"
+    ]
+    
+    # Check for SQL injection in raw data
+    if event.raw and isinstance(event.raw, dict):
+        if 'attack_indicators' in event.raw:
+            indicators = event.raw['attack_indicators']
+            if any('sql' in str(indicator).lower() for indicator in indicators):
+                return "critical"
+    
+    # Check message for dangerous commands
+    if event.message and event.eventid == "cowrie.command.input":
+        dangerous_commands = ['rm -rf', 'wget', 'curl', 'chmod +x', 'nc -l', 'python -c']
+        if any(cmd in event.message for cmd in dangerous_commands):
+            return "high"
+    
+    if event.eventid in high_severity_events:
+        return "high"
+    elif event.eventid in medium_severity_events:
+        return "medium"
+    else:
+        return "low"
+
+
 @app.post("/ingest/cowrie")
 async def ingest_cowrie(
     events: Union[Dict[str, Any], List[Dict[str, Any]]],
@@ -481,7 +759,7 @@ async def list_incidents(db: AsyncSession = Depends(get_db)):
 
 @app.get("/incidents/{inc_id}")
 async def get_incident_detail(inc_id: int, db: AsyncSession = Depends(get_db)):
-    """Get detailed incident information"""
+    """Get detailed incident information with full SOC analyst data"""
     incident = (await db.execute(
         select(Incident).where(Incident.id == inc_id)
     )).scalars().first()
@@ -496,8 +774,15 @@ async def get_incident_detail(inc_id: int, db: AsyncSession = Depends(get_db)):
     actions_result = await db.execute(actions_query)
     actions = actions_result.scalars().all()
     
-    # Get recent events
-    recent_events = await _recent_events_for_ip(db, incident.src_ip)
+    # Get detailed events with full forensic data
+    detailed_events = await _get_detailed_events_for_ip(db, incident.src_ip, hours=24)
+    
+    # Extract IOCs and attack patterns
+    iocs = _extract_iocs_from_events(detailed_events)
+    attack_timeline = _build_attack_timeline(detailed_events)
+    
+    # Sort timeline by most recent first
+    attack_timeline.sort(key=lambda x: x['timestamp'], reverse=True)
     
     return {
         "id": incident.id,
@@ -507,26 +792,57 @@ async def get_incident_detail(inc_id: int, db: AsyncSession = Depends(get_db)):
         "status": incident.status,
         "auto_contained": incident.auto_contained,
         "triage_note": incident.triage_note,
+        
+        # Enhanced SOC fields
+        "escalation_level": incident.escalation_level,
+        "risk_score": incident.risk_score,
+        "threat_category": incident.threat_category,
+        "containment_confidence": incident.containment_confidence,
+        "containment_method": incident.containment_method,
+        "agent_id": incident.agent_id,
+        "agent_actions": incident.agent_actions,
+        "agent_confidence": incident.agent_confidence,
+        "ml_features": incident.ml_features,
+        "ensemble_scores": incident.ensemble_scores,
+        
         "actions": [
             {
                 "id": a.id,
                 "created_at": a.created_at.isoformat() if a.created_at else None,
                 "action": a.action,
                 "result": a.result,
-                "detail": (a.detail or "")[:400],  # Truncate long details
+                "detail": a.detail,  # Full details for SOC analysis
                 "params": a.params,
                 "due_at": a.due_at.isoformat() if a.due_at else None
             }
             for a in actions
         ],
-        "recent_events": [
+        
+        # Detailed forensic data
+        "detailed_events": [
             {
+                "id": e.id,
                 "ts": e.ts.isoformat() if e.ts else None,
+                "src_ip": e.src_ip,
+                "dst_ip": e.dst_ip,
+                "dst_port": e.dst_port,
                 "eventid": e.eventid,
-                "message": e.message
+                "message": e.message,
+                "raw": e.raw,
+                "source_type": getattr(e, 'source_type', 'cowrie'),
+                "hostname": getattr(e, 'hostname', None)
             }
-            for e in recent_events
-        ]
+            for e in detailed_events
+        ],
+        
+        # Attack analysis
+        "iocs": iocs,
+        "attack_timeline": attack_timeline,
+        "event_summary": {
+            "total_events": len(detailed_events),
+            "event_types": list(set(e.eventid for e in detailed_events)),
+            "time_span_hours": 24
+        }
     }
 
 
