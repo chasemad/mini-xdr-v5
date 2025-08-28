@@ -35,6 +35,7 @@ cryptography==42.0.8
 joblib==1.4.2
 matplotlib==3.9.4
 seaborn==0.13.2
+# scipy==1.13.1  # Temporarily disabled due to macOS compilation issues
 
 # Async HTTP for agent communication
 aiohttp==3.9.5

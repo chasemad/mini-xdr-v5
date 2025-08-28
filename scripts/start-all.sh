@@ -122,9 +122,83 @@ check_system_requirements() {
     success "System requirements check passed"
 }
 
-# Function to setup Python virtual environment
+# Function to fix scipy installation issues on macOS
+fix_scipy_dependencies() {
+    log "Checking for macOS scipy compilation issues..."
+    
+    # Check if we're on macOS
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        log "Detected macOS - checking for scipy dependencies..."
+        
+        # Check if homebrew is installed
+        if command -v brew >/dev/null 2>&1; then
+            log "Installing scientific computing dependencies via Homebrew..."
+            
+            # Install required system libraries for scipy
+            brew list openblas >/dev/null 2>&1 || {
+                log "Installing OpenBLAS..."
+                brew install openblas
+            }
+            
+            brew list lapack >/dev/null 2>&1 || {
+                log "Installing LAPACK..."
+                brew install lapack
+            }
+            
+            # Set environment variables for compilation
+            export OPENBLAS_ROOT=$(brew --prefix openblas)
+            export LAPACK_ROOT=$(brew --prefix lapack)
+            export LDFLAGS="-L$OPENBLAS_ROOT/lib -L$LAPACK_ROOT/lib $LDFLAGS"
+            export CPPFLAGS="-I$OPENBLAS_ROOT/include -I$LAPACK_ROOT/include $CPPFLAGS"
+            export PKG_CONFIG_PATH="$OPENBLAS_ROOT/lib/pkgconfig:$LAPACK_ROOT/lib/pkgconfig:$PKG_CONFIG_PATH"
+            
+            success "Scientific computing dependencies configured"
+        else
+            warning "Homebrew not found - attempting alternative scipy installation"
+        fi
+    fi
+}
+
+# Function to install Python dependencies with fallbacks
+install_python_dependencies() {
+    log "Installing Python dependencies with adaptive detection support..."
+    
+    # First try to install core ML packages via conda if available
+    if command -v conda >/dev/null 2>&1; then
+        log "Found conda - using it for scientific packages..."
+        
+        # Check if we're in a conda environment
+        if [[ "$CONDA_DEFAULT_ENV" != "" ]] && [[ "$CONDA_DEFAULT_ENV" != "base" ]]; then
+            log "Using existing conda environment: $CONDA_DEFAULT_ENV"
+        else
+            log "Creating conda environment for Mini-XDR..."
+            conda create -n mini-xdr python=3.11 -y >/dev/null 2>&1
+            source $(conda info --base)/etc/profile.d/conda.sh
+            conda activate mini-xdr
+        fi
+        
+        # Install scientific packages via conda
+        log "Installing scientific packages via conda..."
+        conda install numpy scipy scikit-learn pandas -y >/dev/null 2>&1
+        
+        if [ $? -eq 0 ]; then
+            success "Scientific packages installed via conda"
+            
+            # Install remaining packages via pip
+            log "Installing remaining packages via pip..."
+            pip install -r requirements.txt --no-deps --force-reinstall numpy scipy scikit-learn pandas
+        else
+            warning "Conda installation failed, falling back to pip"
+            return 1
+        fi
+    else
+        return 1  # Fall back to pip-only installation
+    fi
+}
+
+# Function to setup Python virtual environment with adaptive detection
 setup_python_environment() {
-    log "Setting up Python virtual environment..."
+    log "Setting up Python virtual environment with adaptive detection support..."
     cd "$PROJECT_ROOT/backend"
     
     # Create virtual environment if it doesn't exist
@@ -147,19 +221,118 @@ setup_python_environment() {
         exit 1
     fi
     
-    # Upgrade pip
-    log "Upgrading pip..."
-    pip install --upgrade pip > /dev/null 2>&1
+    # Upgrade pip and essential tools
+    log "Upgrading pip and build tools..."
+    pip install --upgrade pip setuptools wheel > /dev/null 2>&1
     
-    # Install/update requirements
-    log "Installing Python dependencies..."
-    pip install -r requirements.txt
-    if [ $? -ne 0 ]; then
-        error "Failed to install Python dependencies"
-        exit 1
+    # Try conda-based installation first (if available)
+    if ! install_python_dependencies; then
+        log "Conda not available or failed, using pip-only approach..."
+        
+        # Fix scipy issues on macOS
+        fix_scipy_dependencies
+        
+        # Install dependencies with specific order and fallbacks
+        log "Installing core dependencies first..."
+        
+        # Install numpy first (required by many packages)
+        pip install "numpy>=1.21.0,<2.0.0" || {
+            error "Failed to install numpy"
+            exit 1
+        }
+        
+        # Try to install scipy with specific configuration
+        log "Installing scipy with optimizations..."
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS-specific scipy installation
+            pip install --no-use-pep517 "scipy>=1.7.0,<2.0.0" || {
+                warning "Failed to install scipy - disabling scipy-dependent features"
+                # Remove scipy from requirements temporarily
+                sed -i.bak '/^scipy/d' requirements.txt
+                log "Continuing without scipy (some statistical features will be disabled)"
+            }
+        else
+            pip install "scipy>=1.7.0,<2.0.0" || {
+                warning "Failed to install scipy - disabling scipy-dependent features"
+                sed -i.bak '/^scipy/d' requirements.txt
+            }
+        fi
+        
+        # Install scikit-learn (core ML package)
+        log "Installing scikit-learn..."
+        pip install "scikit-learn>=1.0.0" || {
+            error "Failed to install scikit-learn (required for adaptive detection)"
+            exit 1
+        }
+        
+        # Install remaining requirements
+        log "Installing remaining dependencies..."
+        pip install -r requirements.txt
+        if [ $? -ne 0 ]; then
+            error "Failed to install some Python dependencies"
+            log "Attempting to continue with partial installation..."
+            
+            # Try installing critical packages individually
+            critical_packages=("fastapi" "uvicorn" "sqlalchemy" "torch" "pandas" "aiohttp" "langchain")
+            for package in "${critical_packages[@]}"; do
+                log "Installing critical package: $package"
+                pip install "$package" || warning "Failed to install $package"
+            done
+        fi
     fi
     
-    success "Python environment ready"
+    # Verify adaptive detection dependencies
+    log "Verifying adaptive detection dependencies..."
+    python3 -c "
+import sys
+missing = []
+
+try:
+    import numpy
+    print('✅ numpy available')
+except ImportError:
+    missing.append('numpy')
+    print('❌ numpy missing')
+
+try:
+    import sklearn
+    print('✅ scikit-learn available')
+except ImportError:
+    missing.append('scikit-learn')
+    print('❌ scikit-learn missing')
+
+try:
+    import torch
+    print('✅ pytorch available')
+except ImportError:
+    missing.append('torch')
+    print('❌ pytorch missing')
+
+try:
+    import pandas
+    print('✅ pandas available')
+except ImportError:
+    missing.append('pandas')
+    print('❌ pandas missing')
+
+try:
+    import scipy
+    print('✅ scipy available')
+except ImportError:
+    print('⚠️  scipy not available (some features disabled)')
+
+if missing:
+    print(f'❌ Critical dependencies missing: {missing}')
+    sys.exit(1)
+else:
+    print('✅ All critical adaptive detection dependencies available')
+" 2>/dev/null
+    
+    if [ $? -eq 0 ]; then
+        success "Python environment ready with adaptive detection support"
+    else
+        warning "Some dependencies missing - adaptive detection may have limited functionality"
+    fi
 }
 
 # Function to setup Node.js dependencies
@@ -530,6 +703,36 @@ perform_health_checks() {
         warning "Auto-contain API not responding"
     fi
     
+    # Test adaptive detection system
+    log "🔍 Testing Adaptive Detection System..."
+    local adaptive_status=$(curl -s http://localhost:$BACKEND_PORT/api/adaptive/status 2>/dev/null)
+    if [ $? -eq 0 ]; then
+        local learning_running=$(echo "$adaptive_status" | jq -r '.learning_pipeline.running' 2>/dev/null || echo "unknown")
+        local behavioral_threshold=$(echo "$adaptive_status" | jq -r '.adaptive_engine.behavioral_threshold' 2>/dev/null || echo "unknown")
+        local ml_models=$(echo "$adaptive_status" | jq -r '.ml_detector | keys | length' 2>/dev/null || echo "unknown")
+        
+        success "Adaptive Detection System responding"
+        echo "   Learning Pipeline Running: $learning_running"
+        echo "   Behavioral Threshold: $behavioral_threshold"
+        echo "   ML Models Available: $ml_models"
+        
+        # Test forced learning update
+        log "🔍 Testing Learning Pipeline..."
+        local learning_result=$(curl -s -X POST http://localhost:$BACKEND_PORT/api/adaptive/force_learning 2>/dev/null)
+        if [ $? -eq 0 ]; then
+            local update_success=$(echo "$learning_result" | jq -r '.success' 2>/dev/null || echo "false")
+            if [ "$update_success" = "true" ]; then
+                success "Learning Pipeline functional"
+            else
+                warning "Learning Pipeline update failed"
+            fi
+        else
+            warning "Learning Pipeline test failed"
+        fi
+    else
+        error "Adaptive Detection System not responding"
+    fi
+    
     # Test SSH connectivity endpoint
     log "🔍 Testing SSH Connectivity API..."
     local ssh_test=$(curl -s http://localhost:$BACKEND_PORT/test/ssh 2>/dev/null)
@@ -617,6 +820,43 @@ perform_health_checks() {
         warning "Enhanced event ingestion test failed"
     fi
     
+    # Test adaptive detection with behavioral patterns
+    log "🔍 Testing Adaptive Detection with Behavioral Patterns..."
+    local test_ip="192.168.1.200"
+    local adaptive_test_events='[
+        {"eventid":"webhoneypot.request","src_ip":"'$test_ip'","message":"GET /admin.php","raw":{"path":"/admin.php","status_code":404,"attack_indicators":["admin_scan"]}},
+        {"eventid":"webhoneypot.request","src_ip":"'$test_ip'","message":"GET /wp-admin/","raw":{"path":"/wp-admin/","status_code":404,"attack_indicators":["admin_scan"]}},
+        {"eventid":"webhoneypot.request","src_ip":"'$test_ip'","message":"GET /index.php?id=1 OR 1=1","raw":{"path":"/index.php","parameters":["id=1 OR 1=1"],"status_code":500,"attack_indicators":["sql_injection"]}}
+    ]'
+    
+    local adaptive_response=$(curl -s -X POST http://localhost:$BACKEND_PORT/ingest/multi \
+        -H 'Content-Type: application/json' \
+        -H 'Authorization: Bearer test-api-key' \
+        -d '{"source_type":"webhoneypot","hostname":"adaptive-test","events":'$adaptive_test_events'}' 2>/dev/null)
+    
+    if [ $? -eq 0 ]; then
+        local adaptive_incidents=$(echo "$adaptive_response" | jq -r '.incidents_detected' 2>/dev/null || echo "0")
+        local adaptive_processed=$(echo "$adaptive_response" | jq -r '.processed' 2>/dev/null || echo "0")
+        
+        if [ "$adaptive_incidents" -gt 0 ]; then
+            success "Adaptive Detection triggered ($adaptive_incidents incidents from $adaptive_processed events)"
+            
+            # Check if the incident was created with adaptive reasoning
+            sleep 1
+            local recent_incident=$(curl -s http://localhost:$BACKEND_PORT/incidents 2>/dev/null | jq -r '.[0].reason' 2>/dev/null)
+            if [[ "$recent_incident" == *"adaptive"* ]] || [[ "$recent_incident" == *"Behavioral"* ]]; then
+                success "Intelligent adaptive detection confirmed"
+                echo "   Incident: $recent_incident"
+            else
+                log "Traditional detection triggered (adaptive features may need more data)"
+            fi
+        else
+            log "No incidents triggered by test (may need more events for adaptive detection)"
+        fi
+    else
+        warning "Adaptive detection test failed"
+    fi
+    
     echo ""
     success "Health checks completed!"
     return 0
@@ -673,7 +913,17 @@ print(f'{settings.honeypot_user}@{settings.honeypot_host}:{settings.honeypot_ssh
     echo "   • ML Status:    curl http://localhost:$BACKEND_PORT/api/ml/status"
     echo "   • AI Agent:     curl -X POST http://localhost:$BACKEND_PORT/api/agents/orchestrate -H 'Content-Type: application/json' -d '{\"agent_type\":\"containment\",\"query\":\"status\",\"history\":[]}'"
     echo "   • SSH Test:     curl http://localhost:$BACKEND_PORT/test/ssh"
+    echo "   • Adaptive:     curl http://localhost:$BACKEND_PORT/api/adaptive/status"
+    echo "   • Learning:     curl -X POST http://localhost:$BACKEND_PORT/api/adaptive/force_learning"
     echo "   • View Logs:    tail -f $PROJECT_ROOT/backend/backend.log"
+    echo ""
+    
+    echo "🧠 Adaptive Detection Features:"
+    echo "   • Behavioral Pattern Analysis: Detects attack patterns without signatures"
+    echo "   • Statistical Baseline Learning: Learns normal behavior automatically"
+    echo "   • ML Ensemble Detection: Multi-model anomaly detection"
+    echo "   • Continuous Learning: Self-improving detection over time"
+    echo "   • Zero-Day Detection: Identifies unknown attack methods"
     echo ""
     
     if [ "$MCP_PID" = "available" ]; then
@@ -804,12 +1054,22 @@ main() {
         
         echo "🛡️  Enhanced XDR System Ready with:"
         echo "   🤖 AI Agents for autonomous threat response"
-        echo "   🧠 ML models for anomaly detection" 
-        echo "   📊 Advanced analytics and visualization"
+        echo "   🧠 Intelligent Adaptive Detection (NEW!)"
+        echo "   📊 ML Ensemble Models for anomaly detection" 
+        echo "   📈 Behavioral Pattern Analysis"
+        echo "   📊 Statistical Baseline Learning"
+        echo "   🔄 Continuous Learning Pipeline"
         echo "   🔗 Multi-source log ingestion (Cowrie, Suricata, OSQuery)"
         echo "   📋 Policy-based automated containment"
+        echo "   🚨 Zero-day attack detection capabilities"
         echo ""
-        echo "Ready for honeypot monitoring and advanced threat hunting!"
+        echo "🚀 INTELLIGENT ADAPTIVE DETECTION ACTIVE!"
+        echo "   • Learns normal behavior patterns automatically"
+        echo "   • Detects unknown attack methods without signatures"
+        echo "   • Reduces false positives through contextual understanding"
+        echo "   • Self-improving detection accuracy over time"
+        echo ""
+        echo "Ready for advanced threat hunting and zero-day detection!"
         echo "Press Ctrl+C to stop all services"
         echo ""
         

@@ -324,18 +324,227 @@ class WebAttackDetector:
         return result.scalars().first()
 
 
+# Import adaptive detection components
+from .adaptive_detection import behavioral_analyzer
+from .baseline_engine import baseline_engine
+from .ml_engine import ml_detector
+
 # Global detector instances
 ssh_bruteforce_detector = SlidingWindowDetector()
 web_attack_detector = WebAttackDetector()
 correlation_engine = AdvancedCorrelationEngine()
 
 
+class AdaptiveDetectionEngine:
+    """Orchestrates all detection methods with intelligent scoring"""
+    
+    def __init__(self):
+        # Existing detectors
+        self.ssh_detector = ssh_bruteforce_detector
+        self.web_detector = web_attack_detector
+        self.correlation_engine = correlation_engine
+        
+        # New intelligent detectors
+        self.behavior_analyzer = behavioral_analyzer
+        self.ml_detector = ml_detector
+        self.baseline_engine = baseline_engine
+        
+        # Scoring weights (tunable)
+        self.weights = {
+            'rule_based': 0.4,      # Traditional rules
+            'behavioral': 0.3,       # Pattern analysis
+            'ml_anomaly': 0.2,      # ML detection
+            'statistical': 0.1       # Baseline deviation
+        }
+        
+    async def comprehensive_analysis(self, db: AsyncSession, src_ip: str) -> Optional[Dict]:
+        """Run comprehensive analysis using all detection methods"""
+        
+        detection_results = {}
+        
+        # Layer 1: Traditional rule-based detection (fast)
+        ssh_result = await self.ssh_detector.evaluate(db, src_ip)
+        web_result = await self.web_detector.evaluate(db, src_ip)
+        
+        if ssh_result or web_result:
+            detection_results['rule_based'] = {
+                'score': 1.0,
+                'ssh_detection': ssh_result,
+                'web_detection': web_result,
+                'confidence': 0.9
+            }
+        
+        # Layer 2: Behavioral pattern analysis
+        behavior_result = await self.behavior_analyzer.analyze_ip_behavior(db, src_ip)
+        if behavior_result:
+            detection_results['behavioral'] = {
+                'score': behavior_result.threat_score,
+                'patterns': behavior_result.indicators,
+                'confidence': behavior_result.confidence,
+                'description': behavior_result.description
+            }
+        
+        # Layer 3: ML anomaly detection  
+        recent_events = await self._get_recent_events(db, src_ip, 60)
+        if len(recent_events) >= 5:
+            ml_score = await self.ml_detector.calculate_anomaly_score(src_ip, recent_events)
+            if ml_score > 0.3:  # Only include significant ML scores
+                detection_results['ml_anomaly'] = {
+                    'score': ml_score,
+                    'confidence': getattr(self.ml_detector, 'last_confidence', 0.5),
+                    'model_status': self.ml_detector.get_model_status()
+                }
+        
+        # Layer 4: Statistical baseline deviation
+        baseline_deviation = await self.baseline_engine.calculate_deviation(db, src_ip)
+        if baseline_deviation > 0.3:
+            detection_results['statistical'] = {
+                'score': baseline_deviation,
+                'deviated_metrics': self.baseline_engine.last_deviations,
+                'confidence': 0.7
+            }
+        
+        # Combine all scores intelligently
+        if detection_results:
+            composite_incident = await self._create_composite_incident(db, src_ip, detection_results)
+            return composite_incident
+            
+        return None
+    
+    async def _get_recent_events(self, db: AsyncSession, src_ip: str, minutes: int) -> List[Event]:
+        """Get recent events for an IP"""
+        window_start = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+        
+        query = select(Event).where(
+            and_(
+                Event.src_ip == src_ip,
+                Event.ts >= window_start
+            )
+        ).order_by(Event.ts.desc())
+        
+        result = await db.execute(query)
+        return result.scalars().all()
+    
+    async def _create_composite_incident(self, db: AsyncSession, src_ip: str, detection_results: Dict) -> Dict:
+        """Create composite incident from multiple detection layers"""
+        
+        # Calculate composite score
+        composite_score = 0.0
+        total_weight = 0.0
+        detection_methods = []
+        
+        for method, result in detection_results.items():
+            weight = self.weights.get(method, 0.1)
+            score = result['score']
+            confidence = result.get('confidence', 0.5)
+            
+            # Weight by confidence
+            adjusted_weight = weight * confidence
+            composite_score += score * adjusted_weight
+            total_weight += adjusted_weight
+            
+            detection_methods.append(f"{method}({score:.2f})")
+        
+        if total_weight > 0:
+            composite_score = composite_score / total_weight
+        
+        # Determine severity based on composite score and detection layers
+        num_layers = len(detection_results)
+        if composite_score > 0.8 or num_layers >= 3:
+            severity = "high"
+        elif composite_score > 0.6 or num_layers >= 2:
+            severity = "medium"
+        else:
+            severity = "low"
+        
+        # Create comprehensive reason
+        reason_parts = []
+        
+        if 'rule_based' in detection_results:
+            rb_result = detection_results['rule_based']
+            if rb_result.get('ssh_detection'):
+                reason_parts.append("SSH brute-force")
+            if rb_result.get('web_detection'):
+                reason_parts.append("Web attack")
+        
+        if 'behavioral' in detection_results:
+            behavior_desc = detection_results['behavioral'].get('description', 'Behavioral anomaly')
+            reason_parts.append(behavior_desc)
+        
+        if 'ml_anomaly' in detection_results:
+            ml_score = detection_results['ml_anomaly']['score']
+            reason_parts.append(f"ML anomaly (score: {ml_score:.2f})")
+        
+        if 'statistical' in detection_results:
+            stat_score = detection_results['statistical']['score']
+            reason_parts.append(f"Statistical deviation (score: {stat_score:.2f})")
+        
+        reason = f"Adaptive detection: {'; '.join(reason_parts)} | Composite score: {composite_score:.2f}"
+        
+        # Check if there's already an open incident for this IP
+        existing_incident = await self.ssh_detector._get_open_incident(db, src_ip)
+        if existing_incident:
+            logger.debug(f"Open incident already exists for {src_ip}: {existing_incident.id}")
+            return {"incident_id": existing_incident.id}
+        
+        # Create new incident
+        incident_data = {
+            "src_ip": src_ip,
+            "reason": reason,
+            "status": "open",
+            "auto_contained": False,
+            "escalation_level": severity,
+            "risk_score": composite_score,
+            "threat_category": "adaptive_detection",
+            "containment_confidence": composite_score,
+            "containment_method": "ai_agent",
+            "ensemble_scores": detection_results
+        }
+        
+        incident = Incident(**incident_data)
+        db.add(incident)
+        await db.flush()  # Get the ID without committing
+        
+        logger.warning(f"NEW ADAPTIVE INCIDENT #{incident.id}: {reason}")
+        
+        return {
+            "incident_id": incident.id,
+            "src_ip": src_ip,
+            "composite_score": composite_score,
+            "detection_layers": list(detection_results.keys()),
+            "severity": severity
+        }
+
+
+# Global adaptive engine instance  
+adaptive_engine = AdaptiveDetectionEngine()
+
+
 async def run_detection(db: AsyncSession, src_ip: str) -> Optional[int]:
     """
-    Run all detectors for the given source IP
+    Enhanced detection using adaptive engine with fallback to legacy detection
     
     Returns:
         Incident ID if a new incident was created, None otherwise
+    """
+    try:
+        # Use new adaptive detection engine
+        result = await adaptive_engine.comprehensive_analysis(db, src_ip)
+        if result:
+            return result['incident_id']
+            
+        # Fallback to legacy detection for compatibility
+        return await _legacy_detection(db, src_ip)
+        
+    except Exception as e:
+        logger.error(f"Adaptive detection error for {src_ip}: {e}")
+        # Fallback to legacy detection on error
+        return await _legacy_detection(db, src_ip)
+
+
+async def _legacy_detection(db: AsyncSession, src_ip: str) -> Optional[int]:
+    """
+    Legacy detection system (original implementation)
     """
     try:
         # First run traditional brute-force detection
@@ -357,7 +566,7 @@ async def run_detection(db: AsyncSession, src_ip: str) -> Optional[int]:
             return incident_id
             
     except Exception as e:
-        logger.error(f"Detection error for {src_ip}: {e}")
+        logger.error(f"Legacy detection error for {src_ip}: {e}")
     
     return None
 
