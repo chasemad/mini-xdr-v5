@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mini-xdr-config
+  namespace: mini-xdr
+data:
+  # Database configuration
+  DATABASE_URL: "sqlite+aiosqlite:///./xdr.db"
+  
+  # API configuration
+  API_HOST: "0.0.0.0"
+  API_PORT: "8000"
+  
+  # Detection configuration
+  FAIL_WINDOW_SECONDS: "60"
+  FAIL_THRESHOLD: "6"
+  AUTO_CONTAIN: "true"
+  
+  # Honeypot configuration (to be overridden by secrets)
+  HONEYPOT_HOST: "honeypot-service"
+  HONEYPOT_USER: "xdrops"
+  HONEYPOT_SSH_PORT: "22022"
+  
+  # LLM configuration
+  LLM_PROVIDER: "openai"
+  OPENAI_MODEL: "gpt-4"
+  XAI_MODEL: "grok-beta"
+  
+  # ML configuration
+  ML_MODELS_PATH: "/app/models"
+  POLICIES_PATH: "/app/policies"
+  
+  # Monitoring
+  PROMETHEUS_PORT: "9090"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mini-xdr-policies
+  namespace: mini-xdr
+data:
+  default_policies.yaml: |
+    policies:
+      - name: "high_risk_ssh_brute_force"
+        description: "High-risk SSH brute force attacks requiring immediate containment"
+        priority: 10
+        status: "active"
+        conditions:
+          risk_score:
+            min: 0.8
+          threat_category: ["brute_force", "password_spray"]
+          escalation_level: ["high", "critical"]
+          event_count:
+            min: 50
+        actions:
+          block_ip:
+            duration: 3600
+            immediate: true
+          isolate_host:
+            level: "hard"
+          notify_analyst:
+            message: "Critical SSH attack detected - immediate response required"
+            urgency: "high"
+          escalate: true
+        agent_override: true
+        escalation_threshold: 0.9
+        cooldown_period: 1800

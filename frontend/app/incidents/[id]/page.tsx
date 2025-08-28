@@ -47,6 +47,7 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [scheduleMinutes, setScheduleMinutes] = useState(15);
   const [result, setResult] = useState<string>("");
+  const [autoRefreshing, setAutoRefreshing] = useState(false);
 
   useEffect(() => {
     const fetchIncident = async () => {
@@ -63,7 +64,18 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
     };
 
     fetchIncident();
-  }, [id]);
+
+    // Set up automatic refresh every 5 seconds to catch scheduled actions
+    const interval = setInterval(async () => {
+      if (id && !loading) {
+        setAutoRefreshing(true);
+        await fetchIncident();
+        setAutoRefreshing(false);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [id, loading]);
 
   const handleUnblock = async () => {
     if (!incident || !id) return;
@@ -187,9 +199,17 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">
-            Incident #{incident.id}
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold text-gray-900">
+              Incident #{incident.id}
+            </h1>
+            {autoRefreshing && (
+              <div className="flex items-center gap-2 text-sm text-blue-600">
+                <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                <span>Refreshing...</span>
+              </div>
+            )}
+          </div>
           <p className="mt-2 text-gray-600">
             {formatDate(incident.created_at)}
           </p>

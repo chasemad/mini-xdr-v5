@@ -489,6 +489,28 @@ perform_health_checks() {
         error "Incidents API not responding"
     fi
     
+    # Test enhanced ML API
+    log "🔍 Testing ML Status API..."
+    local ml_response=$(curl -s http://localhost:$BACKEND_PORT/api/ml/status 2>/dev/null)
+    if [ $? -eq 0 ]; then
+        local models_trained=$(echo "$ml_response" | jq -r '.metrics.models_trained' 2>/dev/null || echo "unknown")
+        local total_models=$(echo "$ml_response" | jq -r '.metrics.total_models' 2>/dev/null || echo "unknown")
+        success "ML Status API responding ($models_trained/$total_models models trained)"
+    else
+        warning "ML Status API not responding"
+    fi
+    
+    # Test AI Agents API
+    log "🔍 Testing AI Agents API..."
+    local agent_response=$(curl -s -X POST http://localhost:$BACKEND_PORT/api/agents/orchestrate \
+        -H "Content-Type: application/json" \
+        -d '{"agent_type": "containment", "query": "System status check", "history": []}' 2>/dev/null)
+    if [ $? -eq 0 ]; then
+        success "AI Agents API responding"
+    else
+        warning "AI Agents API not responding"
+    fi
+    
     # Frontend connectivity
     log "🔍 Testing Frontend..."
     if curl -s http://localhost:$FRONTEND_PORT > /dev/null 2>&1; then
@@ -554,6 +576,23 @@ perform_health_checks() {
         warning "LLM API keys not configured - AI analysis will be disabled"
     fi
     
+    # Check enhanced ML configuration
+    local ml_models_path=$(python -c "from app.config import settings; print(settings.ml_models_path)" 2>/dev/null)
+    if [ -d "$PROJECT_ROOT/backend/$ml_models_path" ]; then
+        success "ML models directory exists ($ml_models_path)"
+    else
+        warning "ML models directory not found - will be created automatically"
+    fi
+    
+    # Check policies configuration
+    local policies_path=$(python -c "from app.config import settings; print(settings.policies_path)" 2>/dev/null)
+    if [ -d "$PROJECT_ROOT/$policies_path" ]; then
+        local policies_count=$(find "$PROJECT_ROOT/$policies_path" -name "*.yaml" -o -name "*.yml" | wc -l)
+        success "Policies directory exists ($policies_count YAML files)"
+    else
+        warning "Policies directory not found - default policies will be used"
+    fi
+    
     # Check MCP server
     if [ "$MCP_PID" = "available" ]; then
         success "MCP server available for LLM integration"
@@ -563,17 +602,19 @@ perform_health_checks() {
         warning "MCP server not available - LLM integration disabled"
     fi
     
-    # Test sample API call
-    log "🔍 Testing Sample Event Ingestion..."
-    local sample_response=$(curl -s -X POST http://localhost:$BACKEND_PORT/ingest/cowrie \
+    # Test enhanced multi-source ingestion
+    log "🔍 Testing Enhanced Multi-Source Ingestion..."
+    local sample_response=$(curl -s -X POST http://localhost:$BACKEND_PORT/ingest/multi \
         -H 'Content-Type: application/json' \
-        -d '{"eventid":"cowrie.login.failed","src_ip":"192.168.1.100","username":"admin","password":"123456","message":"Test event from startup script"}' 2>/dev/null)
+        -H 'Authorization: Bearer test-api-key' \
+        -d '{"source_type":"cowrie","hostname":"startup-test","events":[{"eventid":"cowrie.login.failed","src_ip":"192.168.1.100","username":"admin","password":"123456","message":"Test event from startup script","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}]}' 2>/dev/null)
     
     if [ $? -eq 0 ]; then
-        success "Event ingestion test successful"
+        local processed=$(echo "$sample_response" | jq -r '.processed' 2>/dev/null || echo "unknown")
+        success "Enhanced event ingestion test successful ($processed events processed)"
         echo "   Response: $sample_response"
     else
-        warning "Event ingestion test failed"
+        warning "Enhanced event ingestion test failed"
     fi
     
     echo ""
@@ -590,6 +631,8 @@ show_system_status() {
     echo "   • Frontend:  http://localhost:$FRONTEND_PORT"
     echo "   • Backend:   http://localhost:$BACKEND_PORT"
     echo "   • API Docs:  http://localhost:$BACKEND_PORT/docs"
+    echo "   • AI Agents: http://localhost:$FRONTEND_PORT/agents"
+    echo "   • Analytics: http://localhost:$FRONTEND_PORT/analytics"
     echo ""
     echo "📋 Process IDs:"
     echo "   • Backend PID:  ${BACKEND_PID:-"Not running"}"
@@ -626,9 +669,11 @@ print(f'{settings.honeypot_user}@{settings.honeypot_host}:{settings.honeypot_ssh
     echo ""
     
     echo "🧪 Quick Tests:"
-    echo "   • Test Event: curl -X POST http://localhost:$BACKEND_PORT/ingest/cowrie -H 'Content-Type: application/json' -d '{\"eventid\":\"cowrie.login.failed\",\"src_ip\":\"192.168.1.100\"}'"
-    echo "   • SSH Test:   curl http://localhost:$BACKEND_PORT/test/ssh"
-    echo "   • View Logs:  tail -f $PROJECT_ROOT/backend/backend.log"
+    echo "   • Test Event:   curl -X POST http://localhost:$BACKEND_PORT/ingest/multi -H 'Content-Type: application/json' -H 'Authorization: Bearer test-api-key' -d '{\"source_type\":\"cowrie\",\"hostname\":\"test\",\"events\":[{\"eventid\":\"cowrie.login.failed\",\"src_ip\":\"192.168.1.100\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}]}'"
+    echo "   • ML Status:    curl http://localhost:$BACKEND_PORT/api/ml/status"
+    echo "   • AI Agent:     curl -X POST http://localhost:$BACKEND_PORT/api/agents/orchestrate -H 'Content-Type: application/json' -d '{\"agent_type\":\"containment\",\"query\":\"status\",\"history\":[]}'"
+    echo "   • SSH Test:     curl http://localhost:$BACKEND_PORT/test/ssh"
+    echo "   • View Logs:    tail -f $PROJECT_ROOT/backend/backend.log"
     echo ""
     
     if [ "$MCP_PID" = "available" ]; then
@@ -754,10 +799,17 @@ main() {
     log "🔍 Running comprehensive health checks..."
     if perform_health_checks; then
         echo ""
-        success "🎉 Mini-XDR System Successfully Started!"
+        success "🎉 Enhanced Mini-XDR System Successfully Started!"
         show_system_status
         
-        echo "🛡️  System is ready for honeypot monitoring!"
+        echo "🛡️  Enhanced XDR System Ready with:"
+        echo "   🤖 AI Agents for autonomous threat response"
+        echo "   🧠 ML models for anomaly detection" 
+        echo "   📊 Advanced analytics and visualization"
+        echo "   🔗 Multi-source log ingestion (Cowrie, Suricata, OSQuery)"
+        echo "   📋 Policy-based automated containment"
+        echo ""
+        echo "Ready for honeypot monitoring and advanced threat hunting!"
         echo "Press Ctrl+C to stop all services"
         echo ""
         

@@ -23,12 +23,14 @@ export default function IncidentsPage() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [autoRefreshing, setAutoRefreshing] = useState(false);
 
   useEffect(() => {
     const fetchIncidents = async () => {
       try {
         const data = await getIncidents();
         setIncidents(data);
+        setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to fetch incidents");
       } finally {
@@ -37,7 +39,18 @@ export default function IncidentsPage() {
     };
 
     fetchIncidents();
-  }, []);
+
+    // Set up automatic refresh every 10 seconds for new incidents
+    const interval = setInterval(async () => {
+      if (!loading) {
+        setAutoRefreshing(true);
+        await fetchIncidents();
+        setAutoRefreshing(false);
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [loading]);
 
   if (loading) {
     return (
@@ -89,7 +102,15 @@ export default function IncidentsPage() {
   return (
     <div className="px-4 py-6">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Incidents</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-3xl font-bold text-gray-900">Incidents</h1>
+          {autoRefreshing && (
+            <div className="flex items-center gap-2 text-sm text-blue-600">
+              <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+              <span>Checking for new incidents...</span>
+            </div>
+          )}
+        </div>
         <p className="mt-2 text-gray-600">
           Security incidents detected by the system
         </p>

@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     xai_api_key: Optional[str] = None
     xai_model: str = "grok-beta"
 
+    # Enhanced ML and AI Agent Configuration
+    abuseipdb_api_key: Optional[str] = None
+    virustotal_api_key: Optional[str] = None
+    ml_models_path: str = "./models"
+    policies_path: str = "../policies"
+    auto_retrain_enabled: bool = True
+    agent_api_key: Optional[str] = None
+
     class Config:
         env_file = ".env"
         case_sensitive = False
