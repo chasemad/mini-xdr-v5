@@ -29,7 +29,7 @@ export default function RootLayout({
                     Mini-XDR
                   </Link>
                 </div>
-                <div className="flex items-center space-x-8">
+                <div className="flex items-center space-x-6">
                   <Link 
                     href="/" 
                     className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
@@ -41,6 +41,42 @@ export default function RootLayout({
                     className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
                   >
                     Incidents
+                  </Link>
+                  <Link 
+                    href="/hunt" 
+                    className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
+                  >
+                    Hunt
+                  </Link>
+                  <Link 
+                    href="/investigations" 
+                    className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
+                  >
+                    Investigations
+                  </Link>
+                  <Link 
+                    href="/intelligence" 
+                    className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
+                  >
+                    Intelligence
+                  </Link>
+                  <Link 
+                    href="/agents" 
+                    className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
+                  >
+                    Agents
+                  </Link>
+                  <Link 
+                    href="/analytics" 
+                    className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
+                  >
+                    Analytics
+                  </Link>
+                  <Link 
+                    href="/settings" 
+                    className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
+                  >
+                    Settings
                   </Link>
                 </div>
               </div>

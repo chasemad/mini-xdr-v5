@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mini-xdr-frontend
+  namespace: mini-xdr
+  labels:
+    app: mini-xdr-frontend
+    component: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mini-xdr-frontend
+  template:
+    metadata:
+      labels:
+        app: mini-xdr-frontend
+        component: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: mini-xdr-frontend:latest
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: NEXT_PUBLIC_API_URL
+          value: "http://mini-xdr-backend-service:8000"
+        - name: NODE_ENV
+          value: "production"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mini-xdr-frontend-service
+  namespace: mini-xdr
+  labels:
+    app: mini-xdr-frontend
+spec:
+  selector:
+    app: mini-xdr-frontend
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+  type: ClusterIP

@@ -17,6 +17,21 @@
 *.sqlite
 *.sqlite3
 
+# ML Models and Data Files
+*.pkl
+*.pickle
+*.model
+*.h5
+*.csv
+*.json
+!package*.json
+!tsconfig.json
+!**/package.json
+!**/tsconfig.json
+backend/test_*.json
+backend/models/*.pkl
+backend/models/*.csv
+
 # Logs
 *.log
 logs/
