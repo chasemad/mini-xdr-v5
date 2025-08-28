@@ -23,6 +23,10 @@ from .ml_engine import ml_detector
 from .external_intel import threat_intel
 from .agents.containment_agent import ContainmentAgent
 from .policy_engine import policy_engine
+from .learning_pipeline import learning_pipeline
+from .adaptive_detection import behavioral_analyzer
+from .baseline_engine import baseline_engine
+from .detect import adaptive_engine
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -56,6 +60,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to load ML models: {e}")
     
+    # Start continuous learning pipeline
+    try:
+        await learning_pipeline.start_learning_loop()
+        logger.info("Continuous learning pipeline started")
+    except Exception as e:
+        logger.warning(f"Failed to start learning pipeline: {e}")
+    
     # Add scheduled tasks
     scheduler.add_job(
         process_scheduled_unblocks,
@@ -76,6 +87,14 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("Shutting down Enhanced Mini-XDR backend...")
+    
+    # Stop learning pipeline
+    try:
+        await learning_pipeline.stop_learning_loop()
+        logger.info("Learning pipeline stopped")
+    except Exception as e:
+        logger.warning(f"Error stopping learning pipeline: {e}")
+    
     await threat_intel.close()
     scheduler.shutdown()
 
@@ -733,6 +752,81 @@ async def list_log_sources(db: AsyncSession = Depends(get_db)):
     except Exception as e:
         logger.error(f"Failed to get source statistics: {e}")
         return {"success": False, "message": f"Failed to get sources: {str(e)}"}
+
+
+@app.get("/api/adaptive/status")
+async def get_adaptive_detection_status():
+    """
+    Get adaptive detection system status
+    """
+    try:
+        return {
+            "success": True,
+            "adaptive_engine": {
+                "weights": adaptive_engine.weights,
+                "behavioral_threshold": getattr(behavioral_analyzer, 'adaptive_threshold', 0.6)
+            },
+            "learning_pipeline": learning_pipeline.get_learning_status(),
+            "baseline_engine": baseline_engine.get_baseline_status(),
+            "ml_detector": ml_detector.get_model_status()
+        }
+    except Exception as e:
+        logger.error(f"Failed to get adaptive detection status: {e}")
+        return {"success": False, "message": f"Status check failed: {str(e)}"}
+
+
+@app.post("/api/adaptive/force_learning")
+async def force_adaptive_learning():
+    """
+    Force an immediate learning update for testing
+    """
+    try:
+        results = await learning_pipeline.force_learning_update()
+        return {
+            "success": True,
+            "message": "Forced learning update completed",
+            "results": results
+        }
+    except Exception as e:
+        logger.error(f"Forced learning update failed: {e}")
+        return {"success": False, "message": f"Learning update failed: {str(e)}"}
+
+
+@app.post("/api/adaptive/sensitivity")
+async def adjust_detection_sensitivity(
+    request_data: Dict[str, Any],
+    request: Request
+):
+    """
+    Adjust detection sensitivity
+    """
+    _require_api_key(request)
+    
+    sensitivity = request_data.get("sensitivity", "medium")
+    if sensitivity not in ["low", "medium", "high"]:
+        raise HTTPException(status_code=400, detail="Sensitivity must be 'low', 'medium', or 'high'")
+    
+    try:
+        # Adjust baseline engine sensitivity
+        baseline_engine.adjust_sensitivity(sensitivity)
+        
+        # Adjust behavioral analyzer threshold
+        if sensitivity == "high":
+            behavioral_analyzer.adaptive_threshold = 0.4
+        elif sensitivity == "low":
+            behavioral_analyzer.adaptive_threshold = 0.8
+        else:  # medium
+            behavioral_analyzer.adaptive_threshold = 0.6
+        
+        return {
+            "success": True,
+            "message": f"Detection sensitivity adjusted to {sensitivity}",
+            "behavioral_threshold": behavioral_analyzer.adaptive_threshold,
+            "baseline_thresholds": baseline_engine.deviation_thresholds
+        }
+    except Exception as e:
+        logger.error(f"Sensitivity adjustment failed: {e}")
+        return {"success": False, "message": f"Adjustment failed: {str(e)}"}
 
 
 async def background_retrain_ml_models():
