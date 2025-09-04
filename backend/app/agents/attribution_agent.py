@@ -216,6 +216,72 @@ class AttributionAgent:
                 "events_analyzed": len(events)
             }
     
+    async def analyze_ip_reputation(self, ip_address: str) -> Dict[str, Any]:
+        """Analyze IP reputation using multiple threat intelligence sources"""
+        try:
+            self.logger.info(f"Analyzing IP reputation for: {ip_address}")
+            
+            reputation_data = {
+                "ip_address": ip_address,
+                "analysis_timestamp": datetime.utcnow().isoformat(),
+                "reputation_score": 0,  # 0-100, higher is more malicious
+                "threat_categories": [],
+                "sources": {}
+            }
+            
+            # Simulate threat intelligence lookups
+            # In a real implementation, this would query actual threat intel APIs
+            
+            # Mock VirusTotal-style response
+            reputation_data["sources"]["virustotal"] = {
+                "malicious_engines": 2,
+                "total_engines": 70,
+                "categories": ["malware", "suspicious"],
+                "last_analysis": datetime.utcnow().isoformat()
+            }
+            
+            # Mock AbuseIPDB-style response  
+            reputation_data["sources"]["abuseipdb"] = {
+                "abuse_confidence": 85,
+                "country_code": "CN",
+                "usage_type": "datacenter",
+                "categories": ["ssh_brute_force", "web_attack"]
+            }
+            
+            # Calculate overall reputation score
+            if reputation_data["sources"]["virustotal"]["malicious_engines"] > 0:
+                reputation_data["reputation_score"] += 40
+            
+            if reputation_data["sources"]["abuseipdb"]["abuse_confidence"] > 75:
+                reputation_data["reputation_score"] += 35
+                
+            # Add threat categories
+            reputation_data["threat_categories"] = list(set(
+                reputation_data["sources"]["virustotal"]["categories"] +
+                reputation_data["sources"]["abuseipdb"]["categories"]
+            ))
+            
+            # Generate summary
+            if reputation_data["reputation_score"] > 70:
+                summary = f"High-risk IP with {reputation_data['reputation_score']}% malicious confidence"
+            elif reputation_data["reputation_score"] > 40:
+                summary = f"Suspicious IP with {reputation_data['reputation_score']}% malicious confidence"
+            else:
+                summary = f"Low-risk IP with {reputation_data['reputation_score']}% malicious confidence"
+                
+            reputation_data["summary"] = summary
+            
+            self.logger.info(f"IP reputation analysis complete: {summary}")
+            return reputation_data
+            
+        except Exception as e:
+            self.logger.error(f"IP reputation analysis failed: {e}")
+            return {
+                "error": str(e),
+                "ip_address": ip_address,
+                "analysis_timestamp": datetime.utcnow().isoformat()
+            }
+    
     async def _analyze_infrastructure(
         self, 
         incidents: List[Incident], 

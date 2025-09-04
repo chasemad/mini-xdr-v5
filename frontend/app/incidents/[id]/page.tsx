@@ -1,14 +1,86 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { getIncident, unblockIncident, containIncident, scheduleUnblock } from "../../lib/api";
+import { 
+  getIncident, unblockIncident, containIncident, scheduleUnblock,
+  socBlockIP, socIsolateHost, socResetPasswords, socCheckDBIntegrity,
+  socThreatIntelLookup, socDeployWAFRules, socCaptureTraffic,
+  socHuntSimilarAttacks, socAlertAnalysts, socCreateCase
+} from "../../lib/api";
 import { 
   Ban, Shield, UserX, Key, Database, History, UserMinus, Lock, 
   Search, Globe, Network, Clock, Target, Download, Archive, FileText, 
   Briefcase, TrendingUp, Code, Users, Crosshair, Flag, MapPin, 
-  AlertTriangle, Ticket, Bell, Phone, Server 
+  AlertTriangle, Ticket, Bell, Phone, Server, RefreshCw, X, Send,
+  ChevronDown, ChevronRight, Eye, EyeOff, MessageSquare, Bot,
+  CheckCircle, XCircle, AlertCircle, Info, Loader2, Copy, ExternalLink,
+  Maximize2, Minimize2, Filter, MoreHorizontal
 } from "lucide-react";
+
+// Types for enhanced functionality
+interface ChatMessage {
+  id: string;
+  type: 'user' | 'ai';
+  content: string;
+  timestamp: Date;
+  loading?: boolean;
+}
+
+interface ToastMessage {
+  id: string;
+  type: 'success' | 'error' | 'warning' | 'info';
+  title: string;
+  message: string;
+  duration?: number;
+}
+
+// Helper functions for compromise assessment
+const getCompromiseStatus = (incident: IncidentDetail): 'CONFIRMED' | 'SUSPECTED' | 'UNLIKELY' => {
+  if (incident.iocs?.successful_auth_indicators?.length > 0) {
+    return 'CONFIRMED';
+  }
+  if (incident.iocs?.database_access_patterns?.length > 0 || 
+      incident.iocs?.privilege_escalation_indicators?.length > 0) {
+    return 'SUSPECTED';
+  }
+  return 'UNLIKELY';
+};
+
+const getCompromiseColor = (status: string) => {
+  switch (status) {
+    case 'CONFIRMED':
+      return 'bg-red-500/20 border-red-500 text-red-100';
+    case 'SUSPECTED':
+      return 'bg-orange-500/20 border-orange-500 text-orange-100';
+    case 'UNLIKELY':
+      return 'bg-green-500/20 border-green-500 text-green-100';
+    default:
+      return 'bg-gray-700 border-gray-600 text-gray-300';
+  }
+};
+
+const getRiskScoreColor = (score?: number) => {
+  if (!score) return 'text-gray-400';
+  if (score >= 0.8) return 'text-red-400';
+  if (score >= 0.6) return 'text-orange-400';
+  if (score >= 0.4) return 'text-yellow-400';
+  return 'text-green-400';
+};
+
+const formatRiskScore = (score?: number) => {
+  if (!score) return 'N/A';
+  return `${(score * 100).toFixed(0)}%`;
+};
+
+const formatConfidence = (confidence?: number) => {
+  if (!confidence) return 'N/A';
+  const percent = (confidence * 100).toFixed(0);
+  if (confidence >= 0.9) return `${percent}% (Very High)`;
+  if (confidence >= 0.7) return `${percent}% (High)`;
+  if (confidence >= 0.5) return `${percent}% (Medium)`;
+  return `${percent}% (Low)`;
+};
 
 interface IncidentDetail {
   id: number;
@@ -97,82 +169,177 @@ interface IncidentDetail {
   };
 }
 
+// Toast Component
+const Toast = ({ toast, onDismiss }: { toast: ToastMessage; onDismiss: (id: string) => void }) => {
+  const icons = {
+    success: CheckCircle,
+    error: XCircle,
+    warning: AlertCircle,
+    info: Info
+  };
+  
+  const colors = {
+    success: 'bg-green-500/20 border-green-500 text-green-100',
+    error: 'bg-red-500/20 border-red-500 text-red-100',
+    warning: 'bg-orange-500/20 border-orange-500 text-orange-100',
+    info: 'bg-blue-500/20 border-blue-500 text-blue-100'
+  };
+  
+  const Icon = icons[toast.type];
+  
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onDismiss(toast.id);
+    }, toast.duration || 5000);
+    
+    return () => clearTimeout(timer);
+  }, [toast.id, toast.duration, onDismiss]);
+  
+  return (
+    <div className={`p-4 rounded-xl border shadow-lg ${colors[toast.type]} animate-in slide-in-from-right duration-300`}>
+      <div className="flex items-start gap-3">
+        <Icon className="w-5 h-5 mt-0.5 flex-shrink-0" />
+        <div className="flex-1">
+          <div className="font-semibold text-sm">{toast.title}</div>
+          <div className="text-sm opacity-90 mt-1">{toast.message}</div>
+        </div>
+        <button
+          onClick={() => onDismiss(toast.id)}
+          className="p-1 hover:bg-white/10 rounded-lg transition-colors"
+          aria-label="Dismiss notification"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Modal Component
+const ConfirmModal = ({ 
+  isOpen, 
+  onClose, 
+  onConfirm, 
+  title, 
+  message, 
+  confirmText = "Confirm",
+  confirmVariant = "danger"
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  title: string;
+  message: string;
+  confirmText?: string;
+  confirmVariant?: "danger" | "primary";
+}) => {
+  if (!isOpen) return null;
+  
+  const confirmColors = {
+    danger: 'bg-red-600 hover:bg-red-700 focus:ring-red-500',
+    primary: 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'
+  };
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl">
+        <div className="flex items-center gap-3 mb-4">
+          <AlertTriangle className="w-6 h-6 text-orange-400" />
+          <h3 className="text-lg font-semibold text-white">{title}</h3>
+        </div>
+        <p className="text-gray-300 mb-6">{message}</p>
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`px-4 py-2 text-white rounded-lg transition-colors focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 ${confirmColors[confirmVariant]}`}
+          >
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function IncidentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const [id, setId] = useState<number | null>(null);
+  const [incident, setIncident] = useState<IncidentDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionResults, setActionResults] = useState<Record<string, any>>({});
+  const [autoRefreshing, setAutoRefreshing] = useState(false);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    action: () => void;
+  }>({ isOpen: false, title: '', message: '', action: () => {} });
+  
+  // Chat state
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    {
+      id: '1',
+      type: 'ai',
+      content: "Hi, I'm your AI SOC Assistant. Ask me about this incident, and I'll help analyze threats, explain IOCs, or suggest response actions!",
+      timestamp: new Date()
+    }
+  ]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  
+  // Expandable sections state
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    timeline: true,
+    history: true,
+    iocs: true
+  });
 
   useEffect(() => {
     params.then((resolvedParams) => {
       setId(Number(resolvedParams.id));
     });
   }, [params]);
-  const [incident, setIncident] = useState<IncidentDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [actionResults, setActionResults] = useState<any>({});
 
-  // Handle SOC action clicks
-  const handleAction = async (actionType: string, parameter: string) => {
-    setActionLoading(actionType);
+  const showToast = useCallback((type: ToastMessage['type'], title: string, message: string) => {
+    const toast: ToastMessage = {
+      id: Date.now().toString(),
+      type,
+      title,
+      message
+    };
+    setToasts(prev => [...prev, toast]);
+  }, []);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  const fetchIncident = useCallback(async () => {
+    if (!id) return;
+    
     try {
-      // Simulate API call for now - replace with actual API calls
-      console.log(`Executing ${actionType} with parameter: ${parameter}`);
-      
-      // Mock response for demonstration
-      const mockResponses: { [key: string]: string } = {
-        'block_ip': `✅ IP ${parameter} blocked successfully`,
-        'isolate_host': `✅ Host ${parameter} isolated from network`,
-        'revoke_sessions': `✅ All ${parameter} sessions revoked`,
-        'reset_passwords': `✅ ${parameter} passwords reset`,
-        'check_db_integrity': `✅ Database integrity check initiated`,
-        'virustotal_lookup': `🔍 VirusTotal: ${parameter} - Clean (0/70 engines)`,
-        'abuseipdb_query': `🔍 AbuseIPDB: ${parameter} - Confidence: 85% malicious`,
-        'dns_sinkhole': `✅ DNS sinkhole deployed for ${parameter}`,
-        'deploy_waf_rules': `✅ WAF rules deployed for ${parameter} attacks`,
-        'capture_traffic': `✅ Traffic capture started for ${parameter}`,
-        'hunt_similar_attacks': `🎯 Found 3 similar ${parameter} attacks in last 30 days`,
-        'alert_senior_analysts': `📧 Senior analysts notified about incident ${parameter}`
-      };
-      
-      const result = mockResponses[actionType] || `✅ ${actionType} executed for ${parameter}`;
-      
-      // Update action results
-      setActionResults(prev => ({
-        ...prev,
-        [actionType]: result
-      }));
-      
-      // Show toast notification (you can add a toast library)
-      alert(result);
-      
-    } catch (error) {
-      console.error('Action failed:', error);
-      alert('❌ Action failed');
+      const data = await getIncident(id);
+      setIncident(data);
+    } catch (error: any) {
+      console.error("Failed to fetch incident:", error);
+      showToast('error', 'Failed to Load', 'Could not fetch incident details');
     } finally {
-      setActionLoading(null);
+      setLoading(false);
     }
-  };
-  const [scheduleMinutes, setScheduleMinutes] = useState(15);
-  const [result, setResult] = useState<string>("");
-  const [autoRefreshing, setAutoRefreshing] = useState(false);
+  }, [id, showToast]);
 
   useEffect(() => {
-    const fetchIncident = async () => {
-      if (!id) return;
-      
-      try {
-        const data = await getIncident(id);
-        setIncident(data);
-      } catch (error) {
-        console.error("Failed to fetch incident:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchIncident();
 
-    // Set up automatic refresh every 5 seconds to catch scheduled actions
+    // Set up automatic refresh every 5 seconds
     const interval = setInterval(async () => {
       if (id && !loading) {
         setAutoRefreshing(true);
@@ -182,102 +349,299 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [id, loading]);
+  }, [fetchIncident, id, loading]);
 
-  const handleUnblock = async () => {
-    if (!incident || !id) return;
+  const handleSOCAction = async (actionType: string, actionLabel: string) => {
+    if (!incident?.id) return;
     
-    setActionLoading("unblock");
+    setConfirmModal({
+      isOpen: true,
+      title: `Confirm ${actionLabel}`,
+      message: `Are you sure you want to ${actionLabel.toLowerCase()} for incident #${incident.id}?`,
+      action: () => executeSOCAction(actionType, actionLabel)
+    });
+  };
+
+  const executeSOCAction = async (actionType: string, actionLabel: string) => {
+    if (!incident?.id) return;
+    
+    setActionLoading(actionType);
     try {
-      const response = await unblockIncident(incident.id);
-      setResult(`Unblock: ${response.status}`);
+      let result;
+      
+      switch (actionType) {
+        case 'block_ip':
+          result = await socBlockIP(incident.id);
+          break;
+        case 'isolate_host':
+          result = await socIsolateHost(incident.id);
+          break;
+        case 'reset_passwords':
+          result = await socResetPasswords(incident.id);
+          break;
+        case 'check_db_integrity':
+          result = await socCheckDBIntegrity(incident.id);
+          break;
+        case 'threat_intel_lookup':
+          result = await socThreatIntelLookup(incident.id);
+          break;
+        case 'deploy_waf_rules':
+          result = await socDeployWAFRules(incident.id);
+          break;
+        case 'capture_traffic':
+          result = await socCaptureTraffic(incident.id);
+          break;
+        case 'hunt_similar_attacks':
+          result = await socHuntSimilarAttacks(incident.id);
+          break;
+        case 'alert_analysts':
+          result = await socAlertAnalysts(incident.id);
+          break;
+        case 'create_case':
+          result = await socCreateCase(incident.id);
+          break;
+        default:
+          throw new Error(`Unknown action type: ${actionType}`);
+      }
+      
+      setActionResults(prev => ({ ...prev, [actionType]: result }));
+      showToast('success', 'Action Completed', result.message || `${actionLabel} completed successfully`);
       
       // Refresh incident data
-      const updatedIncident = await getIncident(id);
-      setIncident(updatedIncident);
-    } catch (error) {
-      setResult(`Unblock failed: ${error}`);
+      await fetchIncident();
+      
+    } catch (error: any) {
+      console.error(`SOC action ${actionType} failed:`, error);
+      showToast('error', 'Action Failed', error.message || `${actionLabel} failed`);
     } finally {
       setActionLoading(null);
+      setConfirmModal({ isOpen: false, title: '', message: '', action: () => {} });
     }
   };
 
-  const handleContain = async (durationSeconds?: number) => {
-    if (!incident || !id) return;
+  const sendChatMessage = async () => {
+    if (!chatInput.trim() || chatLoading) return;
     
-    setActionLoading("contain");
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      type: 'user',
+      content: chatInput.trim(),
+      timestamp: new Date()
+    };
+    
+    setChatMessages(prev => [...prev, userMessage]);
+    setChatInput('');
+    setChatLoading(true);
+    
+    // Add loading message
+    const loadingMessage: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      type: 'ai',
+      content: '',
+      timestamp: new Date(),
+      loading: true
+    };
+    
+    setChatMessages(prev => [...prev, loadingMessage]);
+    
     try {
-      const response = await containIncident(incident.id, durationSeconds);
-      const duration = durationSeconds ? ` for ${durationSeconds}s` : "";
-      setResult(`Contain${duration}: ${response.status}`);
+      // Call the actual AI agent API with full incident context
+      const response = await fetch('/api/agents/orchestrate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: userMessage.content,
+          incident_id: incident?.id,
+          context: {
+            incident_data: {
+              id: incident?.id,
+              src_ip: incident?.src_ip,
+              threat_category: incident?.threat_category,
+              risk_score: incident?.risk_score,
+              escalation_level: incident?.escalation_level,
+              ml_confidence: incident?.agent_confidence,
+              auto_contained: incident?.auto_contained,
+              reason: incident?.reason
+            },
+            iocs: incident?.iocs,
+            attack_timeline: incident?.attack_timeline?.slice(0, 10), // Last 10 events for context
+            event_summary: incident?.event_summary,
+            triage_note: incident?.triage_note,
+            chat_history: chatMessages.slice(-5).map(msg => ({ // Last 5 messages for context
+              role: msg.type === 'user' ? 'user' : 'assistant',
+              content: msg.content
+            }))
+          }
+        }),
+      });
+
+      let aiResponse = "I apologize, I'm having trouble analyzing this incident right now.";
       
-      // Refresh incident data
-      const updatedIncident = await getIncident(id);
-      setIncident(updatedIncident);
+      if (response.ok) {
+        const data = await response.json();
+        aiResponse = data.message || data.analysis || "I've analyzed your query but don't have a specific response.";
+      } else {
+        // Fallback to contextual analysis if API fails
+        console.log('API call failed, using fallback analysis');
+        aiResponse = generateContextualResponse(userMessage.content, incident!);
+      }
+      
+      const aiMessage: ChatMessage = {
+        id: (Date.now() + 2).toString(),
+        type: 'ai',
+        content: aiResponse,
+        timestamp: new Date()
+      };
+      
+      setChatMessages(prev => prev.slice(0, -1).concat(aiMessage));
+      
     } catch (error) {
-      setResult(`Contain failed: ${error}`);
+      setChatMessages(prev => prev.slice(0, -1));
+      showToast('error', 'AI Error', 'Failed to get AI response');
     } finally {
-      setActionLoading(null);
+      setChatLoading(false);
     }
   };
 
-  const handleScheduleUnblock = async () => {
-    if (!incident || !id) return;
+  const generateContextualResponse = (userInput: string, incident: IncidentDetail): string => {
+    const input = userInput.toLowerCase();
+    const iocCount = Object.values(incident?.iocs || {}).flat().length;
+    const timelineCount = incident?.attack_timeline?.length || 0;
     
-    setActionLoading("schedule");
-    try {
-      const response = await scheduleUnblock(incident.id, scheduleMinutes);
-      setResult(`Scheduled unblock: ${response.status} at ${response.due_at}`);
-      
-      // Refresh incident data
-      const updatedIncident = await getIncident(id);
-      setIncident(updatedIncident);
-    } catch (error) {
-      setResult(`Schedule failed: ${error}`);
-    } finally {
-      setActionLoading(null);
+    // Analyze user intent and provide contextual response
+    if (input.includes('ioc') || input.includes('indicator') || input.includes('compromise')) {
+      return `I found ${iocCount} indicators of compromise in this incident. Key findings:
+• ${incident?.iocs?.sql_injection_patterns?.length || 0} SQL injection patterns
+• ${incident?.iocs?.reconnaissance_patterns?.length || 0} reconnaissance patterns  
+• ${incident?.iocs?.database_access_patterns?.length || 0} database access patterns
+• ${incident?.iocs?.successful_auth_indicators?.length || 0} successful authentication indicators
+
+The most critical indicators suggest ${incident?.threat_category?.replace('_', ' ') || 'coordinated'} attack activity.`;
     }
+    
+    if (input.includes('timeline') || input.includes('attack') || input.includes('sequence')) {
+      return `The attack timeline shows ${timelineCount} events over ${incident?.event_summary?.time_span_hours || 'several'} hours. Pattern analysis:
+• Attack type: ${incident?.threat_category?.replace('_', ' ') || 'Multi-vector'}
+• Escalation: ${incident?.escalation_level || 'Medium'} severity
+• Source: ${incident?.src_ip}
+• Status: ${incident?.auto_contained ? 'Automatically contained' : 'Monitoring'}
+
+This appears to be a sophisticated ${incident?.threat_category?.includes('multi') ? 'coordinated' : 'targeted'} attack campaign.`;
+    }
+    
+    if (input.includes('recommend') || input.includes('next') || input.includes('should') || input.includes('action')) {
+      const riskLevel = incident?.risk_score || 0;
+      if (riskLevel > 0.7) {
+        return `⚠️ HIGH RISK INCIDENT - Immediate actions recommended:
+1. **Block Source IP**: ${incident?.src_ip} (${Math.round((riskLevel) * 100)}% risk score)
+2. **Isolate Affected Systems**: Prevent lateral movement
+3. **Reset Credentials**: Change admin passwords immediately
+4. **Database Security**: Verify integrity after SQL injection attempts
+5. **Hunt Similar Patterns**: Search for related IOCs network-wide
+
+The ML confidence is ${formatConfidence(incident?.agent_confidence)} - this requires urgent attention.`;
+      } else {
+        return `Based on the ${incident?.escalation_level || 'medium'} escalation level, I recommend:
+• Continue monitoring ${incident?.src_ip}
+• Deploy additional detection rules
+• Review security controls for ${incident?.threat_category?.replace('_', ' ') || 'similar'} attacks
+• Consider threat hunting for related activity
+
+Current risk assessment: ${Math.round((riskLevel) * 100)}% with ${formatConfidence(incident?.agent_confidence)} ML confidence.`;
+      }
+    }
+    
+    if (input.includes('explain') || input.includes('what') || input.includes('how') || input.includes('why')) {
+      return `This incident involves a ${incident?.threat_category?.replace('_', ' ') || 'security'} threat from ${incident?.src_ip}:
+
+**Threat Analysis:**
+• Risk Score: ${formatRiskScore(incident?.risk_score)} 
+• ML Confidence: ${formatConfidence(incident?.agent_confidence)}
+• Detection Method: ${incident?.containment_method?.replace('_', ' ') || 'Rule-based'}
+• Status: ${incident?.auto_contained ? 'Auto-contained' : 'Under investigation'}
+
+**Key Details:**
+${incident?.reason || 'Multiple security violations detected'}
+
+The system has classified this as ${incident?.escalation_level || 'medium'} priority based on behavioral analysis and threat intelligence.`;
+    }
+    
+    // Handle conversational responses
+    if (input.includes('yes') || input.includes('all') || input.includes('sure') || input.includes('ok')) {
+      return `Here's a comprehensive analysis of incident #${incident?.id}:
+
+📊 **IOC Analysis**: ${iocCount} total indicators detected
+• SQL injection attempts: ${incident?.iocs?.sql_injection_patterns?.length || 0}
+• Reconnaissance patterns: ${incident?.iocs?.reconnaissance_patterns?.length || 0}
+• Database access attempts: ${incident?.iocs?.database_access_patterns?.length || 0}
+
+⏰ **Attack Timeline**: ${timelineCount} events showing ${incident?.threat_category?.replace('_', ' ') || 'coordinated'} attack patterns
+
+🎯 **Risk Assessment**: ${formatRiskScore(incident?.risk_score)} risk with ${formatConfidence(incident?.agent_confidence)} ML confidence
+
+💡 **Bottom Line**: This appears to be a ${incident?.escalation_level || 'medium'} severity ${incident?.threat_category?.replace('_', ' ') || 'multi-vector'} attack from ${incident?.src_ip}.`;
+    }
+    
+    if (input.includes('no') || input.includes('different') || input.includes('else')) {
+      return `I understand you're looking for different information. I can help you with:
+
+🔍 **Incident Analysis**: IOCs, attack patterns, timeline review
+🚨 **Risk Assessment**: Threat scoring, ML confidence, severity analysis  
+💡 **Recommendations**: Next steps, containment actions, investigation guidance
+🛡️ **Context**: How this fits into your broader security posture
+
+What specific aspect of incident #${incident?.id} would you like to explore?`;
+    }
+    
+    // Default intelligent response based on incident context
+    const severity = incident?.escalation_level || 'medium';
+    const hasMultipleVectors = (incident?.iocs?.sql_injection_patterns?.length || 0) > 0 && 
+                              (incident?.iocs?.reconnaissance_patterns?.length || 0) > 0;
+    
+    return `I'm analyzing incident #${incident?.id} from ${incident?.src_ip}. This ${severity} severity ${hasMultipleVectors ? 'multi-vector' : 'targeted'} attack shows:
+
+• **${iocCount} IOCs detected** across multiple categories
+• **${timelineCount} attack events** in the timeline
+• **${formatRiskScore(incident?.risk_score)} risk score** with ${formatConfidence(incident?.agent_confidence)} ML confidence
+
+I can help you understand the IOCs, analyze the attack timeline, assess the risk, or recommend next steps. What would you like to dive deeper into?`;
+  };
+
+  const toggleSection = (section: string) => {
+    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
   };
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case "high":
-        return "bg-red-100 text-red-800";
-      case "medium":
-        return "bg-orange-100 text-orange-800";
-      case "low":
-        return "bg-green-100 text-green-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "open":
-        return "bg-yellow-100 text-yellow-800";
-      case "contained":
-        return "bg-red-100 text-red-800";
-      case "dismissed":
-        return "bg-gray-100 text-gray-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
+  const formatTimeAgo = (dateString: string) => {
+    const now = new Date();
+    const date = new Date(dateString);
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
   };
 
   if (loading || !id) {
     return (
-      <div className="px-4 py-6">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-1/3"></div>
-          <div className="h-64 bg-gray-200 rounded-2xl"></div>
-          <div className="grid md:grid-cols-2 gap-6">
-            <div className="h-80 bg-gray-200 rounded-2xl"></div>
-            <div className="h-80 bg-gray-200 rounded-2xl"></div>
+      <div className="min-h-screen bg-gray-900 text-white">
+        <div className="px-4 py-6">
+          <div className="animate-pulse space-y-6">
+            <div className="h-8 bg-gray-800 rounded w-1/3"></div>
+            <div className="h-64 bg-gray-800 rounded-2xl"></div>
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="h-80 bg-gray-800 rounded-2xl"></div>
+              <div className="h-80 bg-gray-800 rounded-2xl"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -286,777 +650,682 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
 
   if (!incident) {
     return (
-      <div className="px-4 py-6">
-        <div className="text-center py-12">
-          <h3 className="text-lg font-medium text-gray-900">Incident not found</h3>
-          <p className="mt-2 text-gray-600">The requested incident could not be found.</p>
-          <button
-            onClick={() => router.push("/incidents")}
-            className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700"
-          >
-            Back to Incidents
-          </button>
+      <div className="min-h-screen bg-gray-900 text-white">
+        <div className="px-4 py-6">
+          <div className="text-center py-12">
+            <AlertTriangle className="w-16 h-16 text-red-400 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-white mb-2">Incident Not Found</h3>
+            <p className="text-gray-400 mb-6">The requested incident could not be found.</p>
+            <button
+              onClick={() => router.push("/incidents")}
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors"
+            >
+              Back to Incidents
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
+  const compromiseStatus = getCompromiseStatus(incident);
+
   return (
-    <div className="px-4 py-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold text-gray-900">
-              Incident #{incident.id}
-            </h1>
-            {autoRefreshing && (
-              <div className="flex items-center gap-2 text-sm text-blue-600">
-                <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-                <span>Refreshing...</span>
-              </div>
-            )}
-          </div>
-          <p className="mt-2 text-gray-600">
-            {formatDate(incident.created_at)}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(incident.status)}`}>
-            {incident.status}
-          </span>
-          {incident.auto_contained && (
-            <span className="px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800">
-              AUTO-CONTAINED
-            </span>
-          )}
-        </div>
+    <div className="min-h-screen bg-gray-900 text-white">
+      {/* Toast Notifications */}
+      <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
+        {toasts.map(toast => (
+          <Toast key={toast.id} toast={toast} onDismiss={dismissToast} />
+        ))}
       </div>
 
-      {/* Triage Note */}
-      {incident.triage_note && (
-        <div className="p-6 rounded-2xl shadow-sm border border-gray-200 bg-white">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Triage Analysis</h2>
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${getSeverityColor(incident.triage_note.severity)}`}>
-                Severity: {incident.triage_note.severity}
-              </span>
-              <span className="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
-                Recommend: {incident.triage_note.recommendation}
-              </span>
-            </div>
-            <p className="text-gray-700">{incident.triage_note.summary}</p>
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ isOpen: false, title: '', message: '', action: () => {} })}
+        onConfirm={confirmModal.action}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText="Execute"
+        confirmVariant="danger"
+      />
+
+      <div className="px-4 py-6 space-y-8 max-w-7xl mx-auto">
+        {/* Enhanced Header with Live Status */}
+        <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 shadow-2xl">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
             <div>
-              <h4 className="font-medium text-gray-900 mb-2">Analysis:</h4>
-              <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
-                {incident.triage_note.rationale?.map((point, index) => (
-                  <li key={index}>{point}</li>
-                ))}
-              </ul>
+              <div className="flex items-center gap-3 mb-2">
+                <h1 className="text-4xl font-bold text-white">
+                  🚨 Incident #{incident.id}
+                </h1>
+                {autoRefreshing && (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-blue-500/20 border border-blue-500/50 rounded-full">
+                    <RefreshCw className="w-4 h-4 text-blue-400 animate-spin" />
+                    <span className="text-sm text-blue-300 font-medium">Live</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-4 text-gray-400">
+                <span>{formatDate(incident.created_at)}</span>
+                <span>•</span>
+                <span>Source: <code className="text-orange-400 font-mono">{incident.src_ip}</code></span>
+                <span>•</span>
+                <span className="text-gray-500">{formatTimeAgo(incident.created_at)}</span>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Actions */}
-      <div className="p-6 rounded-2xl shadow-sm border border-gray-200 bg-white">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Actions</h2>
-        <div className="space-y-4">
-          {/* Immediate Actions */}
-          <div className="flex flex-wrap gap-4 items-center">
-            <button
-              onClick={() => handleContain()}
-              disabled={actionLoading === "contain"}
-              className="px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 disabled:opacity-50"
-            >
-              {actionLoading === "contain" ? "Containing..." : "Block Permanently"}
-            </button>
-            
-            <button
-              onClick={() => handleContain(30)}
-              disabled={actionLoading === "contain"}
-              className="px-4 py-2 bg-orange-600 text-white rounded-xl hover:bg-orange-700 disabled:opacity-50"
-            >
-              {actionLoading === "contain" ? "Containing..." : "Block 30s (Test)"}
-            </button>
-            
-            <button
-              onClick={handleUnblock}
-              disabled={actionLoading === "unblock"}
-              className="px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50"
-            >
-              {actionLoading === "unblock" ? "Unblocking..." : "Unblock Now"}
-            </button>
-          </div>
-          
-          {/* Scheduled Actions */}
-          <div className="p-4 bg-gray-50 rounded-lg">
-            <h3 className="text-sm font-medium text-gray-700 mb-3">Scheduled Unblock</h3>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min={1}
-                max={1440}
-                value={scheduleMinutes}
-                onChange={(e) => setScheduleMinutes(parseInt(e.target.value) || 15)}
-                className="border border-gray-300 rounded-lg px-3 py-2 w-20 text-sm"
-              />
-              <span className="text-sm text-gray-600">minutes</span>
+            <div className="flex items-center gap-3">
               <button
-                onClick={handleScheduleUnblock}
-                disabled={actionLoading === "schedule"}
-                className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50"
+                onClick={fetchIncident}
+                className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                title="Refresh incident data"
               >
-                {actionLoading === "schedule" ? "Scheduling..." : "Schedule Unblock"}
+                <RefreshCw className="w-5 h-5 text-gray-400" />
               </button>
-            </div>
-            <p className="text-xs text-gray-500 mt-2">
-              Automatically unblock this IP after the specified time period
-            </p>
-          </div>
-        </div>
-        
-        {result && (
-          <div className="mt-4 p-3 bg-gray-50 rounded-xl">
-            <pre className="text-sm text-gray-700 whitespace-pre-wrap">{result}</pre>
-          </div>
-        )}
-      </div>
-
-      {/* Enhanced SOC Analysis Section */}
-      <div className="p-6 rounded-2xl shadow-sm border border-gray-200 bg-white">
-        <h2 className="text-lg font-semibold text-gray-900 mb-6">SOC Analysis Dashboard</h2>
-        
-        {/* Risk & Confidence Metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-gradient-to-r from-red-50 to-red-100 p-4 rounded-xl">
-            <div className="text-sm text-red-600 font-medium">Risk Score</div>
-            <div className="text-2xl font-bold text-red-900">
-              {incident.risk_score ? (incident.risk_score * 100).toFixed(0) + '%' : 'N/A'}
+              <span className={`px-4 py-2 rounded-full text-sm font-semibold border ${
+                incident.status === 'open' ? 'bg-yellow-500/20 border-yellow-500 text-yellow-300' :
+                incident.status === 'contained' ? 'bg-red-500/20 border-red-500 text-red-300' :
+                'bg-gray-700 border-gray-600 text-gray-300'
+              }`}>
+                {incident.status.toUpperCase()}
+              </span>
+              {incident.auto_contained && (
+                <span className="px-4 py-2 rounded-full text-sm font-semibold bg-purple-500/20 border border-purple-500 text-purple-300">
+                  AUTO-CONTAINED
+                </span>
+              )}
             </div>
           </div>
-          <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-4 rounded-xl">
-            <div className="text-sm text-blue-600 font-medium">ML Confidence</div>
-            <div className="text-2xl font-bold text-blue-900">
-              {incident.agent_confidence ? (incident.agent_confidence * 100).toFixed(0) + '%' : 'N/A'}
-            </div>
-          </div>
-          <div className="bg-gradient-to-r from-purple-50 to-purple-100 p-4 rounded-xl">
-            <div className="text-sm text-purple-600 font-medium">Escalation</div>
-            <div className="text-xl font-bold text-purple-900 capitalize">
-              {incident.escalation_level || 'Medium'}
-            </div>
-          </div>
-          <div className="bg-gradient-to-r from-green-50 to-green-100 p-4 rounded-xl">
-            <div className="text-sm text-green-600 font-medium">Detection</div>
-            <div className="text-sm font-bold text-green-900 capitalize">
-              {incident.containment_method || 'Rule-based'}
-            </div>
-          </div>
-        </div>
 
-        {/* Threat Intelligence */}
-        {incident.threat_category && (
-          <div className="mb-6 p-4 bg-yellow-50 rounded-xl border border-yellow-200">
-            <h3 className="font-semibold text-yellow-800 mb-2">🎯 Threat Classification</h3>
-            <span className="px-3 py-1 bg-yellow-200 text-yellow-800 rounded-full text-sm font-medium">
-              {incident.threat_category.replace(/_/g, ' ').toUpperCase()}
-            </span>
-            {incident.agent_id && (
-              <div className="mt-2 text-sm text-yellow-700">
-                Analyzed by: <span className="font-mono">{incident.agent_id}</span>
+          {/* Critical Metrics Grid - Enhanced */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-xl">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="w-5 h-5 text-red-400" />
+                <span className="text-sm text-red-400 font-medium">Risk Score</span>
               </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Critical SOC Analysis - Compromise Assessment */}
-      <div className="p-6 rounded-2xl shadow-sm border border-gray-200 bg-white">
-        <h2 className="text-lg font-semibold text-gray-900 mb-6">🚨 Compromise Assessment & Impact Analysis</h2>
-        
-        {/* Success Indicators */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-          {/* Successful Authentication */}
-          {incident.iocs?.successful_auth_indicators?.length > 0 && (
-            <div className="p-4 bg-red-50 rounded-xl border border-red-300">
-              <h3 className="font-semibold text-red-800 mb-2">🚨 COMPROMISE CONFIRMED</h3>
-              <div className="text-sm text-red-700 mb-2">Successful authentication detected!</div>
-              <div className="space-y-1">
-                {incident.iocs.successful_auth_indicators.slice(0, 3).map((indicator, idx) => (
-                  <div key={idx} className="text-xs font-mono bg-red-100 p-2 rounded text-red-800 break-all">
-                    {indicator}
-                  </div>
-                ))}
+              <div className={`text-3xl font-bold ${getRiskScoreColor(incident.risk_score)}`}>
+                {formatRiskScore(incident.risk_score)}
+              </div>
+              <div className="mt-2 bg-gray-700 rounded-full h-2">
+                <div 
+                  className="bg-red-500 h-2 rounded-full transition-all duration-500"
+                  style={{ width: `${(incident.risk_score || 0) * 100}%` }}
+                />
               </div>
             </div>
-          )}
-
-          {/* Database Access */}
-          {incident.iocs?.database_access_patterns?.length > 0 && (
-            <div className="p-4 bg-orange-50 rounded-xl border border-orange-300">
-              <h3 className="font-semibold text-orange-800 mb-2">🗄️ DATABASE ACCESS</h3>
-              <div className="text-sm text-orange-700 mb-2">Data access patterns detected</div>
-              <div className="space-y-1">
-                {incident.iocs.database_access_patterns.slice(0, 2).map((pattern, idx) => (
-                  <div key={idx} className="text-xs font-mono bg-orange-100 p-2 rounded text-orange-800 break-all">
-                    {pattern}
-                  </div>
-                ))}
+            
+            <div className="bg-blue-500/10 border border-blue-500/30 p-4 rounded-xl">
+              <div className="flex items-center gap-2 mb-2">
+                <TrendingUp className="w-5 h-5 text-blue-400" />
+                <span className="text-sm text-blue-400 font-medium">ML Confidence</span>
+              </div>
+              <div className="text-2xl font-bold text-blue-300">
+                {formatConfidence(incident.agent_confidence)}
+              </div>
+              <div className="mt-2 bg-gray-700 rounded-full h-2">
+                <div 
+                  className="bg-blue-500 h-2 rounded-full transition-all duration-500"
+                  style={{ width: `${(incident.agent_confidence || 0) * 100}%` }}
+                />
               </div>
             </div>
-          )}
-
-          {/* Privilege Escalation */}
-          {incident.iocs?.privilege_escalation_indicators?.length > 0 && (
-            <div className="p-4 bg-purple-50 rounded-xl border border-purple-300">
-              <h3 className="font-semibold text-purple-800 mb-2">⬆️ PRIVILEGE ESCALATION</h3>
-              <div className="text-sm text-purple-700 mb-2">Escalation attempts detected</div>
-              <div className="space-y-1">
-                {incident.iocs.privilege_escalation_indicators.slice(0, 2).map((indicator, idx) => (
-                  <div key={idx} className="text-xs font-mono bg-purple-100 p-2 rounded text-purple-800 break-all">
-                    {indicator}
-                  </div>
-                ))}
+            
+            <div className="bg-purple-500/10 border border-purple-500/30 p-4 rounded-xl">
+              <div className="flex items-center gap-2 mb-2">
+                <Flag className="w-5 h-5 text-purple-400" />
+                <span className="text-sm text-purple-400 font-medium">Escalation</span>
+              </div>
+              <div className="text-xl font-bold text-purple-300 capitalize">
+                {incident.escalation_level || 'Medium'}
               </div>
             </div>
-          )}
-        </div>
-
-        {/* Post-Exploitation Activity */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          {/* Data Exfiltration */}
-          {incident.iocs?.data_exfiltration_indicators?.length > 0 && (
-            <div className="p-4 bg-red-50 rounded-xl border border-red-200">
-              <h3 className="font-semibold text-red-800 mb-2">📤 DATA EXFILTRATION</h3>
-              <div className="space-y-1">
-                {incident.iocs.data_exfiltration_indicators.slice(0, 2).map((indicator, idx) => (
-                  <div key={idx} className="text-xs font-mono bg-red-100 p-2 rounded text-red-700 break-all">
-                    {indicator}
-                  </div>
-                ))}
+            
+            <div className="bg-green-500/10 border border-green-500/30 p-4 rounded-xl">
+              <div className="flex items-center gap-2 mb-2">
+                <Bot className="w-5 h-5 text-green-400" />
+                <span className="text-sm text-green-400 font-medium">Detection</span>
+              </div>
+              <div className="text-sm font-bold text-green-300 capitalize">
+                {incident.containment_method || 'Rule-based'}
               </div>
             </div>
-          )}
-
-          {/* Persistence */}
-          {incident.iocs?.persistence_mechanisms?.length > 0 && (
-            <div className="p-4 bg-yellow-50 rounded-xl border border-yellow-200">
-              <h3 className="font-semibold text-yellow-800 mb-2">🔒 PERSISTENCE</h3>
-              <div className="space-y-1">
-                {incident.iocs.persistence_mechanisms.slice(0, 2).map((mechanism, idx) => (
-                  <div key={idx} className="text-xs font-mono bg-yellow-100 p-2 rounded text-yellow-700 break-all">
-                    {mechanism}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Lateral Movement */}
-          {incident.iocs?.lateral_movement_indicators?.length > 0 && (
-            <div className="p-4 bg-pink-50 rounded-xl border border-pink-200">
-              <h3 className="font-semibold text-pink-800 mb-2">↔️ LATERAL MOVEMENT</h3>
-              <div className="space-y-1">
-                {incident.iocs.lateral_movement_indicators.slice(0, 2).map((indicator, idx) => (
-                  <div key={idx} className="text-xs font-mono bg-pink-100 p-2 rounded text-pink-700 break-all">
-                    {indicator}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Reconnaissance */}
-          {incident.iocs?.reconnaissance_patterns?.length > 0 && (
-            <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
-              <h3 className="font-semibold text-blue-800 mb-2">🔍 RECONNAISSANCE</h3>
-              <div className="space-y-1">
-                {incident.iocs.reconnaissance_patterns.slice(0, 2).map((pattern, idx) => (
-                  <div key={idx} className="text-xs font-mono bg-blue-100 p-2 rounded text-blue-700 break-all">
-                    {pattern}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Traditional IOCs */}
-      <div className="p-6 rounded-2xl shadow-sm border border-gray-200 bg-white">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">🔍 Technical Indicators of Compromise</h2>
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* SQL Injection Patterns */}
-          {incident.iocs?.sql_injection_patterns?.length > 0 && (
-            <div className="p-4 bg-red-50 rounded-xl border border-red-200">
-              <h3 className="font-semibold text-red-800 mb-2">🚨 SQL Injection</h3>
-              <div className="space-y-1">
-                {incident.iocs.sql_injection_patterns.slice(0, 3).map((pattern, idx) => (
-                  <div key={idx} className="text-xs font-mono bg-red-100 p-2 rounded text-red-700 break-all">
-                    {pattern}
-                  </div>
-                ))}
-                {incident.iocs.sql_injection_patterns.length > 3 && (
-                  <div className="text-xs text-red-600">
-                    +{incident.iocs.sql_injection_patterns.length - 3} more patterns
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Command Patterns */}
-          {incident.iocs?.command_patterns?.length > 0 && (
-            <div className="p-4 bg-orange-50 rounded-xl border border-orange-200">
-              <h3 className="font-semibold text-orange-800 mb-2">⚡ Commands</h3>
-              <div className="space-y-1">
-                {incident.iocs.command_patterns.slice(0, 3).map((cmd, idx) => (
-                  <div key={idx} className="text-xs font-mono bg-orange-100 p-2 rounded text-orange-700 break-all">
-                    {cmd}
-                  </div>
-                ))}
-                {incident.iocs.command_patterns.length > 3 && (
-                  <div className="text-xs text-orange-600">
-                    +{incident.iocs.command_patterns.length - 3} more commands
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* URLs/Paths */}
-          {incident.iocs?.urls?.length > 0 && (
-            <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
-              <h3 className="font-semibold text-blue-800 mb-2">🌐 URLs/Paths</h3>
-              <div className="space-y-1">
-                {incident.iocs.urls.slice(0, 3).map((url, idx) => (
-                  <div key={idx} className="text-xs font-mono bg-blue-100 p-2 rounded text-blue-700 break-all">
-                    {url}
-                  </div>
-                ))}
-                {incident.iocs.urls.length > 3 && (
-                  <div className="text-xs text-blue-600">
-                    +{incident.iocs.urls.length - 3} more URLs
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* IP Addresses */}
-          {incident.iocs?.ip_addresses?.length > 0 && (
-            <div className="p-4 bg-purple-50 rounded-xl border border-purple-200">
-              <h3 className="font-semibold text-purple-800 mb-2">🌍 IP Addresses</h3>
-              <div className="space-y-1">
-                {incident.iocs.ip_addresses.slice(0, 3).map((ip, idx) => (
-                  <div key={idx} className="text-xs font-mono bg-purple-100 p-2 rounded text-purple-700">
-                    {ip}
-                  </div>
-                ))}
-                {incident.iocs.ip_addresses.length > 3 && (
-                  <div className="text-xs text-purple-600">
-                    +{incident.iocs.ip_addresses.length - 3} more IPs
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Attack Timeline */}
-      <div className="p-6 rounded-2xl shadow-sm border border-gray-200 bg-white">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">⏱️ Attack Timeline</h2>
-        <div className="max-h-96 overflow-y-auto">
-          <div className="space-y-3">
-            {incident.attack_timeline?.map((event, idx) => (
-              <div key={idx} className="flex gap-4 border-l-4 border-gray-200 pl-4 pb-4 relative">
-                {/* Severity indicator */}
-                <div className={`absolute -left-2 w-4 h-4 rounded-full ${
-                  event.severity === 'critical' ? 'bg-red-600' :
-                  event.severity === 'high' ? 'bg-red-400' :
-                  event.severity === 'medium' ? 'bg-yellow-400' :
-                  'bg-gray-400'
-                }`}></div>
-                
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      event.attack_category === 'web_attack' ? 'bg-red-100 text-red-700' :
-                      event.attack_category === 'authentication' ? 'bg-yellow-100 text-yellow-700' :
-                      event.attack_category === 'command_execution' ? 'bg-orange-100 text-orange-700' :
-                      'bg-gray-100 text-gray-700'
-                    }`}>
-                      {event.attack_category.replace('_', ' ')}
-                    </span>
-                    <span className="text-xs text-gray-500 font-mono">
-                      {new Date(event.timestamp).toLocaleTimeString()}
-                    </span>
-                  </div>
-                  
-                  <div className="text-sm text-gray-900 mb-1">
-                    {event.description}
-                  </div>
-                  
-                  <div className="text-xs text-gray-500 font-mono">
-                    {event.event_id}
-                  </div>
-                  
-                  {/* Raw data preview */}
-                  {event.raw_data && Object.keys(event.raw_data).length > 0 && (
-                    <details className="mt-2">
-                      <summary className="text-xs text-blue-600 cursor-pointer hover:text-blue-800">
-                        View raw data
-                      </summary>
-                      <pre className="text-xs bg-gray-50 p-2 rounded mt-1 overflow-x-auto">
-                        {JSON.stringify(event.raw_data, null, 2)}
-                      </pre>
-                    </details>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Details Grid */}
-      <div className="grid md:grid-cols-2 gap-6">
-        {/* Detailed Events */}
-        <div className="p-6 rounded-2xl shadow-sm border border-gray-200 bg-white">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            📊 Detailed Events ({incident.event_summary?.total_events || 0})
-          </h2>
-          <div className="space-y-3 max-h-80 overflow-y-auto">
-            {incident.detailed_events?.map((event, index) => (
-              <div key={event.id} className="border-b border-gray-100 pb-3 last:border-b-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="text-xs text-gray-500">
-                    {formatDate(event.ts)}
-                  </div>
-                  <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">
-                    {event.source_type}
-                  </span>
-                </div>
-                <div className="font-mono text-xs text-gray-700 mb-1">
-                  {event.eventid}
-                </div>
-                {event.message && (
-                  <div className="text-sm text-gray-600 mb-1">
-                    {event.message}
-                  </div>
-                )}
-                {event.dst_port && (
-                  <div className="text-xs text-gray-500">
-                    Port: {event.dst_port}
-                  </div>
-                )}
-                {/* Raw event data */}
-                {event.raw && Object.keys(event.raw).length > 0 && (
-                  <details className="mt-2">
-                    <summary className="text-xs text-blue-600 cursor-pointer hover:text-blue-800">
-                      View raw event
-                    </summary>
-                    <pre className="text-xs bg-gray-50 p-2 rounded mt-1 overflow-x-auto max-h-32">
-                      {JSON.stringify(event.raw, null, 2)}
-                    </pre>
-                  </details>
-                )}
-              </div>
-            ))}
           </div>
         </div>
 
-        {/* Action History */}
-        <div className="p-6 rounded-2xl shadow-sm border border-gray-200 bg-white">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">🔧 Action History</h2>
-          <div className="space-y-3 max-h-80 overflow-y-auto">
-            {incident.actions.map((action) => (
-              <div key={action.id} className="border-b border-gray-100 pb-3 last:border-b-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">
-                    {action.action}
-                  </span>
-                  <span className={`text-xs px-2 py-1 rounded ${
-                    action.result === "success" ? "bg-green-100 text-green-800" :
-                    action.result === "failed" ? "bg-red-100 text-red-800" :
-                    action.result === "pending" ? "bg-yellow-100 text-yellow-800" :
-                    "bg-gray-100 text-gray-800"
-                  }`}>
-                    {action.result}
-                  </span>
-                </div>
-                <div className="text-xs text-gray-500 mt-1">
-                  {formatDate(action.created_at)}
-                  {action.due_at && (
-                    <span className="ml-2">• Due: {formatDate(action.due_at)}</span>
-                  )}
-                </div>
-                {action.detail && (
-                  <div className="text-xs text-gray-600 mt-2 bg-gray-50 p-2 rounded">
-                    {action.detail}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Advanced SOC Capabilities */}
-      <div className="p-6 rounded-2xl shadow-sm border border-gray-200 bg-white">
-        <h2 className="text-lg font-semibold text-gray-900 mb-6">🎯 Advanced Response & Investigation</h2>
-        
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* Threat Intelligence */}
-          <div className="p-4 border border-gray-200 rounded-xl">
-            <h3 className="font-semibold text-gray-800 mb-3">🌐 Threat Intelligence</h3>
-            <div className="space-y-2">
-              <button className="w-full text-left px-3 py-2 text-sm bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200">
-                Query VirusTotal for IP reputation
-              </button>
-              <button className="w-full text-left px-3 py-2 text-sm bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200">
-                Check AlienVault OTX feeds
-              </button>
-              <button className="w-full text-left px-3 py-2 text-sm bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200">
-                Lookup in AbuseIPDB
-              </button>
-              <button className="w-full text-left px-3 py-2 text-sm bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200">
-                Search MISP threat feeds
-              </button>
-            </div>
-          </div>
-
-          {/* Network Actions */}
-          <div className="p-4 border border-gray-200 rounded-xl">
-            <h3 className="font-semibold text-gray-800 mb-3">🔒 Network Response</h3>
-            <div className="space-y-2">
-              <button className="w-full text-left px-3 py-2 text-sm bg-red-50 hover:bg-red-100 rounded-lg border border-red-200">
-                Block IP at firewall
-              </button>
-              <button className="w-full text-left px-3 py-2 text-sm bg-red-50 hover:bg-red-100 rounded-lg border border-red-200">
-                Add to DNS sinkhole
-              </button>
-              <button className="w-full text-left px-3 py-2 text-sm bg-orange-50 hover:bg-orange-100 rounded-lg border border-orange-200">
-                Rate limit IP traffic
-              </button>
-              <button className="w-full text-left px-3 py-2 text-sm bg-orange-50 hover:bg-orange-100 rounded-lg border border-orange-200">
-                Deploy honeypot redirect
-              </button>
-            </div>
-          </div>
-
-          {/* Forensic Actions */}
-          <div className="p-4 border border-gray-200 rounded-xl">
-            <h3 className="font-semibold text-gray-800 mb-3">🔬 Forensics</h3>
-            <div className="space-y-2">
-              <button className="w-full text-left px-3 py-2 text-sm bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200">
-                Capture network traffic
-              </button>
-              <button className="w-full text-left px-3 py-2 text-sm bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200">
-                Generate evidence package
-              </button>
-              <button className="w-full text-left px-3 py-2 text-sm bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200">
-                Export IOCs to STIX/TAXII
-              </button>
-              <button className="w-full text-left px-3 py-2 text-sm bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200">
-                Create case in SOAR
-              </button>
-            </div>
-          </div>
-
-          {/* Hunting & Pivoting */}
-          <div className="p-4 border border-gray-200 rounded-xl">
-            <h3 className="font-semibold text-gray-800 mb-3">🎯 Threat Hunting</h3>
-            <div className="space-y-2">
-              <button className="w-full text-left px-3 py-2 text-sm bg-green-50 hover:bg-green-100 rounded-lg border border-green-200">
-                Hunt for similar attacks
-              </button>
-              <button className="w-full text-left px-3 py-2 text-sm bg-green-50 hover:bg-green-100 rounded-lg border border-green-200">
-                Check other honeypots
-              </button>
-              <button className="w-full text-left px-3 py-2 text-sm bg-green-50 hover:bg-green-100 rounded-lg border border-green-200">
-                Analyze attack patterns
-              </button>
-              <button className="w-full text-left px-3 py-2 text-sm bg-green-50 hover:bg-green-100 rounded-lg border border-green-200">
-                Generate hunt queries
-              </button>
-            </div>
-          </div>
-
-          {/* Attribution */}
-          <div className="p-4 border border-gray-200 rounded-xl">
-            <h3 className="font-semibold text-gray-800 mb-3">🕵️ Attribution</h3>
-            <div className="space-y-2">
-              <button className="w-full text-left px-3 py-2 text-sm bg-yellow-50 hover:bg-yellow-100 rounded-lg border border-yellow-200">
-                Link to threat actors
-              </button>
-              <button className="w-full text-left px-3 py-2 text-sm bg-yellow-50 hover:bg-yellow-100 rounded-lg border border-yellow-200">
-                Analyze TTPs (MITRE ATT&CK)
-              </button>
-              <button className="w-full text-left px-3 py-2 text-sm bg-yellow-50 hover:bg-yellow-100 rounded-lg border border-yellow-200">
-                Check campaign signatures
-              </button>
-              <button className="w-full text-left px-3 py-2 text-sm bg-yellow-50 hover:bg-yellow-100 rounded-lg border border-yellow-200">
-                Geolocation analysis
-              </button>
-            </div>
-          </div>
-
-          {/* Escalation */}
-          <div className="p-4 border border-gray-200 rounded-xl">
-            <h3 className="font-semibold text-gray-800 mb-3">📢 Escalation</h3>
-            <div className="space-y-2">
-              <button className="w-full text-left px-3 py-2 text-sm bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200">
-                Alert senior analysts
-              </button>
-              <button className="w-full text-left px-3 py-2 text-sm bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200">
-                Create JIRA ticket
-              </button>
-              <button className="w-full text-left px-3 py-2 text-sm bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200">
-                Notify threat intel team
-              </button>
-              <button className="w-full text-left px-3 py-2 text-sm bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200">
-                Schedule war room
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* AI Assistant Chat Interface */}
-      <div className="p-6 rounded-2xl shadow-sm border border-gray-200 bg-white">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">🤖 AI Security Analyst</h2>
-        <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-4 rounded-xl border border-blue-200 mb-4">
-          <div className="flex items-start gap-3">
-            <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-bold">
-              AI
+        {/* Compromise Assessment Alert - Enhanced */}
+        <div className={`p-6 rounded-2xl border-2 shadow-xl ${getCompromiseColor(compromiseStatus)}`}>
+          <div className="flex items-start gap-4 mb-6">
+            <div className="p-2 rounded-full bg-white/10">
+              <AlertTriangle className="w-8 h-8" />
             </div>
             <div className="flex-1">
-              <div className="text-sm text-gray-700 mb-2">
-                <strong>AI Security Analyst:</strong> I've analyzed incident #{incident.id} involving {incident.src_ip}. 
-                {incident.iocs?.sql_injection_patterns?.length > 0 && 
-                  ` I detected ${incident.iocs.sql_injection_patterns.length} SQL injection patterns indicating a web application attack.`
-                }
-                {incident.risk_score && incident.risk_score > 0.7 && 
-                  ` The risk score of ${(incident.risk_score * 100).toFixed(0)}% suggests this is a high-priority threat.`
-                }
-              </div>
-              <div className="text-sm text-blue-700">
-                <strong>Recommendations:</strong>
-                <ul className="list-disc list-inside mt-1 space-y-1">
-                  <li>Immediate IP blocking implemented - monitoring for evasion attempts</li>
-                  <li>Check web application logs for successful exploitation</li>
-                  <li>Validate database integrity and check for data exfiltration</li>
-                  <li>Deploy additional monitoring for similar attack patterns</li>
-                  {incident.escalation_level === 'high' && 
-                    <li>Consider escalating to incident response team due to high severity</li>
-                  }
-                </ul>
+              <h2 className="text-2xl font-bold mb-2">
+                Compromise Assessment: {compromiseStatus}
+              </h2>
+              <p className="text-sm opacity-90 mb-4">
+                {compromiseStatus === 'CONFIRMED' && '⚠️ Active compromise detected - immediate response required'}
+                {compromiseStatus === 'SUSPECTED' && '🔍 Potential compromise indicators - investigation needed'}
+                {compromiseStatus === 'UNLIKELY' && '✅ No clear signs of successful compromise'}
+              </p>
+              
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {[
+                  { key: 'successful_auth_indicators', label: 'Auth Success', icon: '🔑' },
+                  { key: 'database_access_patterns', label: 'DB Access', icon: '🗄️' },
+                  { key: 'privilege_escalation_indicators', label: 'Privilege Esc.', icon: '⬆️' },
+                  { key: 'data_exfiltration_indicators', label: 'Data Exfil.', icon: '📤' }
+                ].map(({ key, label, icon }) => (
+                  <div key={key} className="flex items-center gap-2 p-2 bg-white/5 rounded-lg">
+                    <div className={`w-3 h-3 rounded-full ${
+                      (incident.iocs as any)?.[key]?.length > 0 ? 'bg-current animate-pulse' : 'bg-gray-600'
+                    }`}></div>
+                    <span className="text-sm font-medium">{icon} {label}</span>
+                    <span className="text-xs ml-auto">
+                      {(incident.iocs as any)?.[key]?.length || 0}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Chat Interface */}
-        <div className="border border-gray-200 rounded-xl">
-          <div className="p-4 bg-gray-50 border-b border-gray-200 rounded-t-xl">
-            <h3 className="font-medium text-gray-800">Chat with AI about this incident</h3>
-            <p className="text-sm text-gray-600">Ask questions about attack patterns, recommendations, or next steps</p>
-          </div>
-          
-          <div className="p-4 max-h-60 overflow-y-auto space-y-3">
-            {/* Example AI responses */}
-            <div className="flex gap-3">
-              <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-white text-xs">
-                AI
-              </div>
-              <div className="flex-1 bg-blue-50 p-3 rounded-lg">
-                <p className="text-sm text-gray-700">
-                  Based on the attack patterns, this appears to be automated SQL injection reconnaissance. 
-                  The attacker used basic injection patterns but hasn't shown signs of advanced persistence techniques.
-                </p>
-              </div>
+        {/* SOC Action Panels Grid - Enhanced */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+          {/* Immediate Response Panel */}
+          <div className="bg-red-500/10 border border-red-500/30 p-6 rounded-xl shadow-lg hover:shadow-xl transition-all">
+            <h3 className="text-lg font-semibold text-red-300 mb-4 flex items-center gap-2">
+              <Ban className="w-5 h-5" />
+              🚨 Immediate Response
+            </h3>
+            <div className="space-y-3">
+              {[
+                { action: 'block_ip', label: `Block IP: ${incident.src_ip}`, icon: Ban },
+                { action: 'isolate_host', label: 'Isolate Host', icon: Shield },
+                { action: 'reset_passwords', label: 'Reset Admin Passwords', icon: Key }
+              ].map(({ action, label, icon: Icon }) => (
+                <button
+                  key={action}
+                  onClick={() => handleSOCAction(action, label)}
+                  disabled={actionLoading === action}
+                  className="w-full flex items-center gap-3 px-4 py-3 bg-red-600/20 hover:bg-red-600/30 disabled:bg-red-600/10 text-red-100 rounded-lg font-medium transition-all border border-red-500/30 hover:border-red-500/50 group"
+                  title={`Execute ${label}`}
+                >
+                  {actionLoading === action ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Icon className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                  )}
+                  <span className="text-sm">{label}</span>
+                </button>
+              ))}
             </div>
           </div>
-          
-          <div className="p-4 border-t border-gray-200">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Ask me about this incident... (e.g., 'What are the next steps?' or 'Should we escalate this?')"
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
-                Ask AI
+
+          {/* Database Security Panel */}
+          <div className="bg-purple-500/10 border border-purple-500/30 p-6 rounded-xl shadow-lg hover:shadow-xl transition-all">
+            <h3 className="text-lg font-semibold text-purple-300 mb-4 flex items-center gap-2">
+              <Database className="w-5 h-5" />
+              🗄️ Database Security
+            </h3>
+            <div className="space-y-3">
+              {[
+                { action: 'check_db_integrity', label: 'Check DB Integrity', icon: Database },
+                { action: 'deploy_waf_rules', label: 'Deploy WAF Rules', icon: Shield }
+              ].map(({ action, label, icon: Icon }) => (
+                <button
+                  key={action}
+                  onClick={() => handleSOCAction(action, label)}
+                  disabled={actionLoading === action}
+                  className="w-full flex items-center gap-3 px-4 py-3 bg-purple-600/20 hover:bg-purple-600/30 disabled:bg-purple-600/10 text-purple-100 rounded-lg font-medium transition-all border border-purple-500/30 hover:border-purple-500/50 group"
+                  title={`Execute ${label}`}
+                >
+                  {actionLoading === action ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Icon className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                  )}
+                  <span className="text-sm">{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Threat Intelligence Panel */}
+          <div className="bg-blue-500/10 border border-blue-500/30 p-6 rounded-xl shadow-lg hover:shadow-xl transition-all">
+            <h3 className="text-lg font-semibold text-blue-300 mb-4 flex items-center gap-2">
+              <Search className="w-5 h-5" />
+              🔍 Threat Intelligence
+            </h3>
+            <div className="space-y-3">
+              <button
+                onClick={() => handleSOCAction('threat_intel_lookup', `Intel Lookup: ${incident.src_ip}`)}
+                disabled={actionLoading === 'threat_intel_lookup'}
+                className="w-full flex items-center gap-3 px-4 py-3 bg-blue-600/20 hover:bg-blue-600/30 disabled:bg-blue-600/10 text-blue-100 rounded-lg font-medium transition-all border border-blue-500/30 hover:border-blue-500/50 group"
+                title="Lookup threat intelligence for source IP"
+              >
+                {actionLoading === 'threat_intel_lookup' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Globe className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                )}
+                <span className="text-sm">Intel Lookup: {incident.src_ip}</span>
               </button>
             </div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded-full text-xs text-gray-700">
-                What TTPs were used?
+          </div>
+
+          {/* Forensics Panel */}
+          <div className="bg-cyan-500/10 border border-cyan-500/30 p-6 rounded-xl shadow-lg hover:shadow-xl transition-all">
+            <h3 className="text-lg font-semibold text-cyan-300 mb-4 flex items-center gap-2">
+              <Archive className="w-5 h-5" />
+              🔬 Forensics
+            </h3>
+            <div className="space-y-3">
+              {[
+                { action: 'capture_traffic', label: 'Capture Traffic', icon: Network },
+                { action: 'create_case', label: 'Create SOAR Case', icon: FileText }
+              ].map(({ action, label, icon: Icon }) => (
+                <button
+                  key={action}
+                  onClick={() => handleSOCAction(action, label)}
+                  disabled={actionLoading === action}
+                  className="w-full flex items-center gap-3 px-4 py-3 bg-cyan-600/20 hover:bg-cyan-600/30 disabled:bg-cyan-600/10 text-cyan-100 rounded-lg font-medium transition-all border border-cyan-500/30 hover:border-cyan-500/50 group"
+                  title={`Execute ${label}`}
+                >
+                  {actionLoading === action ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Icon className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                  )}
+                  <span className="text-sm">{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Threat Hunting Panel */}
+          <div className="bg-yellow-500/10 border border-yellow-500/30 p-6 rounded-xl shadow-lg hover:shadow-xl transition-all">
+            <h3 className="text-lg font-semibold text-yellow-300 mb-4 flex items-center gap-2">
+              <Target className="w-5 h-5" />
+              🎯 Threat Hunting
+            </h3>
+            <div className="space-y-3">
+              <button
+                onClick={() => handleSOCAction('hunt_similar_attacks', 'Hunt Similar Attacks')}
+                disabled={actionLoading === 'hunt_similar_attacks'}
+                className="w-full flex items-center gap-3 px-4 py-3 bg-yellow-600/20 hover:bg-yellow-600/30 disabled:bg-yellow-600/10 text-yellow-100 rounded-lg font-medium transition-all border border-yellow-500/30 hover:border-yellow-500/50 group"
+                title="Hunt for similar attack patterns"
+              >
+                {actionLoading === 'hunt_similar_attacks' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Crosshair className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                )}
+                <span className="text-sm">Hunt Similar Attacks</span>
               </button>
-              <button className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded-full text-xs text-gray-700">
-                Should we escalate?
-              </button>
-              <button className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded-full text-xs text-gray-700">
-                Generate hunt queries
-              </button>
-              <button className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded-full text-xs text-gray-700">
-                Create MITRE mapping
+            </div>
+          </div>
+
+          {/* Escalation Panel */}
+          <div className="bg-orange-500/10 border border-orange-500/30 p-6 rounded-xl shadow-lg hover:shadow-xl transition-all">
+            <h3 className="text-lg font-semibold text-orange-300 mb-4 flex items-center gap-2">
+              <Bell className="w-5 h-5" />
+              📢 Escalation
+            </h3>
+            <div className="space-y-3">
+              <button
+                onClick={() => handleSOCAction('alert_analysts', 'Alert Senior Analysts')}
+                disabled={actionLoading === 'alert_analysts'}
+                className="w-full flex items-center gap-3 px-4 py-3 bg-orange-600/20 hover:bg-orange-600/30 disabled:bg-orange-600/10 text-orange-100 rounded-lg font-medium transition-all border border-orange-500/30 hover:border-orange-500/50 group"
+                title="Alert senior security analysts"
+              >
+                {actionLoading === 'alert_analysts' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Users className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                )}
+                <span className="text-sm">Alert Senior Analysts</span>
               </button>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Playbook Recommendations */}
-      <div className="p-6 rounded-2xl shadow-sm border border-gray-200 bg-white">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">📋 Response Playbooks</h2>
-        <div className="grid md:grid-cols-2 gap-4">
-          <div className="border border-orange-200 bg-orange-50 p-4 rounded-xl">
-            <h3 className="font-semibold text-orange-800 mb-2">🌐 Web Application Attack Response</h3>
-            <div className="text-sm text-orange-700 space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="w-4 h-4 bg-green-500 rounded-full text-xs flex items-center justify-center text-white">✓</span>
-                <span>IP blocking activated</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-4 h-4 bg-yellow-500 rounded-full text-xs flex items-center justify-center text-white">2</span>
-                <span>Check application logs for successful exploitation</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-4 h-4 bg-gray-400 rounded-full text-xs flex items-center justify-center text-white">3</span>
-                <span>Validate database integrity</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-4 h-4 bg-gray-400 rounded-full text-xs flex items-center justify-center text-white">4</span>
-                <span>Update WAF rules</span>
-              </div>
+        {/* IOC Analysis Grid - Enhanced */}
+        {incident.iocs && Object.values(incident.iocs).some(arr => arr.length > 0) && (
+          <div className="bg-gray-800/50 border border-gray-700/50 p-6 rounded-xl">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                <Flag className="w-6 h-6 text-orange-400" />
+                🔍 Indicators of Compromise
+              </h2>
+              <button
+                onClick={() => toggleSection('iocs')}
+                className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                {expandedSections.iocs ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+              </button>
             </div>
+            
+            {expandedSections.iocs && (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {incident.iocs.successful_auth_indicators?.length > 0 && (
+                  <div className="p-4 bg-red-500/20 border border-red-500/50 rounded-xl">
+                    <h3 className="font-semibold text-red-300 mb-2 flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4" />
+                      🚨 COMPROMISE CONFIRMED
+                    </h3>
+                    <div className="text-sm text-red-400 mb-3">
+                      {incident.iocs.successful_auth_indicators.length} successful auth indicators
+                    </div>
+                    <div className="space-y-2">
+                      {incident.iocs.successful_auth_indicators.slice(0, 2).map((indicator, idx) => (
+                        <div key={idx} className="text-xs font-mono bg-red-800/30 p-2 rounded border border-red-700/50">
+                          <div className="text-red-200 break-all">{indicator}</div>
+                        </div>
+                      ))}
+                      {incident.iocs.successful_auth_indicators.length > 2 && (
+                        <div className="text-xs text-red-400 text-center py-1">
+                          +{incident.iocs.successful_auth_indicators.length - 2} more
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {incident.iocs.sql_injection_patterns?.length > 0 && (
+                  <div className="p-4 bg-red-500/20 border border-red-500/50 rounded-xl">
+                    <h3 className="font-semibold text-red-300 mb-2 flex items-center gap-2">
+                      <Code className="w-4 h-4" />
+                      🚨 SQL INJECTION
+                    </h3>
+                    <div className="text-sm text-red-400 mb-3">
+                      {incident.iocs.sql_injection_patterns.length} injection patterns detected
+                    </div>
+                    <div className="space-y-2">
+                      {incident.iocs.sql_injection_patterns.slice(0, 2).map((pattern, idx) => (
+                        <div key={idx} className="text-xs font-mono bg-red-800/30 p-2 rounded border border-red-700/50">
+                          <div className="text-red-200 break-all">{pattern}</div>
+                        </div>
+                      ))}
+                      {incident.iocs.sql_injection_patterns.length > 2 && (
+                        <div className="text-xs text-red-400 text-center py-1">
+                          +{incident.iocs.sql_injection_patterns.length - 2} more
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {incident.iocs.database_access_patterns?.length > 0 && (
+                  <div className="p-4 bg-orange-500/20 border border-orange-500/50 rounded-xl">
+                    <h3 className="font-semibold text-orange-300 mb-2 flex items-center gap-2">
+                      <Database className="w-4 h-4" />
+                      🗄️ DATABASE ACCESS
+                    </h3>
+                    <div className="text-sm text-orange-400 mb-3">
+                      {incident.iocs.database_access_patterns.length} access patterns detected
+                    </div>
+                    <div className="space-y-2">
+                      {incident.iocs.database_access_patterns.slice(0, 2).map((pattern, idx) => (
+                        <div key={idx} className="text-xs font-mono bg-orange-800/30 p-2 rounded border border-orange-700/50">
+                          <div className="text-orange-200 break-all">{pattern}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {incident.iocs.command_patterns?.length > 0 && (
+                  <div className="p-4 bg-orange-500/20 border border-orange-500/50 rounded-xl">
+                    <h3 className="font-semibold text-orange-300 mb-2 flex items-center gap-2">
+                      <Server className="w-4 h-4" />
+                      ⚡ COMMAND EXECUTION
+                    </h3>
+                    <div className="text-sm text-orange-400 mb-3">
+                      {incident.iocs.command_patterns.length} commands detected
+                    </div>
+                    <div className="space-y-2">
+                      {incident.iocs.command_patterns.slice(0, 2).map((cmd, idx) => (
+                        <div key={idx} className="text-xs font-mono bg-orange-800/30 p-2 rounded border border-orange-700/50">
+                          <div className="text-orange-200 break-all">{cmd}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
+        )}
 
-          <div className="border border-blue-200 bg-blue-50 p-4 rounded-xl">
-            <h3 className="font-semibold text-blue-800 mb-2">🕵️ Advanced Threat Hunting</h3>
-            <div className="text-sm text-blue-700 space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="w-4 h-4 bg-gray-400 rounded-full text-xs flex items-center justify-center text-white">1</span>
-                <span>Search for similar IPs in last 30 days</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-4 h-4 bg-gray-400 rounded-full text-xs flex items-center justify-center text-white">2</span>
-                <span>Analyze SQL injection payload sophistication</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-4 h-4 bg-gray-400 rounded-full text-xs flex items-center justify-center text-white">3</span>
-                <span>Check for privilege escalation attempts</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-4 h-4 bg-gray-400 rounded-full text-xs flex items-center justify-center text-white">4</span>
-                <span>Generate threat intelligence report</span>
-              </div>
+        {/* Attack Timeline - Enhanced */}
+        <div className="bg-gray-800/50 border border-gray-700/50 p-6 rounded-xl">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+              <Clock className="w-6 h-6 text-blue-400" />
+              ⏱️ Attack Timeline
+            </h2>
+            <button
+              onClick={() => toggleSection('timeline')}
+              className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+            >
+              {expandedSections.timeline ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+            </button>
+          </div>
+          
+          {expandedSections.timeline && (
+            <div className="max-h-96 overflow-y-auto space-y-4">
+              {incident.attack_timeline?.map((event, idx) => (
+                <div key={idx} className="flex gap-4 border-l-4 border-gray-600 pl-6 pb-4 relative group hover:border-blue-500 transition-colors">
+                  <div className={`absolute -left-2 w-4 h-4 rounded-full border-2 border-gray-800 ${
+                    event.severity === 'critical' ? 'bg-red-500' :
+                    event.severity === 'high' ? 'bg-red-400' :
+                    event.severity === 'medium' ? 'bg-yellow-400' :
+                    'bg-gray-400'
+                  }`}></div>
+                  
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className={`px-3 py-1 text-xs rounded-full font-medium ${
+                        event.attack_category === 'web_attack' ? 'bg-red-500/20 text-red-300 border border-red-500/30' :
+                        event.attack_category === 'authentication' ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30' :
+                        event.attack_category === 'command_execution' ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30' :
+                        'bg-gray-700 text-gray-300 border border-gray-600'
+                      }`}>
+                        {event.attack_category.replace('_', ' ').toUpperCase()}
+                      </span>
+                      <span className="text-xs text-gray-400 font-mono">
+                        {formatTimeAgo(event.timestamp)}
+                      </span>
+                      <span className={`px-2 py-1 text-xs rounded font-medium ${
+                        event.severity === 'critical' ? 'bg-red-500/20 text-red-300' :
+                        event.severity === 'high' ? 'bg-red-400/20 text-red-300' :
+                        event.severity === 'medium' ? 'bg-yellow-400/20 text-yellow-300' :
+                        'bg-gray-600/20 text-gray-300'
+                      }`}>
+                        {event.severity.toUpperCase()}
+                      </span>
+                    </div>
+                    
+                    <div className="text-sm text-gray-300 mb-2 group-hover:text-white transition-colors">
+                      {event.description || 'Attack event detected'}
+                    </div>
+                    
+                    <div className="text-xs text-gray-500 font-mono">
+                      Event ID: {event.event_id}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              
+              {(!incident.attack_timeline || incident.attack_timeline.length === 0) && (
+                <div className="text-center py-8 text-gray-500">
+                  <Clock className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                  <p>No timeline events available</p>
+                </div>
+              )}
             </div>
+          )}
+        </div>
+
+        {/* Action History - Enhanced */}
+        <div className="bg-gray-800/50 border border-gray-700/50 p-6 rounded-xl">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+              <History className="w-6 h-6 text-green-400" />
+              🔧 Action History
+            </h2>
+            <button
+              onClick={() => toggleSection('history')}
+              className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+            >
+              {expandedSections.history ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+            </button>
+          </div>
+          
+          {expandedSections.history && (
+            <div className="space-y-3 max-h-80 overflow-y-auto">
+              {incident.actions.map((action) => (
+                <div key={action.id} className="p-4 bg-gray-700/30 border border-gray-600/50 rounded-lg hover:bg-gray-700/50 transition-colors">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-sm bg-gray-700 text-gray-300 px-3 py-1 rounded-full">
+                        {action.action}
+                      </span>
+                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                        action.result === "success" ? "bg-green-500/20 text-green-300 border border-green-500/30" :
+                        action.result === "failed" ? "bg-red-500/20 text-red-300 border border-red-500/30" :
+                        action.result === "pending" ? "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30" :
+                        "bg-gray-600/20 text-gray-300 border border-gray-600/30"
+                      }`}>
+                        {action.result.toUpperCase()}
+                      </span>
+                    </div>
+                    <span className="text-xs text-gray-400">
+                      {formatTimeAgo(action.created_at)}
+                    </span>
+                  </div>
+                  
+                  <div className="text-xs text-gray-400">
+                    {formatDate(action.created_at)}
+                    {action.due_at && (
+                      <span className="ml-2">• Due: {formatDate(action.due_at)}</span>
+                    )}
+                  </div>
+                  
+                  {action.detail && (
+                    <div className="text-xs text-gray-300 mt-2 p-2 bg-gray-800/50 rounded border border-gray-600/30">
+                      {action.detail}
+                    </div>
+                  )}
+                </div>
+              ))}
+              
+              {incident.actions.length === 0 && (
+                <div className="text-center py-8 text-gray-500">
+                  <History className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                  <p>No actions taken yet</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* AI Assistant Chat Interface - Enhanced */}
+        <div className="bg-gray-800/50 border border-gray-700/50 p-6 rounded-xl">
+          <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
+            <Bot className="w-6 h-6 text-purple-400" />
+            🤖 AI Security Analyst
+          </h2>
+          
+          {/* Chat Messages */}
+          <div className="bg-gray-900/50 border border-gray-700/50 rounded-xl p-4 h-80 overflow-y-auto mb-4 space-y-4">
+            {chatMessages.map((message) => (
+              <div
+                key={message.id}
+                className={`flex gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                {message.type === 'ai' && (
+                  <div className="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Bot className="w-4 h-4 text-white" />
+                  </div>
+                )}
+                
+                <div className={`max-w-[80%] ${
+                  message.type === 'user'
+                    ? 'bg-blue-600/20 border border-blue-500/30 text-blue-100'
+                    : 'bg-purple-600/20 border border-purple-500/30 text-purple-100'
+                } p-3 rounded-xl`}>
+                  {message.loading ? (
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-sm">AI is analyzing...</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-sm whitespace-pre-wrap">{message.content}</div>
+                      <div className="text-xs opacity-70 mt-2">
+                        {formatTimeAgo(message.timestamp.toISOString())}
+                      </div>
+                    </>
+                  )}
+                </div>
+                
+                {message.type === 'user' && (
+                  <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Users className="w-4 h-4 text-white" />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          
+          {/* Chat Input */}
+          <div className="flex gap-3">
+            <input
+              type="text"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && sendChatMessage()}
+              placeholder="Ask me about this incident... (e.g., 'What IOCs should I investigate?')"
+              className="flex-1 bg-gray-700/50 border border-gray-600/50 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50"
+              disabled={chatLoading}
+            />
+            <button
+              onClick={sendChatMessage}
+              disabled={!chatInput.trim() || chatLoading}
+              className="px-4 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-800 disabled:opacity-50 text-white rounded-lg transition-colors"
+              title="Send message"
+            >
+              {chatLoading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Send className="w-5 h-5" />
+              )}
+            </button>
+          </div>
+          
+          {/* Quick Action Buttons */}
+          <div className="flex flex-wrap gap-2 mt-4">
+            {[
+              "Analyze this timeline",
+              "Explain these IOCs", 
+              "What should I do next?",
+              "Is this a false positive?"
+            ].map((prompt) => (
+              <button
+                key={prompt}
+                onClick={() => {
+                  setChatInput(prompt);
+                  setTimeout(sendChatMessage, 100);
+                }}
+                disabled={chatLoading}
+                className="px-3 py-1 text-xs bg-gray-700/50 hover:bg-gray-600/50 text-gray-300 rounded-full transition-colors border border-gray-600/50"
+              >
+                {prompt}
+              </button>
+            ))}
           </div>
         </div>
       </div>
