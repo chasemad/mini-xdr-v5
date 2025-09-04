@@ -113,7 +113,7 @@ class MultiSourceIngestor:
                     dst_ip=parsed_event.get('dst_ip'),
                     dst_port=parsed_event.get('dst_port'),
                     eventid=parsed_event.get('eventid', 'unknown'),
-                    message=parsed_event.get('message'),
+                    message=parsed_event.get('message') or self._generate_event_description(event_data),
                     raw=event_data,
                     source_type=source_type,
                     hostname=hostname,
@@ -312,7 +312,7 @@ class MultiSourceIngestor:
             'dst_ip': event_data.get('dst_ip') or event_data.get('dest_ip'),
             'dst_port': event_data.get('dst_port') or event_data.get('port'),
             'eventid': event_data.get('eventid') or event_data.get('event_type') or 'custom.unknown',
-            'message': event_data.get('message') or event_data.get('description') or str(event_data),
+            'message': event_data.get('message') or event_data.get('description'),
             'timestamp': event_data.get('timestamp') or event_data.get('@timestamp')
         }
     
@@ -382,6 +382,54 @@ class MultiSourceIngestor:
             })
         
         return stats
+    
+    def _generate_event_description(self, event_data):
+        """Generate human-readable description from raw event data"""
+        eventid = event_data.get("eventid", "unknown")
+        
+        # Cowrie SSH events
+        if eventid == "cowrie.login.failed":
+            username = event_data.get("username", "unknown")
+            password = event_data.get("password", "")
+            src_ip = event_data.get("src_ip", "unknown")
+            return f"Failed SSH login attempt from {src_ip} using username '{username}' and password '{password}'"
+        
+        elif eventid == "cowrie.login.success":
+            username = event_data.get("username", "unknown")
+            src_ip = event_data.get("src_ip", "unknown")
+            return f"Successful SSH login from {src_ip} as user '{username}'"
+        
+        elif eventid == "cowrie.session.connect":
+            src_ip = event_data.get("src_ip", "unknown")
+            return f"SSH session established from {src_ip}"
+        
+        elif eventid == "cowrie.command.input":
+            command = event_data.get("input", "unknown command")
+            src_ip = event_data.get("src_ip", "unknown")
+            return f"Command executed from {src_ip}: {command}"
+        
+        elif eventid == "cowrie.session.file_download":
+            filename = event_data.get("filename", "unknown file")
+            src_ip = event_data.get("src_ip", "unknown")
+            return f"File download attempt from {src_ip}: {filename}"
+        
+        # Web honeypot events
+        elif event_data.get("event_type") == "http_request" or eventid == "http_request":
+            method = event_data.get("method", "GET")
+            path = event_data.get("path", "/")
+            src_ip = event_data.get("src_ip", "unknown")
+            attack_indicators = event_data.get("attack_indicators", [])
+            
+            if attack_indicators:
+                indicators_str = ", ".join(attack_indicators)
+                return f"Web attack from {src_ip}: {method} {path} (indicators: {indicators_str})"
+            else:
+                return f"Web request from {src_ip}: {method} {path}"
+        
+        # Generic fallback
+        else:
+            src_ip = event_data.get("src_ip", "unknown")
+            return f"Security event from {src_ip}: {eventid}"
 
 
 # Global multi-source ingestor instance

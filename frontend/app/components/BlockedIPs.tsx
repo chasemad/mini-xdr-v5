@@ -3,6 +3,15 @@
 import { useEffect, useState } from "react";
 import { getIncidents, unblockIncident } from "../lib/api";
 
+interface Incident {
+  id: number;
+  src_ip: string;
+  status: string;
+  created_at: string;
+  reason: string;
+  auto_contained: boolean;
+}
+
 interface BlockedIP {
   ip: string;
   incidentId: number;
@@ -18,12 +27,12 @@ export default function BlockedIPs() {
 
   const fetchBlockedIPs = async () => {
     try {
-      const incidents = await getIncidents();
+      const incidents: Incident[] = await getIncidents();
       
       // Filter for contained incidents to show currently blocked IPs
       const blocked = incidents
-        .filter(incident => incident.status === "contained")
-        .map(incident => ({
+        .filter((incident: Incident) => incident.status === "contained")
+        .map((incident: Incident) => ({
           ip: incident.src_ip,
           incidentId: incident.id,
           blockedAt: incident.created_at,
