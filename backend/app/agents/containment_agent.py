@@ -7,6 +7,7 @@ import json
 import logging
 import hmac
 import hashlib
+import time
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 
@@ -419,17 +420,101 @@ class ContainmentAgent:
             return f"Block failed: {e}"
     
     def _isolate_host(self, input_str: str) -> str:
-        """Isolate host (placeholder - would integrate with network tools)"""
+        """Isolate host using iptables network controls"""
         try:
             parts = input_str.split()
             hostname = parts[0]
             level = parts[1] if len(parts) > 1 else "soft"
             
-            # Placeholder implementation
-            self.logger.info(f"Would isolate {hostname} at level {level}")
-            return f"Host {hostname} isolated at level {level}"
+            # Execute actual host isolation
+            isolation_result = asyncio.get_event_loop().run_until_complete(
+                self._execute_host_isolation(hostname, level)
+            )
+            
+            return isolation_result
         except Exception as e:
+            self.logger.error(f"Host isolation failed: {e}")
             return f"Isolation failed: {e}"
+    
+    async def _execute_host_isolation(self, target_ip: str, level: str) -> str:
+        """Execute actual host isolation using iptables"""
+        try:
+            import subprocess
+            
+            if level == "hard":
+                # Complete network isolation - block all traffic to/from IP
+                commands = [
+                    f"iptables -I INPUT -s {target_ip} -j DROP",
+                    f"iptables -I OUTPUT -d {target_ip} -j DROP",
+                    f"iptables -I FORWARD -s {target_ip} -j DROP",
+                    f"iptables -I FORWARD -d {target_ip} -j DROP"
+                ]
+                isolation_type = "complete network isolation"
+            else:
+                # Soft isolation - block only non-essential ports, allow SSH for management
+                commands = [
+                    f"iptables -I INPUT -s {target_ip} -p tcp --dport 80 -j DROP",
+                    f"iptables -I INPUT -s {target_ip} -p tcp --dport 443 -j DROP",
+                    f"iptables -I INPUT -s {target_ip} -p tcp --dport 21 -j DROP",
+                    f"iptables -I INPUT -s {target_ip} -p tcp --dport 25 -j DROP",
+                    f"iptables -I OUTPUT -d {target_ip} -p tcp --dport 80 -j DROP",
+                    f"iptables -I OUTPUT -d {target_ip} -p tcp --dport 443 -j DROP"
+                ]
+                isolation_type = "selective service isolation"
+            
+            executed_commands = []
+            failed_commands = []
+            
+            for cmd in commands:
+                try:
+                    # Execute iptables command
+                    result = subprocess.run(
+                        cmd.split(), 
+                        capture_output=True, 
+                        text=True, 
+                        timeout=30,
+                        check=True
+                    )
+                    executed_commands.append(cmd)
+                    self.logger.info(f"Executed isolation command: {cmd}")
+                except subprocess.CalledProcessError as e:
+                    failed_commands.append(f"{cmd}: {e.stderr}")
+                    self.logger.error(f"Failed to execute: {cmd} - {e.stderr}")
+                except Exception as e:
+                    failed_commands.append(f"{cmd}: {str(e)}")
+                    self.logger.error(f"Command execution error: {cmd} - {e}")
+            
+            # Create isolation record file
+            isolation_record = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "target_ip": target_ip,
+                "isolation_level": level,
+                "isolation_type": isolation_type,
+                "executed_commands": executed_commands,
+                "failed_commands": failed_commands,
+                "status": "active"
+            }
+            
+            # Store isolation record for potential rollback
+            isolation_file = f"/tmp/isolation_{target_ip}_{int(time.time())}.json"
+            try:
+                with open(isolation_file, 'w') as f:
+                    json.dump(isolation_record, f, indent=2)
+                self.logger.info(f"Isolation record saved: {isolation_file}")
+            except Exception as e:
+                self.logger.warning(f"Failed to save isolation record: {e}")
+            
+            if executed_commands:
+                success_msg = f"Host {target_ip} isolated successfully ({isolation_type})"
+                if failed_commands:
+                    success_msg += f". {len(failed_commands)} commands failed"
+                return success_msg
+            else:
+                return f"Host isolation failed - no commands executed successfully"
+                
+        except Exception as e:
+            self.logger.error(f"Host isolation execution failed: {e}")
+            return f"Isolation execution failed: {e}"
     
     def _notify_analyst(self, input_str: str) -> str:
         """Send notification to analyst"""
@@ -552,6 +637,48 @@ class ThreatHuntingAgent:
         except Exception as e:
             self.logger.error(f"Failed to initialize LLM client: {e}")
         return None
+    
+    async def execute_containment(self, containment_request: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute containment action based on SOC request"""
+        try:
+            action = containment_request.get('action', 'block_ip')
+            ip = containment_request.get('ip')
+            reason = containment_request.get('reason', 'SOC manual action')
+            
+            self.logger.info(f"Executing containment action: {action} for IP: {ip}")
+            
+            if action == 'block_ip':
+                # Execute IP blocking through the responder
+                from ..responder import block_ip
+                status, detail = await block_ip(ip)
+                
+                result = {
+                    'success': status == "success",
+                    'action': action,
+                    'ip': ip,
+                    'detail': detail,
+                    'reason': reason,
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+                
+                self.logger.info(f"Containment action result: {result}")
+                return result
+            else:
+                return {
+                    'success': False,
+                    'error': f'Unsupported containment action: {action}',
+                    'action': action,
+                    'ip': ip
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Containment execution failed: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'action': containment_request.get('action'),
+                'ip': containment_request.get('ip')
+            }
     
     async def hunt_for_threats(self, db_session, lookback_hours: int = 24) -> List[Dict[str, Any]]:
         """Proactively hunt for threats in recent data"""
