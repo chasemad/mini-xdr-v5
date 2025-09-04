@@ -128,6 +128,236 @@ class ForensicsAgent:
             ]
         }
     
+    async def capture_traffic(self, target_ip: str, duration_seconds: int = 300) -> Dict[str, Any]:
+        """Capture network traffic for forensic analysis using tcpdump"""
+        try:
+            capture_id = f"traffic_capture_{target_ip}_{int(time.time())}"
+            self.logger.info(f"Starting traffic capture for {target_ip} (duration: {duration_seconds}s)")
+            
+            # Execute actual traffic capture
+            capture_result = await self._execute_traffic_capture(target_ip, capture_id, duration_seconds)
+            
+            if capture_result["success"]:
+                result = {
+                    "capture_id": capture_id,
+                    "target_ip": target_ip,
+                    "duration": duration_seconds,
+                    "status": "completed",
+                    "pcap_file": capture_result["pcap_file"],
+                    "packet_count": capture_result.get("packet_count", 0),
+                    "file_size": capture_result.get("file_size", 0),
+                    "timestamp": datetime.now().isoformat(),
+                    "analysis": capture_result.get("analysis", {})
+                }
+                
+                self.logger.info(f"Traffic capture completed: {capture_id}")
+                return result
+            else:
+                return {
+                    "capture_id": capture_id,
+                    "target_ip": target_ip,
+                    "status": "failed",
+                    "error": capture_result.get("error", "Unknown error"),
+                    "timestamp": datetime.now().isoformat()
+                }
+            
+        except Exception as e:
+            self.logger.error(f"Traffic capture failed: {e}")
+            return {
+                "status": "failed",
+                "error": str(e),
+                "target_ip": target_ip
+            }
+    
+    async def _execute_traffic_capture(self, target_ip: str, capture_id: str, duration_seconds: int) -> Dict[str, Any]:
+        """Execute actual traffic capture using tcpdump"""
+        try:
+            import subprocess
+            import os
+            
+            # Create capture directory
+            capture_dir = self.evidence_storage / "traffic_captures"
+            capture_dir.mkdir(exist_ok=True)
+            
+            # Generate pcap file path
+            pcap_file = capture_dir / f"{capture_id}.pcap"
+            
+            # Build tcpdump command
+            tcpdump_cmd = [
+                "sudo", "tcpdump",
+                "-i", "any",  # Capture on all interfaces
+                "-w", str(pcap_file),  # Write to file
+                "-G", str(duration_seconds),  # Rotate files every N seconds
+                "-W", "1",  # Keep only 1 file (don't rotate)
+                "-s", "0",  # Capture full packets
+                "-n",  # Don't resolve hostnames
+                f"host {target_ip}"  # Filter for target IP
+            ]
+            
+            self.logger.info(f"Executing tcpdump command: {' '.join(tcpdump_cmd)}")
+            
+            # Start tcpdump process
+            process = subprocess.Popen(
+                tcpdump_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            # Wait for capture to complete
+            try:
+                stdout, stderr = process.communicate(timeout=duration_seconds + 30)  # Add buffer time
+                
+                if process.returncode == 0:
+                    # Check if pcap file was created and has content
+                    if pcap_file.exists() and pcap_file.stat().st_size > 0:
+                        # Analyze captured traffic
+                        analysis_result = await self._analyze_pcap_file(pcap_file, target_ip)
+                        
+                        return {
+                            "success": True,
+                            "pcap_file": str(pcap_file),
+                            "packet_count": analysis_result.get("packet_count", 0),
+                            "file_size": pcap_file.stat().st_size,
+                            "analysis": analysis_result
+                        }
+                    else:
+                        return {
+                            "success": False,
+                            "error": "No traffic captured or file not created"
+                        }
+                else:
+                    return {
+                        "success": False,
+                        "error": f"tcpdump failed: {stderr}"
+                    }
+                    
+            except subprocess.TimeoutExpired:
+                # Kill the process if it's still running
+                process.kill()
+                process.communicate()
+                
+                # Check if we got any data before timeout
+                if pcap_file.exists() and pcap_file.stat().st_size > 0:
+                    analysis_result = await self._analyze_pcap_file(pcap_file, target_ip)
+                    return {
+                        "success": True,
+                        "pcap_file": str(pcap_file),
+                        "packet_count": analysis_result.get("packet_count", 0),
+                        "file_size": pcap_file.stat().st_size,
+                        "analysis": analysis_result,
+                        "note": "Capture terminated by timeout"
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "error": "Capture timed out with no data"
+                    }
+                    
+        except Exception as e:
+            self.logger.error(f"Traffic capture execution failed: {e}")
+            return {
+                "success": False,
+                "error": f"Execution failed: {str(e)}"
+            }
+    
+    async def _analyze_pcap_file(self, pcap_file: Path, target_ip: str) -> Dict[str, Any]:
+        """Analyze captured pcap file for forensic insights"""
+        try:
+            import subprocess
+            
+            analysis = {
+                "packet_count": 0,
+                "protocols": {},
+                "connections": [],
+                "suspicious_patterns": [],
+                "file_transfers": [],
+                "dns_queries": []
+            }
+            
+            # Use tcpdump to analyze the pcap file
+            try:
+                # Get basic packet count and protocols
+                count_cmd = ["tcpdump", "-r", str(pcap_file), "-c", "10000"]
+                count_result = subprocess.run(
+                    count_cmd, 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=60
+                )
+                
+                if count_result.returncode == 0:
+                    lines = count_result.stdout.split('\n')
+                    analysis["packet_count"] = len([line for line in lines if line.strip()])
+                
+                # Analyze protocols
+                protocol_cmd = ["tcpdump", "-r", str(pcap_file), "-n", "-q"]
+                protocol_result = subprocess.run(
+                    protocol_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=60
+                )
+                
+                if protocol_result.returncode == 0:
+                    protocol_counts = {}
+                    for line in protocol_result.stdout.split('\n'):
+                        if 'TCP' in line:
+                            protocol_counts['TCP'] = protocol_counts.get('TCP', 0) + 1
+                        elif 'UDP' in line:
+                            protocol_counts['UDP'] = protocol_counts.get('UDP', 0) + 1
+                        elif 'ICMP' in line:
+                            protocol_counts['ICMP'] = protocol_counts.get('ICMP', 0) + 1
+                    
+                    analysis["protocols"] = protocol_counts
+                
+                # Look for suspicious patterns
+                suspicious_patterns = []
+                
+                # Check for high port scanning activity
+                if analysis["packet_count"] > 100:
+                    suspicious_patterns.append({
+                        "type": "high_volume_traffic",
+                        "count": analysis["packet_count"],
+                        "severity": "medium"
+                    })
+                
+                # Check for unusual protocols or ports
+                unusual_ports_cmd = ["tcpdump", "-r", str(pcap_file), "-n", "port", "not", "22", "and", "port", "not", "80", "and", "port", "not", "443"]
+                unusual_result = subprocess.run(
+                    unusual_ports_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                
+                if unusual_result.returncode == 0 and unusual_result.stdout.strip():
+                    unusual_count = len(unusual_result.stdout.split('\n'))
+                    if unusual_count > 10:
+                        suspicious_patterns.append({
+                            "type": "unusual_port_activity",
+                            "count": unusual_count,
+                            "severity": "high"
+                        })
+                
+                analysis["suspicious_patterns"] = suspicious_patterns
+                
+            except subprocess.TimeoutExpired:
+                self.logger.warning("Pcap analysis timed out")
+                analysis["note"] = "Analysis timed out - partial results"
+            except Exception as e:
+                self.logger.error(f"Pcap analysis failed: {e}")
+                analysis["error"] = str(e)
+            
+            return analysis
+            
+        except Exception as e:
+            self.logger.error(f"Pcap file analysis failed: {e}")
+            return {
+                "error": str(e),
+                "packet_count": 0
+            }
+    
     def _init_llm_client(self):
         """Initialize LLM client for forensic analysis"""
         try:
