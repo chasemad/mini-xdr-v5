@@ -52,16 +52,26 @@ export default function InvestigationsPage() {
   const [investigations, setInvestigations] = useState<Investigation[]>([]);
   const [selectedInvestigation, setSelectedInvestigation] = useState<Investigation | null>(null);
   const [activeTab, setActiveTab] = useState("list");
-  const [newInvestigation, setNewInvestigation] = useState({
+  const [newInvestigation, setNewInvestigation] = useState<{
+    title: string;
+    description: string;
+    priority: "low" | "medium" | "high" | "critical";
+    assignee: string;
+  }>({
     title: "",
     description: "",
-    priority: "medium" as const,
+    priority: "medium",
     assignee: "Current User"
   });
   const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
-  const [newEvidence, setNewEvidence] = useState({
-    type: "note" as const,
+  const [newEvidence, setNewEvidence] = useState<{
+    type: "log" | "file" | "network" | "screenshot" | "note";
+    title: string;
+    content: string;
+    source: string;
+  }>({
+    type: "note",
     title: "",
     content: "",
     source: ""
@@ -290,7 +300,7 @@ export default function InvestigationsPage() {
                   {investigation.incident_ids.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-gray-100">
                       <span className="text-sm text-gray-600">Related Incidents: </span>
-                      {investigation.incident_ids.map((id, index) => (
+                                              {investigation.incident_ids.map((id) => (
                         <Link key={id} href={`/incidents/${id}`}>
                           <Badge variant="outline" className="ml-1 cursor-pointer hover:bg-gray-100">
                             #{id}
@@ -343,7 +353,7 @@ export default function InvestigationsPage() {
                       <h4 className="font-medium mb-2">Add Evidence</h4>
                       <div className="space-y-2">
                         <div className="flex gap-2">
-                          <Select value={newEvidence.type} onValueChange={(value: any) => setNewEvidence({...newEvidence, type: value})}>
+                          <Select value={newEvidence.type} onValueChange={(value: "log" | "file" | "network" | "screenshot" | "note") => setNewEvidence({...newEvidence, type: value})}>
                             <SelectTrigger className="w-32">
                               <SelectValue />
                             </SelectTrigger>
@@ -477,7 +487,7 @@ export default function InvestigationsPage() {
                   <Label>Priority</Label>
                   <Select 
                     value={newInvestigation.priority} 
-                    onValueChange={(value: any) => setNewInvestigation({...newInvestigation, priority: value})}
+                    onValueChange={(value: "low" | "medium" | "high" | "critical") => setNewInvestigation({...newInvestigation, priority: value})}
                   >
                     <SelectTrigger>
                       <SelectValue />

@@ -28,7 +28,7 @@ interface DetectionRule {
   type: "threshold" | "pattern" | "ml" | "correlation";
   enabled: boolean;
   severity: "low" | "medium" | "high" | "critical";
-  conditions: Record<string, any>;
+  conditions: Record<string, unknown>;
   actions: string[];
 }
 
@@ -37,7 +37,7 @@ interface Integration {
   name: string;
   type: "siem" | "soar" | "threat_intel" | "notification";
   status: "connected" | "disconnected" | "error";
-  config: Record<string, any>;
+  config: Record<string, unknown>;
   last_sync?: string;
 }
 
@@ -57,10 +57,14 @@ export default function SettingsPage() {
   const [rules, setRules] = useState<DetectionRule[]>([]);
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [newUser, setNewUser] = useState({
+  const [newUser, setNewUser] = useState<{
+    username: string;
+    email: string;
+    role: "admin" | "analyst" | "viewer";
+  }>({
     username: "",
     email: "",
-    role: "analyst" as const
+    role: "analyst"
   });
 
   // Load system configuration data from backend
@@ -119,7 +123,7 @@ export default function SettingsPage() {
     loadUsers();
   }, []);
 
-  const updateSetting = async (key: string, value: any) => {
+  const updateSetting = async (key: string, value: string | number | boolean) => {
     try {
       const response = await fetch('/api/settings/system', {
         method: 'PUT',
@@ -267,7 +271,7 @@ export default function SettingsPage() {
         return (
           <Input
             type="number"
-            value={setting.value}
+            value={String(setting.value)}
             onChange={(e) => updateSetting(setting.key, parseInt(e.target.value) || 0)}
             className="w-32"
           />
@@ -537,7 +541,7 @@ export default function SettingsPage() {
                     <Label>Role</Label>
                     <Select 
                       value={newUser.role} 
-                      onValueChange={(value: any) => setNewUser({...newUser, role: value})}
+                      onValueChange={(value: "admin" | "analyst" | "viewer") => setNewUser({...newUser, role: value})}
                     >
                       <SelectTrigger>
                         <SelectValue />

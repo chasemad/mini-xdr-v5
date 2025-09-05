@@ -8,7 +8,6 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 
 interface IOC {
@@ -74,11 +73,19 @@ export default function ThreatIntelligencePage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
-  const [newIOC, setNewIOC] = useState({
-    type: "ip" as const,
+  const [newIOC, setNewIOC] = useState<{
+    type: "ip" | "domain" | "hash" | "url" | "email" | "user_agent";
+    value: string;
+    confidence: number;
+    threat_level: "low" | "medium" | "high" | "critical";
+    source: string;
+    description: string;
+    tags: string;
+  }>({
+    type: "ip",
     value: "",
     confidence: 80,
-    threat_level: "medium" as const,
+    threat_level: "medium",
     source: "Manual Entry",
     description: "",
     tags: ""
@@ -355,7 +362,7 @@ export default function ThreatIntelligencePage() {
                     <Label>Type</Label>
                     <Select 
                       value={newIOC.type} 
-                      onValueChange={(value: any) => setNewIOC({...newIOC, type: value})}
+                      onValueChange={(value: "ip" | "domain" | "hash" | "url" | "email" | "user_agent") => setNewIOC({...newIOC, type: value})}
                     >
                       <SelectTrigger>
                         <SelectValue />
@@ -384,7 +391,7 @@ export default function ThreatIntelligencePage() {
                     <Label>Threat Level</Label>
                     <Select 
                       value={newIOC.threat_level} 
-                      onValueChange={(value: any) => setNewIOC({...newIOC, threat_level: value})}
+                      onValueChange={(value: "low" | "medium" | "high" | "critical") => setNewIOC({...newIOC, threat_level: value})}
                     >
                       <SelectTrigger>
                         <SelectValue />
