@@ -8,7 +8,6 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface HuntResult {
   id: string;
@@ -17,7 +16,7 @@ interface HuntResult {
   event_type: string;
   description: string;
   risk_score: number;
-  matches: Record<string, any>;
+  matches: Record<string, unknown>;
 }
 
 interface HuntQuery {

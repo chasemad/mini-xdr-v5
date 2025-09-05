@@ -1,4 +1,4 @@
-# 🛡️ Enhanced Mini-XDR: AI-Powered Extended Detection & Response Platform
+# 🛡️ Mini-XDR: AI-Powered Extended Detection & Response Platform
 
 **A comprehensive XDR system with autonomous AI agents, ML ensemble detection, and advanced threat hunting capabilities.**
 
@@ -20,6 +20,18 @@ cd mini-xdr
 - 📊 **Analytics**: http://localhost:3000/analytics
 - 🔗 **API Docs**: http://localhost:8000/docs
 
+## 🎯 What is Mini-XDR?
+
+Mini-XDR is a comprehensive Extended Detection and Response (XDR) platform designed to provide enterprise-grade security capabilities with AI-powered automation. It combines multiple security technologies into a unified platform for threat detection, investigation, and response.
+
+### Key Problems Solved
+
+- **Alert Fatigue**: AI agents reduce false positives and prioritize real threats
+- **Manual Response**: Automated containment and orchestrated incident response
+- **Limited Visibility**: Multi-source data ingestion with behavioral analysis
+- **Skill Gap**: AI-assisted investigation and threat hunting capabilities
+- **Slow Response**: Sub-second detection with autonomous containment actions
+
 ## 🏗️ Enhanced Architecture
 
 ```
@@ -30,7 +42,7 @@ cd mini-xdr
 📡 DATA COLLECTION ←→ 🕵️ THREAT INTEL ←→ 🎭 DECEPTION
 ```
 
-### **Core Components**
+### Core Components
 
 - **🤖 AI Agent System**: Autonomous threat response with LangChain integration
 - **🧠 ML Ensemble**: Isolation Forest + LSTM + XGBoost for anomaly detection
@@ -41,27 +53,27 @@ cd mini-xdr
 
 ## 🎯 Key Features
 
-### **Autonomous AI Agents**
+### Autonomous AI Agents
 - **Containment Orchestrator**: Makes intelligent blocking decisions using LLM reasoning
+- **Attribution Agent**: Campaign correlation and threat actor profiling
+- **Forensics Agent**: Automated evidence gathering and chain of custody
+- **Deception Agent**: Dynamic honeypot deployment and attacker analysis
 - **Threat Hunter**: Proactive threat discovery with hypothesis generation
-- **Attribution Tracker**: Campaign correlation and threat actor profiling
-- **Forensics Collector**: Automated evidence gathering and chain of custody
-- **Deception Manager**: Dynamic honeypot deployment and attacker analysis
 - **Rollback Agent**: False positive detection with learning feedback
 
-### **Advanced ML Detection**
+### Advanced ML Detection
 - **Ensemble Models**: Combines multiple ML approaches for robust detection
 - **Real-time Training**: Continuous learning from new attack patterns
 - **Feature Engineering**: 15+ behavioral indicators for anomaly detection
 - **Interactive Tuning**: Web-based parameter adjustment and model management
 
-### **SOAR-Style Playbooks**
+### SOAR-Style Playbooks
 - **5 Built-in Playbooks**: SSH brute force, malware, lateral movement, data exfil, investigation
 - **Conditional Logic**: Dynamic workflow execution based on threat context
 - **AI Integration**: LLM-powered decision points within automated workflows
 - **Multi-Agent Coordination**: Orchestrates response across all system components
 
-### **Multi-Source Intelligence**
+### Multi-Source Intelligence
 - **Log Ingestion**: Cowrie, Suricata, OSQuery, custom sources
 - **Threat Feeds**: AbuseIPDB, VirusTotal, MISP integration
 - **Edge Agents**: Distributed collection with signature validation
@@ -84,8 +96,10 @@ mini-xdr/
 │   │   ├── ml_engine.py       # 🆕 ML ensemble system
 │   │   ├── playbook_engine.py # 🆕 SOAR automation
 │   │   ├── policy_engine.py   # 🆕 YAML-based policies
+│   │   ├── agent_orchestrator.py # 🆕 Multi-agent coordination
 │   │   └── training_data_collector.py # 🆕 ML training data
-│   └── requirements.txt       # Enhanced dependencies
+│   ├── requirements.txt       # Python dependencies
+│   └── package.json          # MCP server dependencies
 │
 ├── frontend/                   # Enhanced Next.js Frontend
 │   ├── app/
@@ -93,7 +107,8 @@ mini-xdr/
 │   │   ├── analytics/         # 🆕 ML analytics dashboard
 │   │   ├── hunt/              # 🆕 Threat hunting interface
 │   │   ├── intelligence/      # 🆕 IOC management
-│   │   └── investigations/    # 🆕 Case management
+│   │   ├── investigations/    # 🆕 Case management
+│   │   └── incidents/         # Enhanced incident views
 │   └── components/            # Complete shadcn/ui library
 │
 ├── ops/                       # 🆕 Production Operations
@@ -108,55 +123,142 @@ mini-xdr/
 │   └── test_system.sh
 │
 ├── docs/                      # 🆕 Documentation
-│   ├── ENHANCED_SETUP_GUIDE.md
-│   ├── IMPLEMENTATION_SUMMARY.md
 │   ├── DEPLOYMENT.md
+│   ├── IMPLEMENTATION_SUMMARY.md
 │   └── [other guides]
 │
 ├── policies/                  # 🆕 YAML Policy Configuration
 └── scripts/                   # Enhanced automation scripts
 ```
 
-## ⚙️ Configuration
+## ⚙️ Installation & Setup
 
-### **Required Setup**
+### Prerequisites
 
-1. **SSH Keys** (for honeypot containment):
+**Required Software:**
+- Python 3.8+ ([Download](https://python.org))
+- Node.js 18+ ([Download](https://nodejs.org))
+- SSH client (pre-installed on macOS/Linux)
+- curl (for API testing)
+
+**Required Infrastructure:**
+- Honeypot VM running Cowrie honeypot
+- SSH access to honeypot for containment actions
+- Network connectivity between XDR host and honeypot
+
+### Automated Setup (Recommended)
+
+The automated startup script handles all setup and dependency installation:
+
 ```bash
-ssh-keygen -t ed25519 -f ~/.ssh/xdrops_id_ed25519
-ssh-copy-id -i ~/.ssh/xdrops_id_ed25519.pub xdrops@<honeypot-ip>
+# Clone repository
+git clone <your-repo-url> mini-xdr
+cd mini-xdr
+
+# Run automated setup and startup
+./scripts/start-all.sh
 ```
 
-2. **Backend Environment** (`backend/.env`):
+This script will:
+- ✅ Check system requirements
+- ✅ Create Python virtual environment
+- ✅ Install all dependencies (Python + Node.js)
+- ✅ Set up configuration files from templates
+- ✅ Initialize database
+- ✅ Test honeypot connectivity
+- ✅ Start all services with health checks
+- ✅ Verify system functionality
+
+### Manual Setup
+
+If you prefer manual installation:
+
+1. **Backend Setup:**
 ```bash
-# Honeypot Configuration
-HONEYPOT_HOST=10.0.0.23
-HONEYPOT_USER=xdrops
-HONEYPOT_SSH_KEY=~/.ssh/xdrops_id_ed25519
+cd backend
 
-# AI Integration
-OPENAI_API_KEY=sk-your-openai-key
-LLM_PROVIDER=openai
+# Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
 
-# Threat Intelligence (Optional)
+# Install dependencies
+pip install -r requirements.txt
+npm install  # MCP server dependencies
+
+# Configure environment
+cp env.example .env
+# Edit .env with your settings
+
+# Initialize database
+python -c "import asyncio; from app.db import init_db; asyncio.run(init_db())"
+
+# Start backend
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+2. **Frontend Setup:**
+```bash
+cd frontend
+
+# Install dependencies
+npm install
+
+# Configure environment
+cp env.local.example .env.local
+# Edit .env.local with API settings
+
+# Start frontend
+npm run dev
+```
+
+### Configuration
+
+#### 1. Backend Configuration (`backend/.env`)
+
+```bash
+# Honeypot Connection (REQUIRED)
+HONEYPOT_HOST=192.168.1.100        # Your honeypot VM IP
+HONEYPOT_USER=xdrops               # SSH user for containment
+HONEYPOT_SSH_KEY=~/.ssh/xdrops_id_ed25519  # SSH private key path
+HONEYPOT_SSH_PORT=22022            # SSH port on honeypot
+
+# API Security (RECOMMENDED)
+API_KEY=your_secret_api_key_here   # Secure API access
+
+# LLM Integration (OPTIONAL - for AI analysis)
+OPENAI_API_KEY=sk-your-openai-key  # OpenAI API key
+# OR
+XAI_API_KEY=xai-your-x-api-key     # X.AI/Grok API key
+
+# Threat Intelligence (OPTIONAL)
 ABUSEIPDB_API_KEY=your-key
 VIRUSTOTAL_API_KEY=your-key
 ```
 
-3. **Frontend Environment** (`frontend/.env.local`):
+#### 2. SSH Key Setup
+
 ```bash
-NEXT_PUBLIC_API_BASE=http://localhost:8000
+# Generate key pair
+ssh-keygen -t ed25519 -f ~/.ssh/xdrops_id_ed25519
+
+# Copy public key to honeypot
+ssh-copy-id -i ~/.ssh/xdrops_id_ed25519.pub -p 22022 xdrops@<honeypot-ip>
+
+# Test connection
+ssh -p 22022 -i ~/.ssh/xdrops_id_ed25519 xdrops@<honeypot-ip> sudo ufw status
 ```
 
-### **Optional Enhancements**
-- **xAI/Grok Integration**: Alternative LLM provider
-- **Custom Policies**: YAML-based containment rules
-- **Additional Honeypots**: Multi-source log collection
-- **Kubernetes Deployment**: Production scaling
+#### 3. Frontend Configuration (`frontend/.env.local`)
+
+```bash
+# API Connection
+NEXT_PUBLIC_API_BASE=http://localhost:8000
+NEXT_PUBLIC_API_KEY=your_secret_api_key_here
+```
 
 ## 🧪 Testing & Validation
 
-### **Comprehensive Test Suite**
+### Comprehensive Test Suite
 
 ```bash
 # System Health Check
@@ -172,7 +274,7 @@ NEXT_PUBLIC_API_BASE=http://localhost:8000
 python ./tests/test_enhanced_capabilities.py
 ```
 
-### **Manual Testing**
+### Manual Testing
 
 ```bash
 # Test AI Agents
@@ -187,40 +289,58 @@ curl http://localhost:8000/api/ml/status
 curl -X POST http://localhost:8000/ingest/multi \
   -H "Content-Type: application/json" \
   -d '{"source_type": "cowrie", "events": [...]}'
+
+# Test Adaptive Detection
+curl http://localhost:8000/api/adaptive/status
+
+# Test SSH Connectivity
+curl http://localhost:8000/test/ssh
+```
+
+### Attack Simulation
+
+Use the included attack simulation scripts to test detection:
+
+```bash
+# Simple attack test
+python simple_attack_test.py <honeypot-ip>
+
+# Multi-IP attack simulation
+./simple_multi_ip_attack.sh <honeypot-ip> 5
 ```
 
 ## 🚀 Deployment Options
 
-### **Development (Local)**
+### Development (Local)
 ```bash
 ./scripts/start-all.sh
 ```
 
-### **Production (Kubernetes)**
+### Production (Kubernetes)
 ```bash
 ./ops/deploy-k8s.sh --build --push --ingress
 ```
 
-### **Docker Compose**
+### Docker Compose
 ```bash
 docker-compose up -d
 ```
 
 ## 📊 Enhanced Capabilities
 
-### **AI-Powered Decision Making**
+### AI-Powered Decision Making
 - **Natural Language Interface**: Chat with security agents in plain English
 - **Contextual Reasoning**: LLM-driven analysis of security incidents
 - **Confidence Scoring**: Transparent AI decision-making process
 - **Multi-Agent Coordination**: Seamless handoffs between specialized agents
 
-### **Advanced Analytics**
+### Advanced Analytics
 - **Real-time Dashboards**: Interactive visualizations of threat landscape
 - **Model Performance**: Live monitoring of ML accuracy and effectiveness
 - **Attack Attribution**: Campaign tracking and threat actor profiling
 - **Behavioral Baselines**: Dynamic understanding of normal vs. anomalous activity
 
-### **Autonomous Response**
+### Autonomous Response
 - **Policy-Driven Actions**: YAML-configurable response automation
 - **Escalation Logic**: Risk-based response scaling
 - **False Positive Learning**: Continuous improvement from analyst feedback
@@ -242,9 +362,38 @@ docker-compose up -d
 - **Threat Coverage**: 99% of attack patterns automatically detected
 - **ML Accuracy**: 95%+ anomaly detection with ensemble models
 
+## 🛠️ Dependencies
+
+### Backend Dependencies
+```
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+sqlalchemy==2.0.35
+torch==2.6.0
+scikit-learn==1.5.2
+xgboost==2.1.3
+langchain==0.3.11
+langchain-openai==0.2.11
+pandas==2.2.3
+numpy==1.26.4
+pyyaml==6.0.2
+paramiko==3.3.1
+aiohttp==3.9.5
+```
+
+### Frontend Dependencies
+```
+next==15.5.0
+react==19.1.0
+@radix-ui/react-*
+tailwindcss==^4
+recharts==^3.1.2
+lucide-react==^0.542.0
+```
+
 ## 🛠️ Troubleshooting
 
-### **Common Issues**
+### Common Issues
 
 1. **AI Agents Not Responding**:
    - Check OpenAI API key in `backend/.env`
@@ -261,12 +410,12 @@ docker-compose up -d
    - Check dependencies: `pip install torch scikit-learn xgboost`
    - Monitor training: `curl http://localhost:8000/api/ml/status`
 
-### **Log Files**
+### Log Files
 - **Backend**: `backend/backend.log`
 - **Frontend**: `frontend/frontend.log`
 - **MCP Server**: `backend/mcp.log`
 
-### **Health Checks**
+### Health Checks
 ```bash
 # System Status
 curl http://localhost:8000/health
@@ -277,19 +426,19 @@ curl http://localhost:8000/health
 
 ## 🔄 Development Workflow
 
-### **Adding New Agents**
+### Adding New Agents
 1. Create agent class in `backend/app/agents/`
 2. Implement required methods: `__init__`, core functionality
 3. Register in orchestration system
 4. Add tests in `tests/`
 
-### **Custom Playbooks**
+### Custom Playbooks
 1. Define YAML playbook in `policies/`
 2. Add trigger conditions and response actions
 3. Test with simulated incidents
 4. Deploy via API or configuration reload
 
-### **ML Model Enhancement**
+### ML Model Enhancement
 1. Add new features in `ml_engine.py`
 2. Implement model training pipeline
 3. Update ensemble scoring logic
@@ -297,10 +446,28 @@ curl http://localhost:8000/health
 
 ## 📚 Documentation
 
-- **📖 Setup Guide**: `docs/ENHANCED_SETUP_GUIDE.md`
+- **📖 Setup Guide**: `docs/DEPLOYMENT.md`
 - **🏗️ Architecture**: `docs/IMPLEMENTATION_SUMMARY.md`
-- **🚀 Deployment**: `docs/DEPLOYMENT.md`
 - **📋 API Reference**: http://localhost:8000/docs (when running)
+
+## 🧪 Testing
+
+The project includes comprehensive test suites:
+
+### Python Tests
+- **Enhanced Capabilities**: `tests/test_enhanced_capabilities.py`
+- **AI Agents**: Various agent-specific tests
+- **ML Engine**: Model training and inference tests
+
+### Shell Scripts
+- **System Health**: `tests/test_system.sh`
+- **End-to-End**: `tests/test_end_to_end.sh`
+- **AI Agents**: `tests/test_ai_agents.sh`
+
+### Attack Simulation
+- **Simple Attack**: `simple_attack_test.py`
+- **Multi-IP Attack**: `simple_multi_ip_attack.sh`
+- **Advanced Scenarios**: Various simulation scripts
 
 ## 🤝 Contributing
 
@@ -308,6 +475,11 @@ curl http://localhost:8000/health
 2. Create feature branch: `git checkout -b feature/amazing-agent`
 3. Implement changes with tests
 4. Submit pull request with documentation
+
+### Code Style
+- Python: Follow PEP 8, use type hints
+- TypeScript: Use ESLint configuration
+- Documentation: Update relevant docs with changes
 
 ## 📄 License
 
@@ -324,7 +496,7 @@ MIT License - see LICENSE file for details.
 
 ## 🎯 What Makes This Special
 
-**Enhanced Mini-XDR** transforms traditional security monitoring into an intelligent, autonomous platform that:
+**Mini-XDR** transforms traditional security monitoring into an intelligent, autonomous platform that:
 
 - **🧠 Thinks Like a Security Analyst**: AI agents reason through complex threats
 - **🔄 Learns Continuously**: ML models improve with every attack
@@ -333,3 +505,15 @@ MIT License - see LICENSE file for details.
 - **📊 Visualizes Everything**: Rich dashboards for complete situational awareness
 
 **Ready for production deployment with enterprise-grade reliability and performance.**
+
+## 🚀 Getting Started
+
+Ready to deploy your own AI-powered XDR system? Start with:
+
+```bash
+git clone <your-repo-url> mini-xdr
+cd mini-xdr
+./scripts/start-all.sh
+```
+
+Then visit http://localhost:3000 to access your security command center!
