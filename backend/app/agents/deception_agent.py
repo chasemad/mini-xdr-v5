@@ -185,8 +185,8 @@ class DeceptionAgent:
             }
         }
         
-        # Load existing configurations
-        asyncio.create_task(self._load_existing_honeypots())
+        # Load existing configurations - will be called when needed
+        # asyncio.create_task(self._load_existing_honeypots())
     
     def _init_llm_client(self):
         """Initialize LLM client for intelligent deception strategies"""

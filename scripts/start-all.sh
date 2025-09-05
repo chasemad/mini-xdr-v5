@@ -838,7 +838,7 @@ perform_health_checks() {
         local adaptive_incidents=$(echo "$adaptive_response" | jq -r '.incidents_detected' 2>/dev/null || echo "0")
         local adaptive_processed=$(echo "$adaptive_response" | jq -r '.processed' 2>/dev/null || echo "0")
         
-        if [ "$adaptive_incidents" -gt 0 ]; then
+        if [ "${adaptive_incidents:-0}" -gt 0 ] 2>/dev/null; then
             success "Adaptive Detection triggered ($adaptive_incidents incidents from $adaptive_processed events)"
             
             # Check if the incident was created with adaptive reasoning

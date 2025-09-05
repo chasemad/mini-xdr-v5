@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,7 @@ interface Message {
   content: string;
   timestamp: Date;
   confidence?: number;
-  actions?: any[];
+  actions?: Array<{action: string; status: string}>;
 }
 
 interface AgentStatus {
@@ -29,7 +29,7 @@ export default function AgentsPage() {
   const [input, setInput] = useState("");
   const [selectedAgent, setSelectedAgent] = useState("containment");
   const [loading, setLoading] = useState(false);
-  const [agentStatuses, setAgentStatuses] = useState<AgentStatus[]>([
+  const [agentStatuses] = useState<AgentStatus[]>([
     {
       id: "containment",
       name: "Containment Orchestrator",
@@ -192,7 +192,7 @@ export default function AgentsPage() {
               {conversation.length === 0 ? (
                 <div className="text-center text-gray-500 py-8">
                   <p>Start a conversation with an AI agent</p>
-                  <p className="text-sm mt-2">Try: "Evaluate incident 123" or "Analyze IP 192.168.1.100"</p>
+                  <p className="text-sm mt-2">Try: &quot;Evaluate incident 123&quot; or &quot;Analyze IP 192.168.1.100&quot;</p>
                 </div>
               ) : (
                 <div className="space-y-4">

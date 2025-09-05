@@ -22,6 +22,7 @@ from .multi_ingestion import multi_ingestor
 from .ml_engine import ml_detector
 from .external_intel import threat_intel
 from .agents.containment_agent import ContainmentAgent
+from .agent_orchestrator import get_orchestrator
 from .policy_engine import policy_engine
 from .learning_pipeline import learning_pipeline
 from .adaptive_detection import behavioral_analyzer
@@ -37,21 +38,26 @@ scheduler = AsyncIOScheduler()
 
 # Global AI agent instances
 containment_agent = None
+agent_orchestrator = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
-    global containment_agent
-    
+    global containment_agent, agent_orchestrator
+
     # Startup
     logger.info("Starting Enhanced Mini-XDR backend...")
     await init_db()
     scheduler.start()
-    
+
     # Initialize AI components
     logger.info("Initializing AI components...")
     containment_agent = ContainmentAgent(threat_intel=threat_intel, ml_detector=ml_detector)
+
+    # Initialize agent orchestrator
+    logger.info("Initializing Agent Orchestrator...")
+    agent_orchestrator = await get_orchestrator()
     
     # Load ML models if available
     try:
@@ -733,38 +739,56 @@ async def ingest_cowrie(
                 
                 incident.triage_note = triage_note
                 
-                # Enhanced auto-contain with AI agents
-                if auto_contain_enabled and containment_agent:
+                # Enhanced auto-contain with Agent Orchestrator
+                if auto_contain_enabled and agent_orchestrator:
                     try:
-                        # Use AI agent for containment decision
-                        response = await containment_agent.orchestrate_response(
-                            incident, recent_events, db
+                        # Use orchestrator for comprehensive incident response
+                        orchestration_result = await agent_orchestrator.orchestrate_incident_response(
+                            incident=incident,
+                            recent_events=recent_events,
+                            db_session=db,
+                            workflow_type="comprehensive"
                         )
-                        
-                        # Create action record for agent response
-                        action = Action(
-                            incident_id=incident.id,
-                            action="ai_agent_response",
-                            result="success" if response.get("success") else "failed",
-                            detail=response.get("reasoning", "AI agent containment"),
-                            params={
-                                "ip": incident.src_ip, 
-                                "auto": True,
-                                "agent_actions": response.get("actions", [])
-                            },
-                            agent_id=containment_agent.agent_id,
-                            confidence_score=response.get("confidence", 0.5)
-                        )
-                        db.add(action)
-                        
-                        if response.get("success"):
-                            incident.status = "contained"
-                            incident.auto_contained = True
-                            logger.info(f"AI agent contained incident #{incident.id}")
-                        
+
+                        if orchestration_result["success"]:
+                            # Update incident with orchestration results
+                            final_decision = orchestration_result["results"].get("final_decision", {})
+
+                            # Create action record for orchestrated response
+                            action = Action(
+                                incident_id=incident.id,
+                                action="orchestrated_response",
+                                result="success",
+                                detail=f"Agent orchestration completed: {orchestration_result['results'].get('coordination', {}).get('risk_assessment', {}).get('level', 'unknown')} risk",
+                                params={
+                                    "ip": incident.src_ip,
+                                    "auto": True,
+                                    "workflow_id": orchestration_result.get("workflow_id"),
+                                    "agents_involved": orchestration_result.get("agents_involved", []),
+                                    "final_decision": final_decision
+                                },
+                                agent_id=agent_orchestrator.agent_id,
+                                confidence_score=orchestration_result["results"].get("coordination", {}).get("confidence_levels", {}).get("overall", 0.5)
+                            )
+                            db.add(action)
+
+                            # Update incident based on orchestrator decision
+                            if final_decision.get("should_contain", False):
+                                incident.status = "contained"
+                                incident.auto_contained = True
+                                logger.info(f"Agent orchestrator contained incident #{incident.id}")
+
+                            # Update incident metadata
+                            incident.containment_method = "orchestrated"
+                            incident.escalation_level = final_decision.get("priority_level", "medium")
+                            incident.risk_score = orchestration_result["results"].get("coordination", {}).get("confidence_levels", {}).get("overall", 0.5)
+
+                        else:
+                            logger.warning(f"Agent orchestration failed for incident #{incident.id}: {orchestration_result.get('error', 'Unknown error')}")
+
                     except Exception as e:
-                        logger.error(f"AI agent containment failed for incident #{incident.id}: {e}")
-                        
+                        logger.error(f"Agent orchestration failed for incident #{incident.id}: {e}")
+
                         # Fallback to basic containment
                         try:
                             status, detail = await block_ip(incident.src_ip, duration_seconds=10)
@@ -776,12 +800,12 @@ async def ingest_cowrie(
                                 params={"ip": incident.src_ip, "auto": True, "fallback": True}
                             )
                             db.add(action)
-                            
+
                             if status == "success":
                                 incident.status = "contained"
                                 incident.auto_contained = True
                                 logger.info(f"Fallback contained incident #{incident.id}")
-                                
+
                         except Exception as e2:
                             logger.error(f"Fallback containment also failed for incident #{incident.id}: {e2}")
                 
@@ -900,94 +924,157 @@ async def agent_orchestrate(
     """
     Enhanced agent orchestration endpoint for contextual chat interaction
     """
-    if not containment_agent:
-        raise HTTPException(status_code=503, detail="AI agents not initialized")
-    
+    if not agent_orchestrator:
+        raise HTTPException(status_code=503, detail="Agent orchestrator not initialized")
+
     query = request_data.get("query", "")
     incident_id = request_data.get("incident_id")
     context = request_data.get("context", {})
-    agent_type = request_data.get("agent_type", "contextual_analysis")
-    
+    agent_type = request_data.get("agent_type", "orchestrated_response")
+    workflow_type = request_data.get("workflow_type", "comprehensive")
+
     try:
         # Handle contextual incident analysis (new chat mode)
         if incident_id and context:
             incident = (await db.execute(
                 select(Incident).where(Incident.id == incident_id)
             )).scalars().first()
-            
+
             if not incident:
                 return {"message": f"Incident {incident_id} not found"}
-            
+
             # Get recent events for full context
             recent_events = await _recent_events_for_ip(db, incident.src_ip)
-            
+
             # Generate contextual AI response
             response = await _generate_contextual_analysis(
                 query, incident, recent_events, context
             )
-            
+
             return {
                 "message": response,
                 "incident_id": incident_id,
                 "confidence": 0.85,
                 "analysis_type": "contextual_chat"
             }
-        
-        # Legacy containment agent mode
-        elif agent_type == "containment":
+
+        # Orchestrated response mode
+        elif agent_type == "orchestrated_response":
             import re
-            
+
             # Look for incident ID or IP in query
             incident_match = re.search(r'incident\s+(\d+)', query.lower())
             ip_match = re.search(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', query)
-            
+
             if incident_match:
                 incident_id = int(incident_match.group(1))
                 incident = (await db.execute(
                     select(Incident).where(Incident.id == incident_id)
                 )).scalars().first()
-                
+
                 if not incident:
                     return {"message": f"Incident {incident_id} not found"}
-                
+
                 recent_events = await _recent_events_for_ip(db, incident.src_ip)
-                response = await containment_agent.orchestrate_response(
-                    incident, recent_events, db
+
+                # Use orchestrator for comprehensive response
+                orchestration_result = await agent_orchestrator.orchestrate_incident_response(
+                    incident=incident,
+                    recent_events=recent_events,
+                    db_session=db,
+                    workflow_type=workflow_type
                 )
-                
-                return {
-                    "message": f"Agent response for incident {incident_id}: {response.get('reasoning', 'No details')}",
-                    "actions": response.get("actions", []),
-                    "confidence": response.get("confidence", 0.0)
-                }
-                
+
+                if orchestration_result["success"]:
+                    final_decision = orchestration_result["results"].get("final_decision", {})
+
+                    return {
+                        "message": f"Orchestrated response for incident {incident_id}: {orchestration_result['results'].get('coordination', {}).get('risk_assessment', {}).get('level', 'unknown')} risk detected",
+                        "orchestration_result": orchestration_result,
+                        "workflow_id": orchestration_result.get("workflow_id"),
+                        "agents_involved": orchestration_result.get("agents_involved", []),
+                        "final_decision": final_decision,
+                        "confidence": orchestration_result["results"].get("coordination", {}).get("confidence_levels", {}).get("overall", 0.0)
+                    }
+                else:
+                    return {
+                        "message": f"Orchestration failed for incident {incident_id}: {orchestration_result.get('error', 'Unknown error')}",
+                        "error": orchestration_result.get("error"),
+                        "partial_results": orchestration_result.get("partial_results", {})
+                    }
+
             elif ip_match:
                 ip = ip_match.group(0)
                 existing_incident = (await db.execute(
                     select(Incident).where(Incident.src_ip == ip)
                     .order_by(Incident.created_at.desc())
                 )).scalars().first()
-                
+
                 if existing_incident:
                     recent_events = await _recent_events_for_ip(db, ip)
-                    response = await containment_agent.orchestrate_response(
-                        existing_incident, recent_events, db
+
+                    # Use orchestrator for IP-based analysis
+                    orchestration_result = await agent_orchestrator.orchestrate_incident_response(
+                        incident=existing_incident,
+                        recent_events=recent_events,
+                        db_session=db,
+                        workflow_type=workflow_type
                     )
-                    
-                    return {
-                        "message": f"Agent evaluation for IP {ip}: {response.get('reasoning', 'No details')}",
-                        "actions": response.get("actions", []),
-                        "confidence": response.get("confidence", 0.0)
-                    }
+
+                    if orchestration_result["success"]:
+                        final_decision = orchestration_result["results"].get("final_decision", {})
+
+                        return {
+                            "message": f"Orchestrated analysis for IP {ip}: {orchestration_result['results'].get('coordination', {}).get('risk_assessment', {}).get('level', 'unknown')} risk",
+                            "orchestration_result": orchestration_result,
+                            "workflow_id": orchestration_result.get("workflow_id"),
+                            "agents_involved": orchestration_result.get("agents_involved", []),
+                            "final_decision": final_decision,
+                            "confidence": orchestration_result["results"].get("coordination", {}).get("confidence_levels", {}).get("overall", 0.0)
+                        }
+                    else:
+                        return {
+                            "message": f"Orchestration failed for IP {ip}: {orchestration_result.get('error', 'Unknown error')}",
+                            "error": orchestration_result.get("error")
+                        }
                 else:
                     return {"message": f"No incidents found for IP {ip}"}
-            
+
             else:
                 return {"message": "Please specify an incident ID or IP address to evaluate"}
-        
+
+        # Legacy containment agent mode (fallback)
+        elif agent_type == "containment" and containment_agent:
+            import re
+
+            # Look for incident ID or IP in query
+            incident_match = re.search(r'incident\s+(\d+)', query.lower())
+            ip_match = re.search(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', query)
+
+            if incident_match:
+                incident_id = int(incident_match.group(1))
+                incident = (await db.execute(
+                    select(Incident).where(Incident.id == incident_id)
+                )).scalars().first()
+
+                if not incident:
+                    return {"message": f"Incident {incident_id} not found"}
+
+                recent_events = await _recent_events_for_ip(db, incident.src_ip)
+                response = await containment_agent.orchestrate_response(
+                    incident, recent_events, db
+                )
+
+                return {
+                    "message": f"Legacy containment response for incident {incident_id}: {response.get('reasoning', 'No details')}",
+                    "actions": response.get("actions", []),
+                    "confidence": response.get("confidence", 0.0),
+                    "note": "Using legacy containment agent - consider upgrading to orchestrated response"
+                }
+
         else:
-            return {"message": f"Agent type '{agent_type}' not supported yet"}
-            
+            return {"message": f"Agent type '{agent_type}' not supported"}
+
     except Exception as e:
         logger.error(f"Agent orchestration failed: {e}")
         return {"message": f"Agent error: {str(e)}"}
@@ -1977,13 +2064,143 @@ async def process_scheduled_unblocks():
         logger.error(f"Error in scheduled unblock processor: {e}")
 
 
+@app.get("/api/orchestrator/status")
+async def get_orchestrator_status():
+    """Get comprehensive orchestrator status"""
+    try:
+        if not agent_orchestrator:
+            return {
+                "status": "not_initialized",
+                "message": "Agent orchestrator not available"
+            }
+
+        status = await agent_orchestrator.get_orchestrator_status()
+        return {
+            "status": "healthy",
+            "orchestrator": status,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Orchestrator status check failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+
+@app.get("/api/orchestrator/workflows/{workflow_id}")
+async def get_workflow_status(workflow_id: str):
+    """Get status of a specific workflow"""
+    try:
+        if not agent_orchestrator:
+            raise HTTPException(status_code=503, detail="Agent orchestrator not initialized")
+
+        workflow_status = await agent_orchestrator.get_workflow_status(workflow_id)
+        if workflow_status:
+            return workflow_status
+        else:
+            raise HTTPException(status_code=404, detail=f"Workflow {workflow_id} not found")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Workflow status check failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get workflow status: {str(e)}")
+
+
+@app.post("/api/orchestrator/workflows/{workflow_id}/cancel")
+async def cancel_workflow(workflow_id: str):
+    """Cancel a running workflow"""
+    try:
+        if not agent_orchestrator:
+            raise HTTPException(status_code=503, detail="Agent orchestrator not initialized")
+
+        cancelled = await agent_orchestrator.cancel_workflow(workflow_id)
+        if cancelled:
+            return {
+                "success": True,
+                "message": f"Workflow {workflow_id} cancelled successfully",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"Workflow {workflow_id} could not be cancelled (may have already completed)",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+
+    except Exception as e:
+        logger.error(f"Workflow cancellation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to cancel workflow: {str(e)}")
+
+
+@app.post("/api/orchestrator/workflows")
+async def create_workflow(
+    request_data: Dict[str, Any],
+    db: AsyncSession = Depends(get_db)
+):
+    """Manually trigger an orchestrated workflow for an incident"""
+    try:
+        if not agent_orchestrator:
+            raise HTTPException(status_code=503, detail="Agent orchestrator not initialized")
+
+        incident_id = request_data.get("incident_id")
+        workflow_type = request_data.get("workflow_type", "comprehensive")
+
+        if not incident_id:
+            raise HTTPException(status_code=400, detail="incident_id is required")
+
+        # Get incident
+        incident = (await db.execute(
+            select(Incident).where(Incident.id == incident_id)
+        )).scalars().first()
+
+        if not incident:
+            raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+
+        # Get recent events
+        recent_events = await _recent_events_for_ip(db, incident.src_ip)
+
+        # Trigger orchestration
+        orchestration_result = await agent_orchestrator.orchestrate_incident_response(
+            incident=incident,
+            recent_events=recent_events,
+            db_session=db,
+            workflow_type=workflow_type
+        )
+
+        return {
+            "success": True,
+            "workflow_id": orchestration_result.get("workflow_id"),
+            "message": f"Workflow started for incident {incident_id}",
+            "result": orchestration_result,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Workflow creation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create workflow: {str(e)}")
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
+    orchestrator_status = "not_initialized"
+    if agent_orchestrator:
+        try:
+            status = await agent_orchestrator.get_orchestrator_status()
+            orchestrator_status = "healthy" if status else "error"
+        except:
+            orchestrator_status = "error"
+
     return {
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "auto_contain": auto_contain_enabled
+        "auto_contain": auto_contain_enabled,
+        "orchestrator": orchestrator_status
     }
 
 

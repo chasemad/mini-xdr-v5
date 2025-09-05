@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 interface MLStatus {
   models_trained: number;
@@ -41,7 +41,7 @@ export default function AnalyticsPage() {
   const [sources, setSources] = useState<SourceStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [retraining, setRetraining] = useState(false);
-  const [modelMetrics, setModelMetrics] = useState<ModelMetrics[]>([
+  const [modelMetrics] = useState<ModelMetrics[]>([
     {
       name: "Isolation Forest",
       accuracy: 0.87,
@@ -258,7 +258,7 @@ export default function AnalyticsPage() {
                       cx="50%"
                       cy="50%"
                       labelLine={false}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      label={({ name, percent }) => `${name} ${(percent ? percent * 100 : 0).toFixed(0)}%`}
                       outerRadius={100}
                       fill="#8884d8"
                       dataKey="value"
