@@ -200,8 +200,8 @@ async def block_ip(ip: str, duration_seconds: int = None) -> Tuple[str, str]:
         return "failed", f"Invalid IP address: {ip}"
     
     if _is_private_ip(ip) and not settings.allow_private_ip_blocking:
-        logger.warning(f"Refusing to block private IP: {ip}")
-        return "failed", f"Refusing to block private IP: {ip}"
+        logger.warning(f"Refusing to block private IP: {ip} (allow_private_ip_blocking=False)")
+        return "failed", f"Refusing to block private IP: {ip} - Enable allow_private_ip_blocking for testing"
     
     command = f"sudo ufw deny from {ip} to any"
     status, stdout, stderr = await responder.execute_command(command)

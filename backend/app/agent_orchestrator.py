@@ -15,6 +15,10 @@ from .agents.attribution_agent import AttributionAgent
 from .agents.containment_agent import ContainmentAgent
 from .agents.forensics_agent import ForensicsAgent
 from .agents.deception_agent import DeceptionAgent
+from .agents.coordination_hub import (
+    AdvancedCoordinationHub, AgentCapability, CoordinationContext,
+    CoordinationStrategy, ConflictResolutionStrategy
+)
 from .models import Incident, Event, Action
 from .config import settings
 
@@ -138,7 +142,7 @@ class AgentOrchestrator:
     """
 
     def __init__(self):
-        self.agent_id = "orchestrator_v1"
+        self.agent_id = "orchestrator_v2"
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
         # Initialize agents
@@ -149,6 +153,9 @@ class AgentOrchestrator:
             AgentRole.DECEPTION: DeceptionAgent()
         }
 
+        # Advanced coordination system
+        self.coordination_hub = AdvancedCoordinationHub()
+        
         # Shared systems
         self.shared_memory = SharedAgentMemory()
         self.message_queue: List[AgentMessage] = []
@@ -165,21 +172,26 @@ class AgentOrchestrator:
             "workflows_failed": 0,
             "messages_processed": 0,
             "decisions_made": 0,
+            "coordinations_executed": 0,
+            "conflicts_resolved": 0,
             "start_time": datetime.utcnow()
         }
 
     async def initialize(self):
         """Initialize the orchestrator and all agents"""
         try:
-            self.logger.info("Initializing Agent Orchestrator...")
+            self.logger.info("Initializing Enhanced Agent Orchestrator...")
 
             # Initialize shared memory cleanup task
             asyncio.create_task(self._periodic_cleanup())
 
+            # Register agents with coordination hub
+            await self._register_agents_with_coordination_hub()
+
             # Test agent connectivity
             await self._test_agent_connectivity()
 
-            self.logger.info("Agent Orchestrator initialized successfully")
+            self.logger.info("Enhanced Agent Orchestrator initialized successfully")
 
         except Exception as e:
             self.logger.error(f"Failed to initialize orchestrator: {e}")
@@ -221,6 +233,54 @@ class AgentOrchestrator:
                 self.logger.error(f"Periodic cleanup failed: {e}")
 
             await asyncio.sleep(300)  # Run every 5 minutes
+
+    async def _register_agents_with_coordination_hub(self):
+        """Register all agents with the coordination hub"""
+        
+        # Define agent capabilities
+        agent_capabilities = {
+            AgentRole.ATTRIBUTION: AgentCapability(
+                name="attribution_agent",
+                domain_expertise=["threat_attribution", "campaign_analysis", "actor_profiling"],
+                confidence_threshold=0.7,
+                execution_time_estimate=15.0,
+                resource_requirements={"cpu": 0.2, "memory": 0.3},
+                dependencies=[],
+                success_rate=0.85
+            ),
+            AgentRole.CONTAINMENT: AgentCapability(
+                name="containment_agent", 
+                domain_expertise=["incident_containment", "ip_blocking", "threat_response"],
+                confidence_threshold=0.8,
+                execution_time_estimate=5.0,
+                resource_requirements={"cpu": 0.1, "memory": 0.1},
+                dependencies=[],
+                success_rate=0.92
+            ),
+            AgentRole.FORENSICS: AgentCapability(
+                name="forensics_agent",
+                domain_expertise=["evidence_collection", "forensic_analysis", "case_management"],
+                confidence_threshold=0.75,
+                execution_time_estimate=30.0,
+                resource_requirements={"cpu": 0.3, "memory": 0.4},
+                dependencies=[],
+                success_rate=0.88
+            ),
+            AgentRole.DECEPTION: AgentCapability(
+                name="deception_agent",
+                domain_expertise=["deception_deployment", "attacker_profiling", "honeypot_management"],
+                confidence_threshold=0.6,
+                execution_time_estimate=20.0,
+                resource_requirements={"cpu": 0.2, "memory": 0.2},
+                dependencies=[],
+                success_rate=0.78
+            )
+        }
+        
+        # Register each agent
+        for role, capabilities in agent_capabilities.items():
+            self.coordination_hub.register_agent(role.value, capabilities)
+            self.logger.info(f"Registered {role.value} with coordination hub")
 
     async def orchestrate_incident_response(
         self,
@@ -311,6 +371,260 @@ class AgentOrchestrator:
                 "error": str(e),
                 "partial_results": getattr(workflow, 'results', {}) if 'workflow' in locals() else {}
             }
+
+    async def enhanced_orchestrate_incident_response(
+        self,
+        incident: Incident,
+        recent_events: List[Event],
+        db_session=None,
+        coordination_strategy: str = "adaptive",
+        max_agents: int = 4,
+        automation_level: str = "high"
+    ) -> Dict[str, Any]:
+        """
+        Enhanced incident response using advanced multi-agent coordination
+        
+        Args:
+            incident: The incident to respond to
+            recent_events: Recent events related to the incident
+            db_session: Database session for persistence
+            coordination_strategy: Strategy for coordination ("adaptive", "parallel", "sequential", "hierarchical")
+            max_agents: Maximum number of agents to coordinate
+            automation_level: Level of automation ("low", "medium", "high")
+            
+        Returns:
+            Enhanced orchestration results with advanced coordination analytics
+        """
+        
+        orchestration_start = datetime.utcnow()
+        orchestration_id = f"enhanced_orch_{incident.id}_{int(orchestration_start.timestamp())}"
+        
+        try:
+            self.logger.info(f"Starting enhanced orchestration {orchestration_id} for incident {incident.id}")
+            
+            # Create coordination context
+            context = CoordinationContext(
+                incident_severity=getattr(incident, 'escalation_level', 'medium'),
+                time_constraints=timedelta(minutes=30) if incident.status == 'new' else None,
+                resource_availability={"cpu": 0.8, "memory": 0.7, "network": 0.9},
+                stakeholder_priority='high' if getattr(incident, 'escalation_level', 'medium') == 'critical' else 'medium',
+                automation_level=automation_level,
+                risk_tolerance=0.3 if getattr(incident, 'escalation_level', 'medium') == 'critical' else 0.6,
+                compliance_requirements=["data_protection", "incident_logging"]
+            )
+            
+            # Determine required capabilities based on incident type
+            required_capabilities = self._determine_required_capabilities(incident, recent_events)
+            
+            # Use coordination hub for advanced agent coordination
+            coordination_result = await self.coordination_hub.coordinate_agents(
+                incident=incident,
+                required_capabilities=required_capabilities,
+                context=context,
+                max_agents=max_agents
+            )
+            
+            if coordination_result["success"]:
+                # Process coordination results
+                orchestration_results = {
+                    "success": True,
+                    "orchestration_id": orchestration_id,
+                    "coordination_strategy": coordination_result["strategy"],
+                    "agents_coordinated": coordination_result["agents_involved"],
+                    "execution_time": coordination_result["execution_time"],
+                    "coordination_results": coordination_result["results"],
+                    "performance_summary": coordination_result["performance_summary"],
+                    "decision_analytics": self._generate_decision_analytics(coordination_result),
+                    "agent_performance_metrics": self._extract_agent_metrics(coordination_result),
+                    "recommendations": self._generate_orchestration_recommendations(coordination_result, context)
+                }
+                
+                # Update orchestrator statistics
+                self.stats["coordinations_executed"] += 1
+                if coordination_result.get("conflicts_resolved", 0) > 0:
+                    self.stats["conflicts_resolved"] += coordination_result["conflicts_resolved"]
+                
+                self.logger.info(f"Enhanced orchestration {orchestration_id} completed successfully")
+                
+                return orchestration_results
+                
+            else:
+                # Fallback to legacy orchestration
+                self.logger.warning(f"Coordination failed, falling back to legacy orchestration: {coordination_result.get('error')}")
+                
+                fallback_result = await self.orchestrate_incident_response(
+                    incident, recent_events, db_session, "comprehensive"
+                )
+                
+                # Add coordination attempt info
+                fallback_result["coordination_attempted"] = True
+                fallback_result["coordination_error"] = coordination_result.get("error")
+                fallback_result["fallback_used"] = True
+                
+                return fallback_result
+                
+        except Exception as e:
+            self.logger.error(f"Enhanced orchestration {orchestration_id} failed: {e}")
+            
+            # Fallback to legacy orchestration
+            try:
+                fallback_result = await self.orchestrate_incident_response(
+                    incident, recent_events, db_session, "basic"
+                )
+                fallback_result["coordination_attempted"] = True
+                fallback_result["coordination_error"] = str(e)
+                fallback_result["fallback_used"] = True
+                return fallback_result
+                
+            except Exception as fallback_error:
+                return {
+                    "success": False,
+                    "orchestration_id": orchestration_id,
+                    "error": f"Both enhanced and fallback orchestration failed: {e}, {fallback_error}",
+                    "coordination_attempted": True
+                }
+    
+    def _determine_required_capabilities(self, incident: Incident, recent_events: List[Event]) -> List[str]:
+        """Determine what agent capabilities are required for this incident"""
+        
+        capabilities = []
+        
+        # Always include containment for active incidents
+        if incident.status in ['new', 'open']:
+            capabilities.append("incident_containment")
+        
+        # Include attribution for significant incidents
+        if len(recent_events) > 10 or getattr(incident, 'escalation_level', 'medium') in ['high', 'critical']:
+            capabilities.append("threat_attribution")
+        
+        # Include forensics for complex incidents
+        if len(recent_events) > 20 or incident.reason in ['malware', 'data_exfiltration']:
+            capabilities.append("forensic_analysis")
+        
+        # Include deception for ongoing attacks
+        if incident.status == 'open' and len(recent_events) > 5:
+            capabilities.append("deception_deployment")
+        
+        # Default to basic capabilities if none determined
+        if not capabilities:
+            capabilities = ["incident_containment", "threat_attribution"]
+        
+        return capabilities
+    
+    def _generate_decision_analytics(self, coordination_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate analytics about the decision-making process"""
+        
+        analytics = {
+            "coordination_efficiency": 0.0,
+            "decision_quality_score": 0.0,
+            "agent_collaboration_score": 0.0,
+            "conflict_resolution_effectiveness": 0.0,
+            "resource_utilization": 0.0
+        }
+        
+        try:
+            # Coordination efficiency (based on execution time vs estimated)
+            actual_time = coordination_result.get("execution_time", 0)
+            if actual_time > 0:
+                # Assume baseline of 60 seconds for comparison
+                efficiency = max(0, min(1, (60 - actual_time) / 60))
+                analytics["coordination_efficiency"] = efficiency
+            
+            # Decision quality (based on agent confidence and performance)
+            performance_summary = coordination_result.get("performance_summary", {})
+            successful_agents = performance_summary.get("successful_agents", 0)
+            total_agents = performance_summary.get("agents_participated", 1)
+            
+            analytics["decision_quality_score"] = successful_agents / total_agents
+            
+            # Agent collaboration (based on conflicts and resolution)
+            conflicts_detected = performance_summary.get("conflicts_detected", False)
+            if conflicts_detected:
+                # Lower score for conflicts, but credit for resolution
+                analytics["agent_collaboration_score"] = 0.6
+                analytics["conflict_resolution_effectiveness"] = 0.8
+            else:
+                analytics["agent_collaboration_score"] = 0.9
+                analytics["conflict_resolution_effectiveness"] = 1.0
+            
+            # Resource utilization (mock calculation)
+            analytics["resource_utilization"] = min(0.8, total_agents / 5.0)
+            
+        except Exception as e:
+            self.logger.error(f"Failed to generate decision analytics: {e}")
+        
+        return analytics
+    
+    def _extract_agent_metrics(self, coordination_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract performance metrics for individual agents"""
+        
+        metrics = {}
+        
+        try:
+            results = coordination_result.get("results", {})
+            agent_results = results.get("agent_results", {})
+            
+            for agent_id, result in agent_results.items():
+                metrics[agent_id] = {
+                    "success": result.get("success", False),
+                    "execution_time": result.get("execution_time", 0.0),
+                    "confidence_score": getattr(result.get("decision"), "confidence", 0.0) if result.get("decision") else 0.0,
+                    "findings_count": len(result.get("findings", [])),
+                    "error_occurred": "error" in result
+                }
+        
+        except Exception as e:
+            self.logger.error(f"Failed to extract agent metrics: {e}")
+        
+        return metrics
+    
+    def _generate_orchestration_recommendations(
+        self, 
+        coordination_result: Dict[str, Any], 
+        context: CoordinationContext
+    ) -> List[str]:
+        """Generate recommendations based on orchestration results"""
+        
+        recommendations = []
+        
+        try:
+            performance_summary = coordination_result.get("performance_summary", {})
+            
+            # Performance-based recommendations
+            success_rate = performance_summary.get("successful_agents", 0) / max(performance_summary.get("agents_participated", 1), 1)
+            
+            if success_rate < 0.8:
+                recommendations.append("Consider reviewing agent configurations - lower than expected success rate")
+            
+            # Time-based recommendations
+            execution_time = coordination_result.get("execution_time", 0)
+            if execution_time > 45:
+                recommendations.append("Consider parallel coordination strategy for faster response times")
+            
+            # Conflict-based recommendations
+            if performance_summary.get("conflicts_detected", False):
+                recommendations.append("Review agent decision criteria to reduce conflicts")
+            
+            # Context-based recommendations
+            if context.incident_severity == 'critical' and execution_time > 30:
+                recommendations.append("Implement fast-track coordination for critical incidents")
+            
+            # Resource optimization recommendations
+            agents_used = performance_summary.get("agents_participated", 0)
+            if agents_used < 2:
+                recommendations.append("Consider involving additional agents for more comprehensive analysis")
+            elif agents_used > 4:
+                recommendations.append("Evaluate if all agents are necessary - consider optimizing agent selection")
+            
+            # Generic recommendations
+            if not recommendations:
+                recommendations.append("Orchestration completed successfully - no immediate optimizations needed")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to generate orchestration recommendations: {e}")
+            recommendations.append("Unable to generate recommendations due to analysis error")
+        
+        return recommendations
 
     async def _execute_comprehensive_workflow(
         self,

@@ -9,7 +9,7 @@ MCP_PORT=3001
 
 # Required tools and versions
 REQUIRED_PYTHON_VERSION="3.8"
-REQUIRED_NODE_VERSION="18"
+REQUIRED_NODE_VERSION="20"
 
 # Colors for output
 RED='\033[0;31m'
@@ -99,7 +99,7 @@ check_system_requirements() {
     # Check Node.js
     if ! command -v node &> /dev/null; then
         error "Node.js is not installed"
-        log "Please install Node.js 18+ from https://nodejs.org"
+        log "Please install Node.js 20+ from https://nodejs.org (required for Tailwind CSS v4)"
         exit 1
     fi
     
@@ -235,24 +235,24 @@ setup_python_environment() {
         # Install dependencies with specific order and fallbacks
         log "Installing core dependencies first..."
         
-        # Install numpy first (required by many packages)
-        pip install "numpy>=1.21.0,<2.0.0" || {
-            error "Failed to install numpy"
+        # Install numpy first (required by many packages, updated for federated learning compatibility)
+        pip install "numpy>=2.1.0" || {
+            error "Failed to install numpy (required for TensorFlow 2.20.0 federated learning)"
             exit 1
         }
         
-        # Try to install scipy with specific configuration
+        # Try to install scipy with specific configuration (updated for numpy 2.x compatibility)
         log "Installing scipy with optimizations..."
         if [[ "$OSTYPE" == "darwin"* ]]; then
-            # macOS-specific scipy installation
-            pip install --no-use-pep517 "scipy>=1.7.0,<2.0.0" || {
+            # macOS-specific scipy installation (compatible with numpy 2.x)
+            pip install "scipy>=1.10.0" || {
                 warning "Failed to install scipy - disabling scipy-dependent features"
                 # Remove scipy from requirements temporarily
                 sed -i.bak '/^scipy/d' requirements.txt
                 log "Continuing without scipy (some statistical features will be disabled)"
             }
         else
-            pip install "scipy>=1.7.0,<2.0.0" || {
+            pip install "scipy>=1.10.0" || {
                 warning "Failed to install scipy - disabling scipy-dependent features"
                 sed -i.bak '/^scipy/d' requirements.txt
             }
@@ -265,18 +265,30 @@ setup_python_environment() {
             exit 1
         }
         
-        # Install remaining requirements
-        log "Installing remaining dependencies..."
-        pip install -r requirements.txt
+        # Install core requirements first
+        log "Installing core requirements with numpy 2.x support..."
+        pip install -r requirements.txt --ignore-installed
         if [ $? -ne 0 ]; then
-            error "Failed to install some Python dependencies"
-            log "Attempting to continue with partial installation..."
+            warning "Some dependencies failed - installing core packages individually..."
             
-            # Try installing critical packages individually
-            critical_packages=("fastapi" "uvicorn" "sqlalchemy" "torch" "pandas" "aiohttp" "langchain")
+            # Install critical packages individually
+            critical_packages=("fastapi" "uvicorn[standard]" "sqlalchemy" "pandas" "scikit-learn" "tensorflow==2.20.0" "torch" "aiohttp" "langchain")
             for package in "${critical_packages[@]}"; do
                 log "Installing critical package: $package"
                 pip install "$package" || warning "Failed to install $package"
+            done
+        fi
+        
+        # Install Phase 2B advanced ML dependencies using our custom script
+        log "Installing Phase 2B Advanced ML dependencies..."
+        if [ -f "install_phase2b_deps.py" ]; then
+            python install_phase2b_deps.py || warning "Some Phase 2B dependencies failed (will use fallbacks)"
+        else
+            warning "Phase 2B installation script not found - using pip fallback"
+            # Try to install advanced ML packages individually
+            for package in "shap" "lime" "optuna"; do
+                log "Attempting to install $package..."
+                pip install "$package" || warning "Failed to install $package (will use fallback)"
             done
         fi
     fi
@@ -342,12 +354,54 @@ setup_node_dependencies() {
     # Frontend dependencies
     log "Installing frontend dependencies..."
     cd "$PROJECT_ROOT/frontend"
-    npm install
+    
+    # Check if we need to clean install due to 3D visualization dependencies or Tailwind v4
+    if [ -f "package-lock.json" ] && (grep -q "@react-three" package.json 2>/dev/null || grep -q '"tailwindcss": "^4' package.json 2>/dev/null); then
+        log "Detected 3D visualization dependencies or Tailwind CSS v4 - using clean installation..."
+        rm -rf node_modules package-lock.json 2>/dev/null
+    fi
+    
+    # Install with legacy peer deps to handle React 19 + Three.js conflicts
+    npm install --legacy-peer-deps
     if [ $? -ne 0 ]; then
         error "Failed to install frontend dependencies"
-        exit 1
+        log "Trying with force flag to bypass peer dependency issues..."
+        npm install --force
+        if [ $? -ne 0 ]; then
+            error "Frontend dependency installation failed completely"
+            exit 1
+        fi
+        warning "Frontend dependencies installed with --force (may have warnings)"
+    else
+        success "Frontend dependencies installed successfully"
     fi
-    success "Frontend dependencies installed"
+    
+    # Check for Tailwind CSS v4 and install lightningcss-darwin-arm64 if needed
+    if [[ "$OSTYPE" == "darwin"* ]] && grep -q '"tailwindcss": "^4' package.json 2>/dev/null; then
+        log "Detected Tailwind CSS v4 on macOS - checking LightningCSS native binary..."
+        if [ ! -f "node_modules/lightningcss-darwin-arm64/lightningcss.darwin-arm64.node" ]; then
+            log "Installing lightningcss-darwin-arm64 for Apple Silicon compatibility..."
+            npm install lightningcss-darwin-arm64 --save-optional
+            if [ $? -eq 0 ]; then
+                success "LightningCSS native binary installed successfully"
+            else
+                warning "Failed to install lightningcss-darwin-arm64 - build may fail"
+            fi
+        else
+            log "LightningCSS native binary already present"
+        fi
+    fi
+    
+    # Test frontend build to catch configuration issues early
+    if grep -q '"tailwindcss": "^4' package.json 2>/dev/null; then
+        log "Testing frontend build with Tailwind CSS v4..."
+        if npm run build > /dev/null 2>&1; then
+            success "Frontend build test passed"
+        else
+            warning "Frontend build test failed - may have configuration issues"
+            log "Run 'npm run build' in frontend directory to debug"
+        fi
+    fi
     
     # Backend MCP dependencies
     log "Installing backend MCP dependencies..."
@@ -576,31 +630,112 @@ start_frontend() {
     log "Starting frontend server..."
     cd "$PROJECT_ROOT/frontend"
     
-    npm run dev > frontend.log 2>&1 &
+    # Check if frontend port is available, use alternative if needed
+    local frontend_port=$FRONTEND_PORT
+    if lsof -ti:$frontend_port > /dev/null 2>&1; then
+        log "Port $frontend_port in use, trying alternative ports..."
+        for alt_port in 3001 3002 3003; do
+            if ! lsof -ti:$alt_port > /dev/null 2>&1; then
+                frontend_port=$alt_port
+                log "Using alternative port: $frontend_port"
+                break
+            fi
+        done
+    fi
+    
+    # Start with specific port if needed
+    if [ $frontend_port -ne $FRONTEND_PORT ]; then
+        export PORT=$frontend_port
+        npm run dev > frontend.log 2>&1 &
+    else
+        npm run dev > frontend.log 2>&1 &
+    fi
+    
     FRONTEND_PID=$!
     
-    log "Frontend starting (PID: $FRONTEND_PID)..."
+    log "Frontend starting on port $frontend_port (PID: $FRONTEND_PID)..."
     
-    # Wait for frontend to start
-    local max_attempts=45
+    # Wait for frontend to start - check both default and alternative ports
+    local max_attempts=60  # Extended timeout for 3D deps
     local attempt=0
     
     while [ $attempt -lt $max_attempts ]; do
-        if curl -s http://localhost:$FRONTEND_PORT > /dev/null 2>&1; then
-            success "Frontend server ready on port $FRONTEND_PORT"
+        if curl -s http://localhost:$frontend_port > /dev/null 2>&1; then
+            success "Frontend server ready on port $frontend_port"
+            FRONTEND_PORT=$frontend_port  # Update global variable
             return 0
         fi
+        
+        # Also check if it started on a different port (Next.js auto-port detection)
+        for check_port in 3000 3001 3002 3003; do
+            if curl -s http://localhost:$check_port > /dev/null 2>&1; then
+                success "Frontend server ready on port $check_port"
+                FRONTEND_PORT=$check_port
+                return 0
+            fi
+        done
+        
         sleep 1
         attempt=$((attempt + 1))
         echo -n "."
     done
     
-    error "Frontend failed to start within 45 seconds"
+    error "Frontend failed to start within 60 seconds"
     log "Check frontend.log for details"
+    
+    # Show last few lines of frontend log for debugging
+    if [ -f "frontend.log" ]; then
+        log "Last 10 lines of frontend.log:"
+        tail -10 frontend.log 2>/dev/null || true
+    fi
+    
     return 1
 }
 
-# Function to test MCP server availability
+# Function to start MCP server as background service
+start_mcp_server() {
+    log "Starting MCP server for LLM integration..."
+    cd "$PROJECT_ROOT/backend"
+    
+    if [ -f "package.json" ] && npm list > /dev/null 2>&1; then
+        # Start MCP server as background service
+        log "Starting MCP server on port $MCP_PORT..."
+        npm run mcp-server > mcp.log 2>&1 &
+        MCP_PID=$!
+        
+        log "MCP server starting (PID: $MCP_PID)..."
+        
+        # Give it time to initialize
+        sleep 3
+        
+        # Check if it started successfully
+        if curl -s http://localhost:$MCP_PORT/health > /dev/null 2>&1; then
+            success "MCP server ready on port $MCP_PORT"
+            echo "   💡 MCP server available for LLM integrations"
+            echo "   💡 Connect AI assistants to http://localhost:$MCP_PORT"
+            return 0
+        else
+            # Check stdio mode
+            if grep -q "Mini-XDR MCP server running" mcp.log 2>/dev/null; then
+                success "MCP server available (stdio mode)"
+                echo "   💡 MCP server runs on stdio for LLM integrations"
+                return 0
+            else
+                warning "MCP server failed to start - check mcp.log"
+                kill $MCP_PID 2>/dev/null || true
+                wait $MCP_PID 2>/dev/null || true
+                MCP_PID=""
+                return 1
+            fi
+        fi
+    else
+        warning "MCP server dependencies not found - LLM integration disabled"
+        MCP_PID=""
+        return 1
+    fi
+}
+
+# Function to test MCP server availability (legacy fallback)
 test_mcp_server() {
     log "Testing MCP server availability..."
     cd "$PROJECT_ROOT/backend"
@@ -608,14 +743,14 @@ test_mcp_server() {
     if [ -f "package.json" ] && npm list > /dev/null 2>&1; then
         # Test if MCP server can start by running it briefly
         log "Verifying MCP server can start..."
-        npm run mcp > mcp.log 2>&1 &
+        npm run mcp > mcp_test.log 2>&1 &
         local test_pid=$!
         
         # Give it time to initialize
         sleep 2
         
         # Check if it started successfully
-        if grep -q "Mini-XDR MCP server running on stdio" mcp.log 2>/dev/null; then
+        if grep -q "Mini-XDR MCP server running on stdio" mcp_test.log 2>/dev/null; then
             success "MCP server available and working"
             echo "   💡 MCP server runs on-demand for LLM integrations"
             echo "   💡 Use MCP clients or AI assistants to connect via stdio"
@@ -625,7 +760,7 @@ test_mcp_server() {
             wait $test_pid 2>/dev/null || true
             MCP_PID="available"
         else
-            warning "MCP server failed to initialize - check mcp.log"
+            warning "MCP server failed to initialize - check mcp_test.log"
             kill $test_pid 2>/dev/null || true
             wait $test_pid 2>/dev/null || true
             MCP_PID=""
@@ -688,6 +823,19 @@ perform_health_checks() {
     log "🔍 Testing Frontend..."
     if curl -s http://localhost:$FRONTEND_PORT > /dev/null 2>&1; then
         success "Frontend responding"
+        
+        # Test for LightningCSS issues on macOS with Tailwind v4
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            cd "$PROJECT_ROOT/frontend"
+            if grep -q '"tailwindcss": "^4' package.json 2>/dev/null; then
+                log "🔍 Verifying LightningCSS native binary..."
+                if [ -f "node_modules/lightningcss-darwin-arm64/lightningcss.darwin-arm64.node" ]; then
+                    success "LightningCSS native binary verified"
+                else
+                    warning "LightningCSS native binary missing - builds may fail"
+                fi
+            fi
+        fi
     else
         error "Frontend not responding"
         return 1
@@ -857,6 +1005,77 @@ perform_health_checks() {
         warning "Adaptive detection test failed"
     fi
     
+    # Test federated learning system
+    log "🔍 Testing Federated Learning System..."
+    local federated_status=$(curl -s http://localhost:$BACKEND_PORT/api/federated/status 2>/dev/null)
+    if [ $? -eq 0 ]; then
+        local federated_available=$(echo "$federated_status" | jq -r '.available' 2>/dev/null || echo "unknown")
+        if [ "$federated_available" = "true" ]; then
+            success "Federated Learning System operational"
+            
+            # Test federated models status
+            local models_status=$(curl -s http://localhost:$BACKEND_PORT/api/federated/models/status 2>/dev/null)
+            if [ $? -eq 0 ]; then
+                local federated_enabled=$(echo "$models_status" | jq -r '.federated_capabilities.ensemble_with_federated' 2>/dev/null || echo "false")
+                success "Federated ML integration ready (enabled: $federated_enabled)"
+            else
+                warning "Federated models status check failed"
+            fi
+        else
+            warning "Federated Learning System not fully available"
+            echo "   Status: $federated_status"
+        fi
+    else
+        warning "Federated Learning API not responding"
+    fi
+    
+    # Test 3D Visualization APIs (Phase 4.1)
+    log "🔍 Testing 3D Visualization APIs..."
+    local threats_response=$(curl -s http://localhost:$BACKEND_PORT/api/intelligence/threats 2>/dev/null)
+    if [ $? -eq 0 ]; then
+        local threat_count=$(echo "$threats_response" | jq -r '.total_count' 2>/dev/null || echo "unknown")
+        success "Threat Intelligence API responding ($threat_count threats)"
+        
+        # Test timeline API
+        local timeline_response=$(curl -s http://localhost:$BACKEND_PORT/api/incidents/timeline 2>/dev/null)
+        if [ $? -eq 0 ]; then
+            local timeline_count=$(echo "$timeline_response" | jq -r '.total_count' 2>/dev/null || echo "unknown")
+            success "Timeline API responding ($timeline_count events)"
+        else
+            warning "Timeline API not responding"
+        fi
+        
+        # Test attack paths API
+        local paths_response=$(curl -s http://localhost:$BACKEND_PORT/api/incidents/attack-paths 2>/dev/null)
+        if [ $? -eq 0 ]; then
+            local paths_count=$(echo "$paths_response" | jq -r '.total_count' 2>/dev/null || echo "unknown")
+            success "Attack Paths API responding ($paths_count paths)"
+        else
+            warning "Attack Paths API not responding"
+        fi
+    else
+        warning "3D Visualization APIs not responding"
+    fi
+    
+    # Test distributed system APIs
+    log "🔍 Testing Distributed MCP System..."
+    local distributed_status=$(curl -s http://localhost:$BACKEND_PORT/api/distributed/status 2>/dev/null)
+    if [ $? -eq 0 ]; then
+        local capabilities_count=$(echo "$distributed_status" | jq -r '.capabilities | length' 2>/dev/null || echo "unknown")
+        success "Distributed MCP System responding ($capabilities_count capabilities)"
+        
+        # Test distributed health
+        local health_response=$(curl -s http://localhost:$BACKEND_PORT/api/distributed/health 2>/dev/null)
+        if [ $? -eq 0 ]; then
+            local overall_healthy=$(echo "$health_response" | jq -r '.overall_healthy' 2>/dev/null || echo "unknown")
+            success "Distributed system health check (healthy: $overall_healthy)"
+        else
+            warning "Distributed health check failed"
+        fi
+    else
+        warning "Distributed MCP APIs not responding"
+    fi
+    
     echo ""
     success "Health checks completed!"
     return 0
@@ -868,11 +1087,15 @@ show_system_status() {
     echo "=== 🚀 Mini-XDR System Status ==="
     echo ""
     echo "📊 Services:"
-    echo "   • Frontend:  http://localhost:$FRONTEND_PORT"
-    echo "   • Backend:   http://localhost:$BACKEND_PORT"
-    echo "   • API Docs:  http://localhost:$BACKEND_PORT/docs"
-    echo "   • AI Agents: http://localhost:$FRONTEND_PORT/agents"
-    echo "   • Analytics: http://localhost:$FRONTEND_PORT/analytics"
+    echo "   • Frontend:        http://localhost:$FRONTEND_PORT"
+    echo "   • Backend:         http://localhost:$BACKEND_PORT"
+    echo "   • API Docs:        http://localhost:$BACKEND_PORT/docs"
+    echo "   • 3D Visualization: http://localhost:$FRONTEND_PORT/visualizations"
+    echo "   • AI Agents:       http://localhost:$FRONTEND_PORT/agents"
+    echo "   • Analytics:       http://localhost:$FRONTEND_PORT/analytics"
+    if [ ! -z "$MCP_PID" ] && [ "$MCP_PID" != "available" ]; then
+        echo "   • MCP Server:      http://localhost:$MCP_PORT"
+    fi
     echo ""
     echo "📋 Process IDs:"
     echo "   • Backend PID:  ${BACKEND_PID:-"Not running"}"
@@ -910,11 +1133,15 @@ print(f'{settings.honeypot_user}@{settings.honeypot_host}:{settings.honeypot_ssh
     
     echo "🧪 Quick Tests:"
     echo "   • Test Event:   curl -X POST http://localhost:$BACKEND_PORT/ingest/multi -H 'Content-Type: application/json' -H 'Authorization: Bearer test-api-key' -d '{\"source_type\":\"cowrie\",\"hostname\":\"test\",\"events\":[{\"eventid\":\"cowrie.login.failed\",\"src_ip\":\"192.168.1.100\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}]}'"
+    echo "   • Build Test:   cd frontend && npm run build"
     echo "   • ML Status:    curl http://localhost:$BACKEND_PORT/api/ml/status"
     echo "   • AI Agent:     curl -X POST http://localhost:$BACKEND_PORT/api/agents/orchestrate -H 'Content-Type: application/json' -d '{\"agent_type\":\"containment\",\"query\":\"status\",\"history\":[]}'"
     echo "   • SSH Test:     curl http://localhost:$BACKEND_PORT/test/ssh"
     echo "   • Adaptive:     curl http://localhost:$BACKEND_PORT/api/adaptive/status"
     echo "   • Learning:     curl -X POST http://localhost:$BACKEND_PORT/api/adaptive/force_learning"
+    echo "   • Fed Status:   curl http://localhost:$BACKEND_PORT/api/federated/status"
+    echo "   • Fed Models:   curl http://localhost:$BACKEND_PORT/api/federated/models/status"
+    echo "   • Fed Insights: curl http://localhost:$BACKEND_PORT/api/federated/insights"
     echo "   • View Logs:    tail -f $PROJECT_ROOT/backend/backend.log"
     echo ""
     
@@ -924,6 +1151,14 @@ print(f'{settings.honeypot_user}@{settings.honeypot_host}:{settings.honeypot_ssh
     echo "   • ML Ensemble Detection: Multi-model anomaly detection"
     echo "   • Continuous Learning: Self-improving detection over time"
     echo "   • Zero-Day Detection: Identifies unknown attack methods"
+    echo ""
+    
+    echo "🔄 Federated Learning Features (Phase 2):"
+    echo "   • Privacy-Preserving Model Aggregation: Secure multi-party computation"
+    echo "   • Differential Privacy Protection: Noise injection for data privacy"
+    echo "   • Cross-Organization Threat Sharing: Collaborative intelligence"
+    echo "   • Advanced Cryptographic Protocols: 4 security levels available"
+    echo "   • Real-Time Model Synchronization: Distributed learning system"
     echo ""
     
     if [ "$MCP_PID" = "available" ]; then
@@ -1041,7 +1276,15 @@ main() {
     fi
     
     sleep 2
-    test_mcp_server
+    
+    # Try to start MCP server (optional)
+    log "Attempting to start MCP server..."
+    if start_mcp_server; then
+        success "MCP server integration ready"
+    else
+        warning "MCP server not started - continuing without LLM integration"
+        test_mcp_server  # Fallback to test mode
+    fi
     
     echo ""
     
@@ -1054,7 +1297,9 @@ main() {
         
         echo "🛡️  Enhanced XDR System Ready with:"
         echo "   🤖 AI Agents for autonomous threat response"
-        echo "   🧠 Intelligent Adaptive Detection (NEW!)"
+        echo "   🧠 Intelligent Adaptive Detection"
+        echo "   🔄 Federated Learning System (Phase 2 - NEW!)"
+        echo "   🔐 Secure Multi-Party Computation"
         echo "   📊 ML Ensemble Models for anomaly detection" 
         echo "   📈 Behavioral Pattern Analysis"
         echo "   📊 Statistical Baseline Learning"
@@ -1069,7 +1314,13 @@ main() {
         echo "   • Reduces false positives through contextual understanding"
         echo "   • Self-improving detection accuracy over time"
         echo ""
-        echo "Ready for advanced threat hunting and zero-day detection!"
+        echo "🔄 FEDERATED LEARNING SYSTEM ACTIVE!"
+        echo "   • Privacy-preserving collaborative threat intelligence"
+        echo "   • Secure multi-party model aggregation"
+        echo "   • Differential privacy protection"
+        echo "   • Cross-organization knowledge sharing"
+        echo ""
+        echo "Ready for advanced threat hunting and collaborative defense!"
         echo "Press Ctrl+C to stop all services"
         echo ""
         

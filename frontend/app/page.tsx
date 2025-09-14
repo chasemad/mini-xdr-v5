@@ -289,7 +289,8 @@ export default function SOCAnalystDashboard() {
                   { id: 'intelligence', label: 'Threat Intel', icon: Globe },
                   { id: 'hunting', label: 'Threat Hunting', icon: Target },
                   { id: 'forensics', label: 'Forensics', icon: Search },
-                  { id: 'response', label: 'Response Actions', icon: Shield }
+                  { id: 'response', label: 'Response Actions', icon: Shield },
+                  { id: 'visualizations', label: '3D Visualization', icon: Activity }
                 ].map(({ id, label, icon: Icon }) => (
                   <button
                     key={id}
@@ -344,6 +345,7 @@ export default function SOCAnalystDashboard() {
                 {activeTab === 'hunting' && '🎯 Threat Hunting'}
                 {activeTab === 'forensics' && '🔍 Digital Forensics'}
                 {activeTab === 'response' && '🛡️ Response Actions'}
+                {activeTab === 'visualizations' && '🌍 3D Threat Visualization'}
               </h2>
               {autoRefreshing && (
                 <div className="flex items-center gap-2 px-3 py-1 bg-blue-500/20 border border-blue-500/50 rounded-full">
@@ -646,7 +648,219 @@ export default function SOCAnalystDashboard() {
               </div>
             )}
 
-            {/* Other tabs would go here */}
+            {activeTab === 'visualizations' && (
+              <div className="h-full">
+                <div className="mb-6">
+                  <p className="text-gray-300">
+                    Experience immersive 3D threat visualization with real-time data integration from our distributed intelligence network.
+                  </p>
+                </div>
+                <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                      <Activity className="w-5 h-5 text-blue-400" />
+                      3D Threat Globe & Timeline
+                    </h3>
+                    <Link href="/visualizations" className="text-blue-400 hover:text-blue-300 transition-colors">
+                      <button className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-all hover:scale-105">
+                        <Globe className="w-4 h-4" />
+                        Launch 3D Visualization
+                      </button>
+                    </Link>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <div className="bg-gray-700/30 rounded-lg p-4">
+                      <h4 className="text-white font-semibold mb-2 flex items-center gap-2">
+                        <Globe className="w-4 h-4 text-blue-400" />
+                        Interactive 3D Globe
+                      </h4>
+                      <ul className="text-sm text-gray-400 space-y-1">
+                        <li>• Real-time threat origin mapping</li>
+                        <li>• Country-based intelligence clustering</li>
+                        <li>• Attack path visualization</li>
+                        <li>• Interactive threat point details</li>
+                        <li>• Performance optimized WebGL rendering</li>
+                      </ul>
+                    </div>
+                    
+                    <div className="bg-gray-700/30 rounded-lg p-4">
+                      <h4 className="text-white font-semibold mb-2 flex items-center gap-2">
+                        <Activity className="w-4 h-4 text-purple-400" />
+                        3D Attack Timeline
+                      </h4>
+                      <ul className="text-sm text-gray-400 space-y-1">
+                        <li>• Chronological attack progression</li>
+                        <li>• Severity-based 3D positioning</li>
+                        <li>• Playback controls with speed adjustment</li>
+                        <li>• Attack chain connection visualization</li>
+                        <li>• Real-time incident correlation</li>
+                      </ul>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-gradient-to-r from-blue-600/10 to-purple-600/10 border border-blue-500/20 rounded-lg p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-blue-600/20 rounded-lg">
+                        <Zap className="w-5 h-5 text-blue-400" />
+                      </div>
+                      <div>
+                        <h4 className="text-white font-semibold">Powered by Phase 3 Distributed Architecture</h4>
+                        <p className="text-sm text-gray-400">
+                          Integrates real-time data from our distributed MCP network, federated learning insights, and threat intelligence APIs
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'intelligence' && (
+              <div className="space-y-6">
+                <div className="mb-6">
+                  <p className="text-gray-300">
+                    Advanced threat intelligence analysis with AI-powered insights and natural language processing.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+                    <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                      <Bot className="w-5 h-5 text-purple-400" />
+                      AI Agent Interface
+                    </h3>
+                    <p className="text-sm text-gray-400 mb-4">
+                      Natural language threat analysis with multi-agent coordination and predictive intelligence.
+                    </p>
+                    <Link href="/agents">
+                      <button className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors">
+                        <Bot className="w-4 h-4" />
+                        Launch AI Agents
+                      </button>
+                    </Link>
+                  </div>
+                  
+                  <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+                    <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                      <BarChart3 className="w-5 h-5 text-blue-400" />
+                      Advanced Analytics
+                    </h3>
+                    <p className="text-sm text-gray-400 mb-4">
+                      ML monitoring, explainable AI, and federated learning insights dashboard.
+                    </p>
+                    <Link href="/analytics">
+                      <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors">
+                        <BarChart3 className="w-4 h-4" />
+                        View Analytics
+                      </button>
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'hunting' && (
+              <div className="space-y-6">
+                <div className="mb-6">
+                  <p className="text-gray-300">
+                    Proactive threat hunting using advanced search capabilities and behavioral analysis.
+                  </p>
+                </div>
+                <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+                  <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <Target className="w-5 h-5 text-green-400" />
+                    Threat Hunting Dashboard
+                  </h3>
+                  <p className="text-sm text-gray-400 mb-4">
+                    Advanced hunting queries and suspicious activity detection.
+                  </p>
+                  <Link href="/hunt">
+                    <button className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors">
+                      <Target className="w-4 h-4" />
+                      Start Hunting
+                    </button>
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'forensics' && (
+              <div className="space-y-6">
+                <div className="mb-6">
+                  <p className="text-gray-300">
+                    Digital forensics and incident investigation tools for comprehensive analysis.
+                  </p>
+                </div>
+                <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+                  <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <Search className="w-5 h-5 text-yellow-400" />
+                    Investigation Tools
+                  </h3>
+                  <p className="text-sm text-gray-400 mb-4">
+                    Detailed forensic analysis and evidence collection capabilities.
+                  </p>
+                  <Link href="/investigations">
+                    <button className="flex items-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm font-medium transition-colors">
+                      <Search className="w-4 h-4" />
+                      Open Investigations
+                    </button>
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'response' && (
+              <div className="space-y-6">
+                <div className="mb-6">
+                  <p className="text-gray-300">
+                    Automated response actions and containment strategies for active threats.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+                    <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                      <Shield className="w-5 h-5 text-blue-400" />
+                      Automated Response
+                    </h3>
+                    <p className="text-sm text-gray-400 mb-4">
+                      Quick response actions: IP blocking, host isolation, password resets.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { label: 'Block IPs', color: 'red' },
+                        { label: 'Isolate Hosts', color: 'orange' },
+                        { label: 'Reset Passwords', color: 'yellow' }
+                      ].map(({ label, color }) => (
+                        <button
+                          key={label}
+                          className={`px-3 py-1 bg-${color}-600/20 border border-${color}-500/30 rounded text-sm text-${color}-300 hover:bg-${color}-600/30 transition-colors`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+                    <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                      <Settings className="w-5 h-5 text-purple-400" />
+                      System Configuration
+                    </h3>
+                    <p className="text-sm text-gray-400 mb-4">
+                      Response policies and system-wide security configurations.
+                    </p>
+                    <Link href="/settings">
+                      <button className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors">
+                        <Settings className="w-4 h-4" />
+                        Manage Settings
+                      </button>
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Additional tabs can be added here */}
           </div>
 
           {/* AI Chat Panel */}
