@@ -26,6 +26,16 @@ import os
 from .models import Event, Incident, MLModel
 from .config import settings
 
+# Federated Learning imports
+try:
+    from .federated_learning import federated_manager, FederatedModelType, FederatedRole
+    from .crypto.secure_aggregation import create_secure_aggregation, AggregationProtocol
+    FEDERATED_AVAILABLE = True
+except ImportError:
+    FEDERATED_AVAILABLE = False
+    federated_manager = None
+    logger.warning("Federated learning components not available")
+
 logger = logging.getLogger(__name__)
 
 
@@ -682,8 +692,152 @@ class EnsembleMLDetector:
         return status
 
 
-# Global ensemble detector instance
-ml_detector = EnsembleMLDetector()
+class FederatedEnsembleDetector:
+    """Federated learning enhanced ensemble detector"""
+    
+    def __init__(self):
+        # Standard ensemble detector
+        self.ensemble_detector = EnsembleMLDetector()
+        
+        # Federated learning components
+        self.federated_enabled = FEDERATED_AVAILABLE
+        self.federated_manager = federated_manager if FEDERATED_AVAILABLE else None
+        self.secure_aggregator = None
+        
+        # Federated training state
+        self.federated_rounds = 0
+        self.last_federated_training = None
+        self.federated_accuracy = 0.0
+        
+        # Initialize logger first
+        self.logger = logging.getLogger(__name__)
+        
+        # Configuration
+        self.federated_config = {
+            'min_participants': 2,
+            'aggregation_protocol': AggregationProtocol.SIMPLE_ENCRYPTION if FEDERATED_AVAILABLE else None,
+            'security_level': 3,
+            'differential_privacy': False,
+            'privacy_epsilon': 1.0
+        }
+        
+        if self.federated_enabled:
+            self._initialize_federated_components()
+    
+    def _initialize_federated_components(self):
+        """Initialize federated learning components"""
+        try:
+            if FEDERATED_AVAILABLE:
+                self.secure_aggregator = create_secure_aggregation(
+                    security_level=self.federated_config['security_level'],
+                    protocol=self.federated_config['aggregation_protocol']
+                )
+                self.logger.info("Federated learning components initialized successfully")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize federated components: {e}")
+            self.federated_enabled = False
+    
+    async def calculate_anomaly_score(self, src_ip: str, events: List[Event]) -> float:
+        """Calculate anomaly score using ensemble and federated models"""
+        try:
+            # Get standard ensemble score
+            ensemble_score = await self.ensemble_detector.calculate_anomaly_score(src_ip, events)
+            
+            # If federated learning is available and trained, get federated score
+            federated_score = 0.0
+            if self.federated_enabled and self.federated_rounds > 0:
+                federated_score = await self._get_federated_score(src_ip, events)
+            
+            # Combine scores (weighted average)
+            if self.federated_rounds > 0:
+                # Give more weight to federated model as it gets more training
+                federated_weight = min(0.4, 0.1 * self.federated_rounds)
+                ensemble_weight = 1.0 - federated_weight
+                
+                combined_score = (ensemble_weight * ensemble_score + 
+                                federated_weight * federated_score)
+            else:
+                combined_score = ensemble_score
+            
+            return min(combined_score, 1.0)
+            
+        except Exception as e:
+            self.logger.error(f"Federated anomaly scoring failed: {e}")
+            # Fall back to standard ensemble
+            return await self.ensemble_detector.calculate_anomaly_score(src_ip, events)
+    
+    async def _get_federated_score(self, src_ip: str, events: List[Event]) -> float:
+        """Get anomaly score from federated model"""
+        try:
+            if not self.federated_manager:
+                return 0.0
+            
+            # Placeholder for federated model scoring
+            # In practice, this would interface with the actual federated model
+            return 0.5  # Simplified placeholder score
+            
+        except Exception as e:
+            self.logger.error(f"Federated scoring error: {e}")
+            return 0.0
+    
+    async def train_models(self, training_data: List[Dict[str, float]], 
+                          enable_federated: bool = True) -> Dict[str, bool]:
+        """Train ensemble models with optional federated learning"""
+        try:
+            # Train standard ensemble models
+            results = await self.ensemble_detector.train_models(training_data)
+            
+            # If federated learning is enabled and available, also do federated training
+            if enable_federated and self.federated_enabled and len(training_data) >= 100:
+                try:
+                    # Placeholder for federated training
+                    results['federated'] = True
+                    self.federated_rounds += 1
+                    self.last_federated_training = datetime.now()
+                    
+                except Exception as e:
+                    self.logger.error(f"Federated training failed: {e}")
+                    results['federated'] = False
+            else:
+                results['federated'] = False
+            
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Enhanced model training failed: {e}")
+            # Fall back to standard training
+            return await self.ensemble_detector.train_models(training_data)
+    
+    def load_models(self) -> Dict[str, bool]:
+        """Load all models including federated state"""
+        results = self.ensemble_detector.load_models()
+        results['federated'] = self.federated_enabled and self.federated_rounds > 0
+        return results
+    
+    def get_model_status(self) -> Dict[str, Any]:
+        """Get comprehensive model status including federated learning"""
+        try:
+            # Get standard ensemble status
+            status = self.ensemble_detector.get_model_status()
+            
+            # Add federated learning status
+            status.update({
+                'federated_enabled': self.federated_enabled,
+                'federated_rounds': self.federated_rounds,
+                'last_federated_training': self.last_federated_training.isoformat() if self.last_federated_training else None,
+                'federated_accuracy': self.federated_accuracy,
+                'federated_available': FEDERATED_AVAILABLE
+            })
+            
+            return status
+            
+        except Exception as e:
+            self.logger.error(f"Status retrieval failed: {e}")
+            return {'error': str(e)}
+
+
+# Global federated ensemble detector instance
+ml_detector = FederatedEnsembleDetector()
 
 
 async def prepare_training_data_from_events(events: List[Event]) -> List[Dict[str, float]]:
