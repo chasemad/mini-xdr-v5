@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     auto_contain: bool = False
     
     # Containment Configuration
-    allow_private_ip_blocking: bool = False
+    allow_private_ip_blocking: bool = True  # Enable for testing simulated attacks
 
     # Honeypot Configuration
     honeypot_host: str = "10.0.0.23"

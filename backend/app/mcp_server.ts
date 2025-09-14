@@ -141,6 +141,85 @@ class XDRMCPServer {
             },
           },
           {
+            name: "natural_language_query",
+            description: "Query incident data using natural language with AI-powered understanding",
+            inputSchema: {
+              type: "object",
+              properties: {
+                query: {
+                  type: "string",
+                  description: "Natural language query (e.g., 'Show me all brute force attacks from China in the last 24 hours')"
+                },
+                include_context: {
+                  type: "boolean",
+                  description: "Include additional context and AI insights"
+                },
+                max_results: {
+                  type: "number",
+                  minimum: 1,
+                  maximum: 50,
+                  description: "Maximum number of results to return"
+                },
+                semantic_search: {
+                  type: "boolean",
+                  description: "Enable semantic similarity search using embeddings"
+                }
+              },
+              required: ["query"],
+            },
+          },
+          {
+            name: "nlp_threat_analysis",
+            description: "Perform comprehensive threat analysis using natural language processing",
+            inputSchema: {
+              type: "object",
+              properties: {
+                query: {
+                  type: "string",
+                  description: "Natural language threat analysis request"
+                },
+                analysis_type: {
+                  type: "string",
+                  enum: ["pattern_recognition", "timeline_analysis", "attribution", "ioc_extraction", "recommendation"],
+                  description: "Specific type of analysis to perform"
+                },
+                time_range_hours: {
+                  type: "number",
+                  minimum: 1,
+                  maximum: 720,
+                  description: "Time range in hours to analyze"
+                }
+              },
+              required: ["query"],
+            },
+          },
+          {
+            name: "semantic_incident_search",
+            description: "Search incidents using semantic similarity and natural language understanding",
+            inputSchema: {
+              type: "object",
+              properties: {
+                query: {
+                  type: "string",
+                  description: "Natural language search query"
+                },
+                similarity_threshold: {
+                  type: "number",
+                  minimum: 0.1,
+                  maximum: 1.0,
+                  description: "Minimum similarity score threshold (0.1-1.0)"
+                },
+                max_results: {
+                  type: "number",
+                  minimum: 1,
+                  maximum: 20,
+                  description: "Maximum number of similar incidents to return"
+                }
+              },
+              required: ["query"],
+            },
+          },
+          {
             name: "threat_hunt",
             description: "Execute AI-powered threat hunting queries across incident data",
             inputSchema: {
@@ -509,6 +588,24 @@ class XDRMCPServer {
               throw new Error('Missing required parameter: incident_id');
             }
             return await this.analyzeIncidentDeep(args);
+
+          case "natural_language_query":
+            if (!args || typeof args !== 'object' || !('query' in args)) {
+              throw new Error('Missing required parameter: query');
+            }
+            return await this.naturalLanguageQuery(args);
+
+          case "nlp_threat_analysis":
+            if (!args || typeof args !== 'object' || !('query' in args)) {
+              throw new Error('Missing required parameter: query');
+            }
+            return await this.nlpThreatAnalysis(args);
+
+          case "semantic_incident_search":
+            if (!args || typeof args !== 'object' || !('query' in args)) {
+              throw new Error('Missing required parameter: query');
+            }
+            return await this.semanticIncidentSearch(args);
 
           case "threat_hunt":
             if (!args || typeof args !== 'object' || !('query' in args)) {
@@ -1334,7 +1431,268 @@ class XDRMCPServer {
     }
   }
 
+  // === NATURAL LANGUAGE PROCESSING METHODS ===
+
+  private async naturalLanguageQuery(args: any) {
+    const { query, include_context = true, max_results = 10, semantic_search = true } = args;
+
+    try {
+      // Call NLP analyzer endpoint
+      const result = await apiRequest("/api/nlp/query", {
+        method: "POST",
+        body: {
+          query,
+          include_context,
+          max_results,
+          semantic_search
+        }
+      }) as any;
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `🧠 Natural Language Query Analysis: "${query}"\n\n` +
+              `🎯 Query Understanding: ${result.query_understanding}\n` +
+              `📊 Confidence Score: ${(result.confidence_score * 100).toFixed(1)}%\n\n` +
+              `🔍 Findings (${result.findings?.length || 0} results):\n` +
+              `${this.formatNLPFindings(result.findings)}\n\n` +
+              `💡 Recommendations:\n` +
+              `${result.recommendations?.map((rec: string, i: number) => `${i + 1}. ${rec}`).join('\n') || 'No recommendations'}\n\n` +
+              `❓ Follow-up Questions:\n` +
+              `${result.follow_up_questions?.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n') || 'No follow-up questions'}\n\n` +
+              `🤖 Reasoning: ${result.reasoning || 'Analysis completed'}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `❌ Natural language query failed for "${query}": ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+
+  private async nlpThreatAnalysis(args: any) {
+    const { query, analysis_type, time_range_hours = 24 } = args;
+
+    try {
+      // Call NLP threat analysis endpoint
+      const result = await apiRequest("/api/nlp/threat-analysis", {
+        method: "POST",
+        body: {
+          query,
+          analysis_type,
+          time_range_hours
+        }
+      }) as any;
+
+      let analysisTypeDisplay = analysis_type ? analysis_type.replace('_', ' ').toUpperCase() : 'COMPREHENSIVE';
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `🔬 NLP Threat Analysis: ${analysisTypeDisplay}\n\n` +
+              `🎯 Query: "${query}"\n` +
+              `⏱️  Time Range: ${time_range_hours} hours\n` +
+              `📊 Query Understanding: ${result.query_understanding}\n` +
+              `🎯 Confidence: ${(result.confidence_score * 100).toFixed(1)}%\n\n` +
+              `📈 Analysis Results:\n` +
+              `${this.formatThreatAnalysisResults(result.findings)}\n\n` +
+              `🎯 Key Insights:\n` +
+              `${this.formatThreatInsights(result)}\n\n` +
+              `💡 Strategic Recommendations:\n` +
+              `${result.recommendations?.map((rec: string, i: number) => `${i + 1}. ${rec}`).join('\n') || 'No recommendations available'}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `❌ NLP threat analysis failed for "${query}": ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+
+  private async semanticIncidentSearch(args: any) {
+    const { query, similarity_threshold = 0.7, max_results = 10 } = args;
+
+    try {
+      // Call semantic search endpoint
+      const result = await apiRequest("/api/nlp/semantic-search", {
+        method: "POST",
+        body: {
+          query,
+          similarity_threshold,
+          max_results
+        }
+      }) as any;
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `🔍 Semantic Incident Search: "${query}"\n\n` +
+              `🎯 Similarity Threshold: ${(similarity_threshold * 100).toFixed(1)}%\n` +
+              `📊 Results Found: ${result.similar_incidents?.length || 0}\n\n` +
+              `🎯 Similar Incidents:\n` +
+              `${this.formatSemanticSearchResults(result.similar_incidents)}\n\n` +
+              `📈 Search Quality:\n` +
+              `• Average Similarity: ${result.avg_similarity ? (result.avg_similarity * 100).toFixed(1) : 'N/A'}%\n` +
+              `• Query Understanding: ${result.query_understanding || 'Standard text matching'}\n` +
+              `• Semantic Features: ${result.semantic_features?.join(', ') || 'Basic keyword matching'}\n\n` +
+              `💡 Search Tips:\n` +
+              `• Try different keywords or phrases\n` +
+              `• Lower the similarity threshold for broader results\n` +
+              `• Use specific threat types or indicators for focused results`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `❌ Semantic search failed for "${query}": ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+
   // === HELPER METHODS ===
+
+  private formatNLPFindings(findings: any[]): string {
+    if (!findings || findings.length === 0) {
+      return "No findings available";
+    }
+
+    return findings
+      .slice(0, 10)
+      .map((finding, index) => {
+        const relevance = finding.relevance_score ? ` (${(finding.relevance_score * 100).toFixed(1)}% relevant)` : '';
+        let findingText = `${index + 1}. ${finding.type?.replace('_', ' ').toUpperCase() || 'Finding'}${relevance}\n`;
+        
+        if (finding.description) {
+          findingText += `   Description: ${finding.description}\n`;
+        }
+        
+        if (finding.incident_id) {
+          findingText += `   Incident ID: ${finding.incident_id}\n`;
+        }
+        
+        if (finding.src_ip) {
+          findingText += `   Source IP: ${finding.src_ip}\n`;
+        }
+        
+        if (finding.incident_count) {
+          findingText += `   Incident Count: ${finding.incident_count}\n`;
+        }
+        
+        if (finding.confidence_score) {
+          findingText += `   Confidence: ${(finding.confidence_score * 100).toFixed(1)}%\n`;
+        }
+        
+        return findingText;
+      })
+      .join('\n');
+  }
+
+  private formatThreatAnalysisResults(findings: any[]): string {
+    if (!findings || findings.length === 0) {
+      return "No threat analysis results available";
+    }
+
+    return findings
+      .slice(0, 8)
+      .map((finding, index) => {
+        let result = `${index + 1}. ${finding.type?.replace('_', ' ').toUpperCase() || 'Analysis'}\n`;
+        
+        if (finding.threat_type) {
+          result += `   • Threat Type: ${finding.threat_type}\n`;
+        }
+        
+        if (finding.incident_count) {
+          result += `   • Incidents: ${finding.incident_count}\n`;
+        }
+        
+        if (finding.unique_ips) {
+          result += `   • Unique IPs: ${finding.unique_ips}\n`;
+        }
+        
+        if (finding.time_span_hours) {
+          result += `   • Time Span: ${finding.time_span_hours} hours\n`;
+        }
+        
+        if (finding.confidence_score) {
+          result += `   • Confidence: ${(finding.confidence_score * 100).toFixed(1)}%\n`;
+        }
+        
+        if (finding.description) {
+          result += `   • Details: ${finding.description}\n`;
+        }
+        
+        return result;
+      })
+      .join('\n');
+  }
+
+  private formatThreatInsights(result: any): string {
+    const insights = [];
+    
+    if (result.structured_query?.entities) {
+      const entityCount = Object.values(result.structured_query.entities).reduce(
+        (sum: number, entities: any) => sum + (Array.isArray(entities) ? entities.length : 0), 0
+      );
+      if (entityCount > 0) {
+        insights.push(`• Extracted ${entityCount} threat indicators from query`);
+      }
+    }
+    
+    if (result.structured_query?.threat_categories?.length > 0) {
+      insights.push(`• Identified threat categories: ${result.structured_query.threat_categories.join(', ')}`);
+    }
+    
+    if (result.structured_query?.time_constraints) {
+      insights.push(`• Time-based analysis: ${result.structured_query.time_constraints.description}`);
+    }
+    
+    if (result.findings?.length > 0) {
+      const findingTypes = [...new Set(result.findings.map((f: any) => f.type))];
+      insights.push(`• Generated ${result.findings.length} findings across ${findingTypes.length} analysis types`);
+    }
+    
+    return insights.length > 0 ? insights.join('\n') : 'Standard threat analysis completed';
+  }
+
+  private formatSemanticSearchResults(incidents: any[]): string {
+    if (!incidents || incidents.length === 0) {
+      return "No similar incidents found";
+    }
+
+    return incidents
+      .map((result, index) => {
+        const incident = result.incident || result;
+        const similarity = result.similarity_score ? ` (${(result.similarity_score * 100).toFixed(1)}% similar)` : '';
+        
+        return `${index + 1}. Incident #${incident.id}${similarity}\n` +
+               `   • IP: ${incident.src_ip}\n` +
+               `   • Reason: ${incident.reason}\n` +
+               `   • Status: ${incident.status}\n` +
+               `   • Created: ${new Date(incident.created_at).toLocaleString()}\n` +
+               `   ${incident.risk_score ? `• Risk Score: ${(incident.risk_score * 100).toFixed(1)}%` : ''}`;
+      })
+      .join('\n\n');
+  }
 
   private filterIncidentsByCriteria(incidents: any[], filters: any): any[] {
     return incidents.filter(incident => {

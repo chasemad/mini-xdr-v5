@@ -1,9 +1,11 @@
 """
-Continuous Learning Pipeline for Adaptive Detection
-Continuously learns and adapts detection models in the background
+Enhanced Continuous Learning Pipeline for Adaptive Detection
+Continuously learns and adapts detection models with real-time adaptation,
+ensemble optimization, and explainable AI integration
 """
 import asyncio
 import logging
+import numpy as np
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,18 +17,34 @@ from .baseline_engine import baseline_engine
 from .ml_engine import ml_detector, prepare_training_data_from_events
 from .db import AsyncSessionLocal
 
+# Phase 2B: Advanced ML Integration
+try:
+    from .online_learning import online_learning_engine, adapt_models_with_new_data
+    from .ensemble_optimizer import create_optimized_ensemble, meta_learning_optimizer
+    from .model_versioning import model_registry, ab_test_manager, performance_monitor
+    from .explainable_ai import explainable_ai
+    ADVANCED_ML_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Advanced ML features not available: {e}")
+    ADVANCED_ML_AVAILABLE = False
+    online_learning_engine = None
+    model_registry = None
+
 logger = logging.getLogger(__name__)
 
 
 class ContinuousLearningPipeline:
-    """Continuously learns and adapts detection models"""
+    """Enhanced continuously learning and adapting detection models with real-time adaptation"""
     
     def __init__(self):
         self.learning_schedule = {
             'baseline_update': 3600,      # Update baselines every hour
             'model_retrain': 86400,       # Retrain ML models daily  
             'pattern_refresh': 1800,      # Refresh patterns every 30min
-            'sensitivity_adjust': 7200    # Adjust sensitivity every 2 hours
+            'sensitivity_adjust': 7200,   # Adjust sensitivity every 2 hours
+            'online_adaptation': 300,     # Online adaptation every 5 minutes
+            'ensemble_optimization': 21600, # Ensemble optimization every 6 hours
+            'model_performance_check': 900  # Performance monitoring every 15 minutes
         }
         
         self.running = False
@@ -37,24 +55,45 @@ class ContinuousLearningPipeline:
         self.max_training_events = 10000
         self.training_history_days = 14
         
+        # Phase 2B: Advanced ML configuration
+        self.online_adaptation_enabled = ADVANCED_ML_AVAILABLE
+        self.ensemble_optimization_enabled = ADVANCED_ML_AVAILABLE
+        self.explainable_ai_enabled = ADVANCED_ML_AVAILABLE
+        self.min_online_adaptation_events = 50
+        
         # Performance tracking
         self.learning_metrics = {
             'last_baseline_update': None,
             'last_model_retrain': None,
             'last_pattern_refresh': None,
+            'last_online_adaptation': None,
+            'last_ensemble_optimization': None,
+            'last_performance_check': None,
             'training_events_used': 0,
             'successful_updates': 0,
-            'failed_updates': 0
+            'failed_updates': 0,
+            'online_adaptations': 0,
+            'ensemble_optimizations': 0,
+            'drift_detections': 0
         }
         
+        # Advanced ML tracking
+        self.active_ab_tests = []
+        self.model_performance_alerts = []
+        self.drift_detection_history = []
+        
     async def start_learning_loop(self):
-        """Start continuous learning background tasks"""
+        """Start enhanced continuous learning background tasks"""
         if self.running:
             logger.warning("Learning pipeline already running")
             return
         
         self.running = True
-        logger.info("Starting continuous learning pipeline")
+        logger.info("Starting enhanced continuous learning pipeline")
+        
+        # Initialize advanced ML components
+        if ADVANCED_ML_AVAILABLE:
+            await self._initialize_advanced_ml()
         
         # Schedule all background tasks
         self.tasks = [
@@ -64,7 +103,17 @@ class ContinuousLearningPipeline:
             asyncio.create_task(self._sensitivity_adjustment_loop())
         ]
         
-        logger.info(f"Started {len(self.tasks)} learning tasks")
+        # Add Phase 2B advanced ML tasks
+        if self.online_adaptation_enabled:
+            self.tasks.append(asyncio.create_task(self._online_adaptation_loop()))
+        
+        if self.ensemble_optimization_enabled:
+            self.tasks.append(asyncio.create_task(self._ensemble_optimization_loop()))
+        
+        if ADVANCED_ML_AVAILABLE:
+            self.tasks.append(asyncio.create_task(self._model_performance_monitoring_loop()))
+        
+        logger.info(f"Started {len(self.tasks)} learning tasks (Phase 2B features: {ADVANCED_ML_AVAILABLE})")
     
     async def stop_learning_loop(self):
         """Stop all learning tasks"""
@@ -328,6 +377,339 @@ class ContinuousLearningPipeline:
             results['error'] = str(e)
         
         return results
+    
+    # Phase 2B: Advanced ML Methods
+    
+    async def _initialize_advanced_ml(self):
+        """Initialize advanced ML components"""
+        try:
+            if online_learning_engine:
+                logger.info("Initializing online learning engine...")
+                # Additional initialization if needed
+            
+            if explainable_ai:
+                logger.info("Initializing explainable AI components...")
+                # Additional initialization if needed
+            
+            logger.info("Advanced ML components initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize advanced ML components: {e}")
+    
+    async def _online_adaptation_loop(self):
+        """Real-time model adaptation loop"""
+        while self.running:
+            try:
+                async with AsyncSessionLocal() as db:
+                    # Get recent events for online adaptation
+                    recent_events = await self._get_recent_events_for_adaptation(db)
+                    
+                    if len(recent_events) >= self.min_online_adaptation_events:
+                        # Perform online adaptation
+                        adaptation_result = await adapt_models_with_new_data(recent_events)
+                        
+                        if adaptation_result.get('success'):
+                            self.learning_metrics['last_online_adaptation'] = datetime.now(timezone.utc)
+                            self.learning_metrics['online_adaptations'] += 1
+                            
+                            logger.info(f"Online adaptation completed: {adaptation_result.get('samples_processed')} samples")
+                        else:
+                            logger.warning(f"Online adaptation failed: {adaptation_result.get('error', 'Unknown error')}")
+                
+                await asyncio.sleep(self.learning_schedule['online_adaptation'])
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Online adaptation loop error: {e}")
+                await asyncio.sleep(60)  # Retry in 1 minute
+    
+    async def _ensemble_optimization_loop(self):
+        """Ensemble model optimization loop"""
+        while self.running:
+            try:
+                async with AsyncSessionLocal() as db:
+                    # Get training data for ensemble optimization
+                    training_events = await self._get_training_events(db)
+                    
+                    if len(training_events) >= self.min_events_for_training:
+                        # Optimize ensemble models
+                        success = await self._optimize_ensemble_models(training_events)
+                        
+                        if success:
+                            self.learning_metrics['last_ensemble_optimization'] = datetime.now(timezone.utc)
+                            self.learning_metrics['ensemble_optimizations'] += 1
+                            logger.info("Ensemble optimization completed")
+                
+                await asyncio.sleep(self.learning_schedule['ensemble_optimization'])
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Ensemble optimization loop error: {e}")
+                await asyncio.sleep(3600)  # Retry in 1 hour
+    
+    async def _model_performance_monitoring_loop(self):
+        """Model performance monitoring loop"""
+        while self.running:
+            try:
+                if model_registry and performance_monitor:
+                    # Check performance of all production models
+                    production_models = model_registry.get_production_models()
+                    
+                    for model_version in production_models:
+                        health_summary = performance_monitor.get_model_health_summary(
+                            model_version.model_id, model_version.version
+                        )
+                        
+                        if health_summary['status'] in ['unhealthy', 'degraded']:
+                            alert = {
+                                'timestamp': datetime.now(timezone.utc),
+                                'model_id': model_version.model_id,
+                                'version': model_version.version,
+                                'status': health_summary['status'],
+                                'accuracy': health_summary.get('accuracy', 0),
+                                'error_rate': health_summary.get('error_rate', 0)
+                            }
+                            
+                            self.model_performance_alerts.append(alert)
+                            logger.warning(f"Model performance alert: {model_version.model_id} v{model_version.version} is {health_summary['status']}")
+                    
+                    # Clean old alerts (keep last 100)
+                    if len(self.model_performance_alerts) > 100:
+                        self.model_performance_alerts = self.model_performance_alerts[-100:]
+                
+                self.learning_metrics['last_performance_check'] = datetime.now(timezone.utc)
+                await asyncio.sleep(self.learning_schedule['model_performance_check'])
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Model performance monitoring error: {e}")
+                await asyncio.sleep(900)  # Retry in 15 minutes
+    
+    async def _get_recent_events_for_adaptation(self, db: AsyncSession) -> List[Event]:
+        """Get recent events for online adaptation"""
+        # Get events from the last hour
+        window_start = datetime.now(timezone.utc) - timedelta(hours=1)
+        
+        query = select(Event).where(
+            Event.ts >= window_start
+        ).order_by(Event.ts.desc()).limit(1000)  # Limit for performance
+        
+        result = await db.execute(query)
+        events = result.scalars().all()
+        
+        return events
+    
+    async def _optimize_ensemble_models(self, training_events: List[Event]) -> bool:
+        """Optimize ensemble models using meta-learning"""
+        try:
+            if not meta_learning_optimizer:
+                return False
+            
+            # Prepare training data
+            training_data = await prepare_training_data_from_events(training_events)
+            
+            if not training_data or 'X' not in training_data or 'y' not in training_data:
+                logger.warning("No valid training data for ensemble optimization")
+                return False
+            
+            X, y = training_data['X'], training_data['y']
+            feature_names = [f'feature_{i}' for i in range(X.shape[1])]
+            
+            # Get recommended ensemble configuration
+            ensemble_config = meta_learning_optimizer.recommend_ensemble_config(X, y)
+            
+            # Create optimized ensemble
+            ensemble = create_optimized_ensemble(X, y, feature_names, ensemble_config)
+            
+            # Register the new ensemble model
+            if model_registry:
+                model_version = model_registry.register_model(
+                    model=ensemble,
+                    model_id="optimized_ensemble",
+                    version=f"v{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                    model_type="ensemble",
+                    algorithm=ensemble_config.method.value,
+                    hyperparameters={'config': ensemble_config.__dict__},
+                    training_data_hash=str(hash(str(X.tobytes()))),
+                    description=f"Auto-optimized ensemble using {ensemble_config.method.value}"
+                )
+                
+                logger.info(f"Registered optimized ensemble: {model_version.model_id} v{model_version.version}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Ensemble optimization failed: {e}")
+            return False
+    
+    async def create_ab_test(self, model_a_id: str, model_a_version: str,
+                           model_b_id: str, model_b_version: str,
+                           test_name: str, description: str = "") -> Optional[str]:
+        """Create A/B test for model comparison"""
+        
+        if not ab_test_manager:
+            logger.error("A/B test manager not available")
+            return None
+        
+        try:
+            test_id = ab_test_manager.create_ab_test(
+                name=test_name,
+                description=description or f"Comparing {model_a_id} v{model_a_version} vs {model_b_id} v{model_b_version}",
+                model_a_id=model_a_id,
+                model_a_version=model_a_version,
+                model_b_id=model_b_id,
+                model_b_version=model_b_version,
+                traffic_split=0.5,
+                success_metric='f1_score',
+                min_sample_size=100,
+                max_duration_hours=168  # 1 week
+            )
+            
+            # Start the test
+            if ab_test_manager.start_ab_test(test_id):
+                self.active_ab_tests.append({
+                    'test_id': test_id,
+                    'name': test_name,
+                    'started_at': datetime.now(timezone.utc),
+                    'model_a': f"{model_a_id} v{model_a_version}",
+                    'model_b': f"{model_b_id} v{model_b_version}"
+                })
+                
+                logger.info(f"Created and started A/B test: {test_id}")
+                return test_id
+            else:
+                logger.error(f"Failed to start A/B test: {test_id}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Failed to create A/B test: {e}")
+            return None
+    
+    def get_enhanced_learning_status(self) -> Dict[str, Any]:
+        """Get enhanced learning pipeline status with Phase 2B features"""
+        base_status = self.get_learning_status()
+        
+        if ADVANCED_ML_AVAILABLE:
+            # Add Phase 2B status information
+            base_status.update({
+                'phase_2b_features': {
+                    'online_adaptation_enabled': self.online_adaptation_enabled,
+                    'ensemble_optimization_enabled': self.ensemble_optimization_enabled,
+                    'explainable_ai_enabled': self.explainable_ai_enabled,
+                    'online_adaptations': self.learning_metrics['online_adaptations'],
+                    'ensemble_optimizations': self.learning_metrics['ensemble_optimizations'],
+                    'drift_detections': self.learning_metrics['drift_detections'],
+                    'last_online_adaptation': self.learning_metrics['last_online_adaptation'],
+                    'last_ensemble_optimization': self.learning_metrics['last_ensemble_optimization'],
+                    'last_performance_check': self.learning_metrics['last_performance_check']
+                },
+                'active_ab_tests': len(self.active_ab_tests),
+                'model_performance_alerts': len(self.model_performance_alerts),
+                'drift_detection_history': len(self.drift_detection_history)
+            })
+            
+            # Add model registry status
+            if model_registry:
+                production_models = model_registry.get_production_models()
+                base_status['production_models'] = len(production_models)
+            
+            # Add online learning engine status
+            if online_learning_engine:
+                base_status['online_learning_status'] = online_learning_engine.get_drift_status()
+        
+        return base_status
+    
+    async def explain_recent_prediction(self, incident_id: int, 
+                                      context: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        """Generate explanation for a recent prediction/incident"""
+        
+        if not self.explainable_ai_enabled or not explainable_ai:
+            logger.warning("Explainable AI not available")
+            return None
+        
+        try:
+            async with AsyncSessionLocal() as db:
+                # Get the incident
+                incident_query = select(Incident).where(Incident.id == incident_id)
+                result = await db.execute(incident_query)
+                incident = result.scalar_one_or_none()
+                
+                if not incident:
+                    logger.error(f"Incident {incident_id} not found")
+                    return None
+                
+                # Get recent events for this IP
+                events_query = select(Event).where(
+                    and_(
+                        Event.src_ip == incident.src_ip,
+                        Event.ts <= incident.created_at,
+                        Event.ts >= incident.created_at - timedelta(hours=1)
+                    )
+                ).order_by(Event.ts.desc()).limit(10)
+                
+                result = await db.execute(events_query)
+                events = result.scalars().all()
+                
+                if not events:
+                    logger.warning(f"No events found for incident {incident_id}")
+                    return None
+                
+                # Prepare feature data (simplified)
+                feature_data = {}
+                feature_names = ['event_count', 'unique_ports', 'avg_message_length', 'anomaly_score']
+                
+                feature_data['event_count'] = len(events)
+                feature_data['unique_ports'] = len(set(e.dst_port for e in events if e.dst_port))
+                feature_data['avg_message_length'] = np.mean([len(e.message or '') for e in events])
+                feature_data['anomaly_score'] = np.mean([e.anomaly_score or 0 for e in events])
+                
+                # Generate explanation
+                from .explainable_ai import explain_threat_prediction
+                
+                explanation = await explain_threat_prediction(
+                    model_id="threat_detection",
+                    model_version="current",
+                    instance_data=feature_data,
+                    feature_names=feature_names,
+                    user_context=context or {
+                        'incident_id': incident_id,
+                        'source_ip': incident.src_ip,
+                        'incident_type': incident.reason
+                    }
+                )
+                
+                return {
+                    'incident_id': incident_id,
+                    'explanation_id': explanation.explanation_id,
+                    'prediction': explanation.prediction,
+                    'confidence': explanation.confidence,
+                    'summary': explanation.narrative_summary,
+                    'technical_details': explanation.technical_details,
+                    'top_features': [
+                        {
+                            'name': attr.feature_name,
+                            'value': attr.feature_value,
+                            'importance': attr.attribution_score,
+                            'description': attr.description
+                        }
+                        for attr in explanation.feature_attributions[:5]
+                    ],
+                    'counterfactuals': [
+                        {
+                            'changes': cf.feature_changes,
+                            'summary': cf.change_summary,
+                            'feasibility': cf.feasibility_score
+                        }
+                        for cf in explanation.counterfactuals[:3]
+                    ]
+                }
+                
+        except Exception as e:
+            logger.error(f"Failed to generate explanation for incident {incident_id}: {e}")
+            return None
 
 
 # Global learning pipeline instance

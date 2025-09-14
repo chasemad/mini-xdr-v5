@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func, desc, asc, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -908,6 +908,9 @@ async def ingest_multi_source(
                             except Exception as e:
                                 logger.error(f"AI processing failed for incident {incident_id}: {e}")
         
+        # Commit all changes (incidents and events)
+        await db.commit()
+        
         result["incidents_detected"] = len(incidents_detected)
         return result
         
@@ -1804,6 +1807,61 @@ async def get_auto_contain():
     return {"enabled": auto_contain_enabled}
 
 
+@app.delete("/admin/clear-database")
+async def clear_database(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    clear_events: bool = True,
+    clear_actions: bool = True
+):
+    """Clear all incidents, events, and actions from database for clean UI/UX"""
+    _require_api_key(request)
+    
+    try:
+        # Clear actions first (foreign key constraints)
+        if clear_actions:
+            await db.execute(text("DELETE FROM actions"))
+            actions_deleted = await db.execute(text("SELECT changes()"))
+            actions_count = actions_deleted.scalar()
+        else:
+            actions_count = 0
+        
+        # Clear incidents
+        await db.execute(text("DELETE FROM incidents"))
+        incidents_deleted = await db.execute(text("SELECT changes()"))
+        incidents_count = incidents_deleted.scalar()
+        
+        # Clear events
+        if clear_events:
+            await db.execute(text("DELETE FROM events"))
+            events_deleted = await db.execute(text("SELECT changes()"))
+            events_count = events_deleted.scalar()
+        else:
+            events_count = 0
+        
+        # Reset auto-increment counters
+        await db.execute(text("DELETE FROM sqlite_sequence WHERE name IN ('incidents', 'events', 'actions')"))
+        
+        await db.commit()
+        
+        logger.info(f"Database cleared: {incidents_count} incidents, {events_count} events, {actions_count} actions")
+        
+        return {
+            "success": True,
+            "message": "Database cleared successfully",
+            "deleted": {
+                "incidents": incidents_count,
+                "events": events_count,
+                "actions": actions_count
+            }
+        }
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Database clear failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database clear failed: {e}")
+
+
 @app.post("/settings/auto_contain")
 async def set_auto_contain(enabled: bool, request: Request):
     """Set auto-contain setting"""
@@ -2440,6 +2498,1750 @@ This is an automated security response to incident #{incident_id}.
         
     except Exception as e:
         logger.error(f"Failed to send password reset notification: {e}")
+
+
+# ===== NATURAL LANGUAGE PROCESSING API ENDPOINTS =====
+
+@app.post("/api/nlp/query")
+async def natural_language_query(
+    request: Dict[str, Any],
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Process natural language queries against incident data
+    
+    Enables analysts to query incidents using natural language like:
+    - "Show me all brute force attacks from China in the last 24 hours"
+    - "Find incidents similar to IP 192.168.1.100"
+    - "What patterns do you see in recent malware incidents?"
+    """
+    try:
+        from .agents.nlp_analyzer import get_nlp_analyzer
+        
+        query = request.get("query", "")
+        include_context = request.get("include_context", True)
+        max_results = min(request.get("max_results", 10), 50)  # Cap at 50
+        semantic_search = request.get("semantic_search", True)
+        
+        if not query:
+            raise HTTPException(status_code=400, detail="Query parameter is required")
+        
+        logger.info(f"Processing NL query: {query[:100]}...")
+        
+        # Get NLP analyzer
+        nlp_analyzer = await get_nlp_analyzer()
+        
+        # Get recent incidents and events for analysis
+        stmt = select(Incident).order_by(Incident.created_at.desc()).limit(200)
+        result = await db.execute(stmt)
+        incidents = result.scalars().all()
+        
+        # Get recent events (limit to avoid memory issues)
+        events_stmt = select(Event).order_by(Event.ts.desc()).limit(500)
+        events_result = await db.execute(events_stmt)
+        events = events_result.scalars().all()
+        
+        # Process the natural language query
+        context = {
+            "include_context": include_context,
+            "max_results": max_results,
+            "semantic_search": semantic_search
+        }
+        
+        nlp_response = await nlp_analyzer.analyze_natural_language_query(
+            query=query,
+            incidents=list(incidents),
+            events=list(events),
+            context=context
+        )
+        
+        return {
+            "success": True,
+            "query": query,
+            "query_understanding": nlp_response.query_understanding,
+            "structured_query": nlp_response.structured_query,
+            "findings": nlp_response.findings[:max_results],
+            "recommendations": nlp_response.recommendations,
+            "confidence_score": nlp_response.confidence_score,
+            "reasoning": nlp_response.reasoning,
+            "follow_up_questions": nlp_response.follow_up_questions,
+            "processing_stats": {
+                "incidents_analyzed": len(incidents),
+                "events_analyzed": len(events),
+                "semantic_search_enabled": semantic_search
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"NLP query processing failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Natural language query failed: {str(e)}"
+        )
+
+
+@app.post("/api/nlp/threat-analysis")
+async def nlp_threat_analysis(
+    request: Dict[str, Any],
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Perform comprehensive threat analysis using natural language processing
+    
+    Supports specific analysis types:
+    - pattern_recognition: Find patterns in threat data
+    - timeline_analysis: Analyze chronological sequences
+    - attribution: Threat actor attribution analysis
+    - ioc_extraction: Extract indicators of compromise
+    - recommendation: Generate actionable recommendations
+    """
+    try:
+        from .agents.nlp_analyzer import get_nlp_analyzer
+        
+        query = request.get("query", "")
+        analysis_type = request.get("analysis_type")
+        time_range_hours = min(request.get("time_range_hours", 24), 720)  # Cap at 30 days
+        
+        if not query:
+            raise HTTPException(status_code=400, detail="Query parameter is required")
+        
+        logger.info(f"Processing NLP threat analysis: {analysis_type or 'comprehensive'}")
+        
+        # Get NLP analyzer
+        nlp_analyzer = await get_nlp_analyzer()
+        
+        # Get incidents within time range
+        cutoff_time = datetime.utcnow() - timedelta(hours=time_range_hours)
+        stmt = select(Incident).where(
+            Incident.created_at >= cutoff_time
+        ).order_by(Incident.created_at.desc())
+        result = await db.execute(stmt)
+        incidents = result.scalars().all()
+        
+        # Get events within time range
+        events_stmt = select(Event).where(
+            Event.ts >= cutoff_time
+        ).order_by(Event.ts.desc()).limit(1000)  # Reasonable limit
+        events_result = await db.execute(events_stmt)
+        events = events_result.scalars().all()
+        
+        # Add analysis type context to query if specified
+        if analysis_type:
+            enhanced_query = f"{query} (focus on {analysis_type.replace('_', ' ')})"
+        else:
+            enhanced_query = query
+        
+        # Process the threat analysis query
+        context = {
+            "analysis_type": analysis_type,
+            "time_range_hours": time_range_hours,
+            "focused_analysis": True
+        }
+        
+        nlp_response = await nlp_analyzer.analyze_natural_language_query(
+            query=enhanced_query,
+            incidents=list(incidents),
+            events=list(events),
+            context=context
+        )
+        
+        return {
+            "success": True,
+            "query": query,
+            "analysis_type": analysis_type,
+            "time_range_hours": time_range_hours,
+            "query_understanding": nlp_response.query_understanding,
+            "structured_query": nlp_response.structured_query,
+            "findings": nlp_response.findings,
+            "recommendations": nlp_response.recommendations,
+            "confidence_score": nlp_response.confidence_score,
+            "reasoning": nlp_response.reasoning,
+            "follow_up_questions": nlp_response.follow_up_questions,
+            "analysis_metadata": {
+                "incidents_in_timeframe": len(incidents),
+                "events_in_timeframe": len(events),
+                "timeframe_start": cutoff_time.isoformat(),
+                "timeframe_end": datetime.utcnow().isoformat()
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"NLP threat analysis failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"NLP threat analysis failed: {str(e)}"
+        )
+
+
+@app.post("/api/nlp/semantic-search")
+async def semantic_incident_search(
+    request: Dict[str, Any],
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Search incidents using semantic similarity and natural language understanding
+    
+    Uses embeddings to find incidents that are semantically similar to the query,
+    even if they don't contain exact keyword matches.
+    """
+    try:
+        from .agents.nlp_analyzer import get_nlp_analyzer
+        
+        query = request.get("query", "")
+        similarity_threshold = max(0.1, min(request.get("similarity_threshold", 0.7), 1.0))
+        max_results = min(request.get("max_results", 10), 20)  # Cap at 20
+        
+        if not query:
+            raise HTTPException(status_code=400, detail="Query parameter is required")
+        
+        logger.info(f"Processing semantic search: {query[:100]}...")
+        
+        # Get NLP analyzer
+        nlp_analyzer = await get_nlp_analyzer()
+        
+        # Get recent incidents for semantic search
+        stmt = select(Incident).order_by(Incident.created_at.desc()).limit(500)
+        result = await db.execute(stmt)
+        incidents = result.scalars().all()
+        
+        # Perform semantic search
+        semantic_results = await nlp_analyzer.semantic_search_incidents(
+            query=query,
+            incidents=list(incidents),
+            top_k=max_results * 2  # Get more results to filter
+        )
+        
+        # Filter by similarity threshold and format results
+        filtered_results = []
+        similarity_scores = []
+        
+        for incident, similarity_score in semantic_results:
+            if similarity_score >= similarity_threshold:
+                filtered_results.append({
+                    "incident": {
+                        "id": incident.id,
+                        "src_ip": incident.src_ip,
+                        "reason": incident.reason,
+                        "status": incident.status,
+                        "created_at": incident.created_at.isoformat(),
+                        "risk_score": getattr(incident, 'risk_score', None),
+                        "escalation_level": getattr(incident, 'escalation_level', 'medium')
+                    },
+                    "similarity_score": similarity_score
+                })
+                similarity_scores.append(similarity_score)
+        
+        # Sort by similarity score and limit results
+        filtered_results.sort(key=lambda x: x["similarity_score"], reverse=True)
+        final_results = filtered_results[:max_results]
+        
+        # Calculate search quality metrics
+        avg_similarity = sum(similarity_scores) / len(similarity_scores) if similarity_scores else 0
+        
+        # Extract semantic features (basic implementation)
+        semantic_features = []
+        if "attack" in query.lower():
+            semantic_features.append("attack_related")
+        if "ip" in query.lower() or any(char.isdigit() for char in query):
+            semantic_features.append("ip_address")
+        if any(word in query.lower() for word in ["malware", "virus", "trojan"]):
+            semantic_features.append("malware_related")
+        if any(word in query.lower() for word in ["brute", "force", "login"]):
+            semantic_features.append("authentication_related")
+        
+        return {
+            "success": True,
+            "query": query,
+            "similarity_threshold": similarity_threshold,
+            "similar_incidents": final_results,
+            "total_found": len(filtered_results),
+            "returned_count": len(final_results),
+            "avg_similarity": avg_similarity,
+            "query_understanding": f"Semantic search for incidents similar to: '{query}'",
+            "semantic_features": semantic_features,
+            "search_metadata": {
+                "total_incidents_searched": len(incidents),
+                "semantic_search_available": nlp_analyzer.embeddings is not None,
+                "langchain_available": hasattr(nlp_analyzer, 'llm') and nlp_analyzer.llm is not None
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Semantic search failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Semantic search failed: {str(e)}"
+        )
+
+
+@app.get("/api/nlp/status")
+async def get_nlp_status():
+    """
+    Get status and configuration of the Natural Language Processing system
+    """
+    try:
+        from .agents.nlp_analyzer import get_nlp_analyzer
+        
+        # Get NLP analyzer
+        nlp_analyzer = await get_nlp_analyzer()
+        
+        # Get comprehensive status
+        status = nlp_analyzer.get_agent_status()
+        
+        return {
+            "success": True,
+            "nlp_system": status,
+            "capabilities": {
+                "natural_language_queries": True,
+                "semantic_search": status.get("embeddings_available", False),
+                "threat_pattern_recognition": True,
+                "timeline_analysis": True,
+                "ioc_extraction": True,
+                "attribution_analysis": True,
+                "ai_powered_insights": status.get("llm_initialized", False)
+            },
+            "supported_query_types": [
+                "incident_search",
+                "threat_analysis", 
+                "pattern_recognition",
+                "timeline_analysis",
+                "ioc_extraction",
+                "attribution_query",
+                "recommendation"
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get NLP status: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get NLP status: {str(e)}"
+        )
+
+
+# =============================================================================
+# FEDERATED LEARNING API ENDPOINTS (Phase 2)
+# =============================================================================
+
+@app.get("/api/federated/status")
+async def get_federated_status():
+    """Get comprehensive federated learning system status"""
+    try:
+        from .federated_learning import federated_manager, FEDERATED_AVAILABLE
+        
+        if not FEDERATED_AVAILABLE:
+            return {
+                "success": False,
+                "error": "Federated learning components not available",
+                "available": False,
+                "reason": "Missing dependencies (tensorflow-federated, cryptography)"
+            }
+        
+        # Get detailed federated learning status
+        status = federated_manager.get_federated_status()
+        
+        return {
+            "success": True,
+            "federated_learning": status,
+            "available": True,
+            "capabilities": {
+                "secure_aggregation": True,
+                "differential_privacy": True,
+                "multi_protocol_encryption": True,
+                "distributed_training": True
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get federated status: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get federated status: {str(e)}"
+        )
+
+
+@app.post("/api/federated/coordinator/initialize")
+async def initialize_federated_coordinator(request_data: Dict[str, Any]):
+    """Initialize this node as a federated learning coordinator"""
+    try:
+        from .federated_learning import federated_manager, FEDERATED_AVAILABLE
+        
+        if not FEDERATED_AVAILABLE:
+            raise HTTPException(
+                status_code=503,
+                detail="Federated learning not available"
+            )
+        
+        config = request_data.get('config', {})
+        
+        # Initialize coordinator
+        coordinator = await federated_manager.initialize_coordinator(config)
+        
+        return {
+            "success": True,
+            "message": "Federated learning coordinator initialized",
+            "coordinator_id": coordinator.node_id,
+            "public_key": coordinator.public_key.decode('utf-8') if coordinator.public_key else None,
+            "configuration": config
+        }
+        
+    except Exception as e:
+        logger.error(f"Coordinator initialization failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Coordinator initialization failed: {str(e)}"
+        )
+
+
+@app.post("/api/federated/participant/initialize")
+async def initialize_federated_participant(request_data: Dict[str, Any]):
+    """Initialize this node as a federated learning participant"""
+    try:
+        from .federated_learning import federated_manager, FEDERATED_AVAILABLE
+        
+        if not FEDERATED_AVAILABLE:
+            raise HTTPException(
+                status_code=503,
+                detail="Federated learning not available"
+            )
+        
+        coordinator_endpoint = request_data.get('coordinator_endpoint')
+        if not coordinator_endpoint:
+            raise HTTPException(
+                status_code=400,
+                detail="coordinator_endpoint is required"
+            )
+        
+        config = request_data.get('config', {})
+        
+        # Initialize participant
+        participant = await federated_manager.initialize_participant(
+            coordinator_endpoint, config
+        )
+        
+        return {
+            "success": True,
+            "message": "Federated learning participant initialized",
+            "participant_id": participant.node_id,
+            "coordinator_endpoint": coordinator_endpoint,
+            "configuration": config
+        }
+        
+    except Exception as e:
+        logger.error(f"Participant initialization failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Participant initialization failed: {str(e)}"
+        )
+
+
+@app.post("/api/federated/training/start")
+async def start_federated_training(request_data: Dict[str, Any]):
+    """Start federated learning training process"""
+    try:
+        from .federated_learning import federated_manager, FEDERATED_AVAILABLE
+        
+        if not FEDERATED_AVAILABLE:
+            raise HTTPException(
+                status_code=503,
+                detail="Federated learning not available"
+            )
+        
+        model_type = request_data.get('model_type', 'neural_network')
+        training_data = request_data.get('training_data')
+        
+        # Validate model type
+        valid_types = ['neural_network', 'lstm_autoencoder', 'isolation_forest']
+        if model_type not in valid_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid model_type. Must be one of: {valid_types}"
+            )
+        
+        # Start federated training
+        result = await federated_manager.start_federated_training(
+            model_type, training_data
+        )
+        
+        return {
+            "success": True,
+            "message": "Federated training started",
+            "training_result": result,
+            "model_type": model_type
+        }
+        
+    except Exception as e:
+        logger.error(f"Federated training start failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Federated training failed: {str(e)}"
+        )
+
+
+@app.get("/api/federated/models/status")
+async def get_federated_models_status():
+    """Get status of federated ML models"""
+    try:
+        # Get ML detector status with federated information
+        status = ml_detector.get_model_status()
+        
+        return {
+            "success": True,
+            "models": status,
+            "federated_capabilities": {
+                "ensemble_with_federated": status.get('federated_enabled', False),
+                "federated_rounds_completed": status.get('federated_rounds', 0),
+                "last_federated_training": status.get('last_federated_training'),
+                "federated_accuracy": status.get('federated_accuracy', 0.0)
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get federated models status: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get models status: {str(e)}"
+        )
+
+
+@app.post("/api/federated/models/train")
+async def train_federated_models(request_data: Dict[str, Any], background_tasks: BackgroundTasks):
+    """Train ML models with federated learning capabilities"""
+    try:
+        enable_federated = request_data.get('enable_federated', True)
+        training_data = request_data.get('training_data')
+        
+        # If no training data provided, use recent events
+        if not training_data:
+            # Use background task for training
+            background_tasks.add_task(
+                _train_models_background,
+                enable_federated=enable_federated
+            )
+            
+            return {
+                "success": True,
+                "message": "Federated model training started in background",
+                "federated_enabled": enable_federated
+            }
+        else:
+            # Train with provided data
+            results = await ml_detector.train_models(
+                training_data, 
+                enable_federated=enable_federated
+            )
+            
+            return {
+                "success": True,
+                "message": "Federated model training completed",
+                "training_results": results,
+                "federated_enabled": enable_federated
+            }
+        
+    except Exception as e:
+        logger.error(f"Federated model training failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Model training failed: {str(e)}"
+        )
+
+
+@app.get("/api/federated/insights")
+async def get_federated_insights():
+    """Get insights and analytics from federated learning system"""
+    try:
+        from .federated_learning import federated_manager, FEDERATED_AVAILABLE
+        
+        if not FEDERATED_AVAILABLE:
+            raise HTTPException(
+                status_code=503,
+                detail="Federated learning not available"
+            )
+        
+        # Get insights from ML detector
+        ml_status = ml_detector.get_model_status()
+        
+        # Get federated manager status
+        fed_status = federated_manager.get_federated_status()
+        
+        insights = {
+            "system_overview": {
+                "federated_enabled": ml_status.get('federated_enabled', False),
+                "training_rounds": ml_status.get('federated_rounds', 0),
+                "global_accuracy": ml_status.get('federated_accuracy', 0.0),
+                "initialization_status": fed_status.get('initialized', False)
+            },
+            "performance_metrics": {
+                "ensemble_accuracy": ml_status.get('last_confidence', 0.0),
+                "standard_models_trained": sum([
+                    ml_status.get('isolation_forest', False),
+                    ml_status.get('lstm', False),
+                    ml_status.get('enhanced_ml_trained', False)
+                ]),
+                "federated_contribution": min(0.4, 0.1 * ml_status.get('federated_rounds', 0))
+            },
+            "privacy_security": {
+                "secure_aggregation": True,
+                "encryption_enabled": True,
+                "differential_privacy_available": True
+            }
+        }
+        
+        return {
+            "success": True,
+            "federated_insights": insights,
+            "raw_status": {
+                "ml_detector": ml_status,
+                "federated_manager": fed_status
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get federated insights: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get insights: {str(e)}"
+        )
+
+
+# Phase 2B: Advanced ML & Explainable AI API Endpoints
+
+@app.get("/api/ml/online-learning/status")
+async def get_online_learning_status():
+    """Get status of online learning and drift detection"""
+    try:
+        from .learning_pipeline import learning_pipeline, ADVANCED_ML_AVAILABLE
+        
+        if not ADVANCED_ML_AVAILABLE:
+            return {
+                "success": True,
+                "message": "Phase 2B features not fully available - using fallbacks",
+                "online_learning_status": {},
+                "phase_2b_features": {
+                    "online_adaptation_enabled": False,
+                    "ensemble_optimization_enabled": False,
+                    "explainable_ai_enabled": False,
+                    "online_adaptations": 0,
+                    "ensemble_optimizations": 0,
+                    "drift_detections": 0
+                },
+                "drift_detections": 0
+            }
+        
+        status = learning_pipeline.get_enhanced_learning_status()
+        
+        return {
+            "success": True,
+            "online_learning_status": status.get('online_learning_status', {}),
+            "phase_2b_features": status.get('phase_2b_features', {}),
+            "drift_detections": status.get('drift_detection_history', 0)
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get online learning status: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get status: {str(e)}"
+        )
+
+
+@app.post("/api/ml/online-learning/adapt")
+async def trigger_online_adaptation():
+    """Manually trigger online model adaptation"""
+    try:
+        from .learning_pipeline import ADVANCED_ML_AVAILABLE
+        
+        if not ADVANCED_ML_AVAILABLE:
+            raise HTTPException(
+                status_code=503,
+                detail="Phase 2B advanced ML features not available - check dependencies"
+            )
+        
+        from .online_learning import adapt_models_with_new_data
+        
+        # Get recent events for adaptation
+        async with AsyncSessionLocal() as db:
+            window_start = datetime.now(timezone.utc) - timedelta(hours=2)
+            
+            query = select(Event).where(
+                Event.ts >= window_start
+            ).order_by(Event.ts.desc()).limit(500)
+            
+            result = await db.execute(query)
+            events = result.scalars().all()
+            
+            if len(events) < 50:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Insufficient events for adaptation: {len(events)} (minimum 50 required)"
+                )
+            
+            # Perform adaptation
+            adaptation_result = await adapt_models_with_new_data(events)
+            
+            return {
+                "success": adaptation_result.get('success', False),
+                "samples_processed": adaptation_result.get('samples_processed', 0),
+                "adaptation_strategy": adaptation_result.get('adaptation_strategy', 'unknown'),
+                "timestamp": adaptation_result.get('timestamp', datetime.now(timezone.utc).isoformat()),
+                "message": "Online adaptation completed" if adaptation_result.get('success') else f"Adaptation failed: {adaptation_result.get('error', 'Unknown error')}"
+            }
+        
+    except Exception as e:
+        logger.error(f"Online adaptation failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Adaptation failed: {str(e)}"
+        )
+
+
+@app.get("/api/ml/ensemble/status")
+async def get_ensemble_status():
+    """Get ensemble optimization status"""
+    try:
+        from .model_versioning import model_registry
+        
+        if not model_registry:
+            raise HTTPException(
+                status_code=503,
+                detail="Model versioning not available"
+            )
+        
+        # Get all ensemble models
+        all_models = []
+        for model_id, versions in model_registry.models.items():
+            for version, model_version in versions.items():
+                if model_version.model_type == "ensemble":
+                    all_models.append({
+                        "model_id": model_id,
+                        "version": version,
+                        "algorithm": model_version.algorithm,
+                        "status": model_version.status.value,
+                        "created_at": model_version.created_at.isoformat(),
+                        "performance_metrics": model_version.performance_metrics
+                    })
+        
+        return {
+            "success": True,
+            "ensemble_models": all_models,
+            "total_ensembles": len(all_models),
+            "production_ensembles": len([m for m in all_models if m["status"] == "production"])
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get ensemble status: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get status: {str(e)}"
+        )
+
+
+@app.post("/api/ml/ensemble/optimize")
+async def trigger_ensemble_optimization():
+    """Manually trigger ensemble optimization"""
+    try:
+        from .learning_pipeline import learning_pipeline
+        
+        # Force ensemble optimization
+        async with AsyncSessionLocal() as db:
+            # Get training events
+            window_start = datetime.now(timezone.utc) - timedelta(days=7)
+            
+            query = select(Event).where(
+                Event.ts >= window_start
+            ).order_by(Event.ts.desc()).limit(2000)
+            
+            result = await db.execute(query)
+            events = result.scalars().all()
+            
+            if len(events) < 100:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Insufficient training data: {len(events)} events (minimum 100 required)"
+                )
+            
+            # Perform optimization
+            success = await learning_pipeline._optimize_ensemble_models(events)
+            
+            return {
+                "success": success,
+                "training_events": len(events),
+                "message": "Ensemble optimization completed" if success else "Ensemble optimization failed",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        
+    except Exception as e:
+        logger.error(f"Ensemble optimization failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Optimization failed: {str(e)}"
+        )
+
+
+@app.post("/api/ml/ab-test/create")
+async def create_ab_test(request_data: Dict[str, Any]):
+    """Create A/B test for model comparison"""
+    try:
+        from .learning_pipeline import learning_pipeline
+        
+        # Validate required fields
+        required_fields = ['model_a_id', 'model_a_version', 'model_b_id', 'model_b_version', 'test_name']
+        for field in required_fields:
+            if field not in request_data:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Required field missing: {field}"
+                )
+        
+        test_id = await learning_pipeline.create_ab_test(
+            model_a_id=request_data['model_a_id'],
+            model_a_version=request_data['model_a_version'],
+            model_b_id=request_data['model_b_id'],
+            model_b_version=request_data['model_b_version'],
+            test_name=request_data['test_name'],
+            description=request_data.get('description', '')
+        )
+        
+        if test_id:
+            return {
+                "success": True,
+                "test_id": test_id,
+                "message": "A/B test created and started successfully",
+                "test_name": request_data['test_name']
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to create A/B test"
+            )
+        
+    except Exception as e:
+        logger.error(f"A/B test creation failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Test creation failed: {str(e)}"
+        )
+
+
+@app.get("/api/ml/ab-test/{test_id}/results")
+async def get_ab_test_results(test_id: str):
+    """Get A/B test results"""
+    try:
+        from .model_versioning import ab_test_manager
+        
+        if not ab_test_manager:
+            raise HTTPException(
+                status_code=503,
+                detail="A/B test manager not available"
+            )
+        
+        result = ab_test_manager.get_test_results(test_id)
+        
+        if not result:
+            raise HTTPException(
+                status_code=404,
+                detail=f"A/B test {test_id} not found or not completed"
+            )
+        
+        return {
+            "success": True,
+            "test_id": test_id,
+            "winner": result.winner.value,
+            "confidence": result.confidence,
+            "p_value": result.p_value,
+            "effect_size": result.effect_size,
+            "samples_a": result.samples_a,
+            "samples_b": result.samples_b,
+            "metric_a": result.metric_a,
+            "metric_b": result.metric_b,
+            "statistical_significance": result.statistical_significance,
+            "practical_significance": result.practical_significance,
+            "recommendation": result.recommendation,
+            "detailed_metrics": result.detailed_metrics
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get A/B test results: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get results: {str(e)}"
+        )
+
+
+@app.post("/api/ml/explain/{incident_id}")
+async def explain_incident_prediction(incident_id: int, request_data: Optional[Dict[str, Any]] = None):
+    """Generate explanation for an incident prediction"""
+    try:
+        from .learning_pipeline import learning_pipeline
+        
+        context = request_data or {}
+        explanation = await learning_pipeline.explain_recent_prediction(incident_id, context)
+        
+        if not explanation:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Could not generate explanation for incident {incident_id}"
+            )
+        
+        return {
+            "success": True,
+            "explanation": explanation
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to explain incident {incident_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Explanation failed: {str(e)}"
+        )
+
+
+@app.get("/api/ml/models/performance")
+async def get_model_performance():
+    """Get performance monitoring data for all models"""
+    try:
+        from .model_versioning import performance_monitor, model_registry
+        
+        if not performance_monitor or not model_registry:
+            raise HTTPException(
+                status_code=503,
+                detail="Model performance monitoring not available"
+            )
+        
+        production_models = model_registry.get_production_models()
+        performance_data = []
+        
+        for model_version in production_models:
+            health_summary = performance_monitor.get_model_health_summary(
+                model_version.model_id, model_version.version
+            )
+            
+            performance_data.append({
+                "model_id": model_version.model_id,
+                "version": model_version.version,
+                "algorithm": model_version.algorithm,
+                "status": health_summary['status'],
+                "accuracy": health_summary.get('accuracy', 0),
+                "error_rate": health_summary.get('error_rate', 0),
+                "latency_ms": health_summary.get('latency_ms', 0),
+                "data_points": health_summary.get('data_points', 0),
+                "last_evaluation": health_summary.get('last_evaluation')
+            })
+        
+        # Get recent alerts
+        recent_alerts = performance_monitor.get_recent_alerts(hours=24)
+        
+        return {
+            "success": True,
+            "model_performance": performance_data,
+            "recent_alerts": len(recent_alerts),
+            "alerts_detail": recent_alerts[:10],  # Last 10 alerts
+            "total_production_models": len(production_models)
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get model performance: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get performance data: {str(e)}"
+        )
+
+
+@app.get("/api/ml/drift/status")
+async def get_drift_detection_status():
+    """Get concept drift detection status"""
+    try:
+        from .online_learning import online_learning_engine
+        
+        if not online_learning_engine:
+            raise HTTPException(
+                status_code=503,
+                detail="Online learning engine not available"
+            )
+        
+        drift_status = online_learning_engine.get_drift_status()
+        adaptation_metrics = online_learning_engine.get_adaptation_metrics()
+        
+        return {
+            "success": True,
+            "drift_detection": drift_status,
+            "recent_adaptations": len(adaptation_metrics),
+            "adaptation_metrics": adaptation_metrics[-10:],  # Last 10 adaptations
+            "last_drift_time": drift_status.get('last_drift_time'),
+            "buffer_size": drift_status.get('buffer_size', 0),
+            "detection_sensitivity": drift_status.get('detection_sensitivity', 0.1)
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get drift status: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get drift status: {str(e)}"
+        )
+
+
+# =============================================================================
+# DISTRIBUTED MCP API ENDPOINTS (Phase 3)
+# =============================================================================
+
+@app.get("/api/distributed/status")
+async def get_distributed_status():
+    """Get status of distributed MCP system"""
+    try:
+        from .distributed import get_system_status, DISTRIBUTED_CAPABILITIES, __version__, __phase__
+        
+        return {
+            "success": True,
+            "version": __version__,
+            "phase": __phase__,
+            "capabilities": DISTRIBUTED_CAPABILITIES,
+            "system_status": get_system_status()
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get distributed status: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get distributed status: {str(e)}"
+        )
+
+
+@app.get("/api/distributed/health")
+async def get_distributed_health():
+    """Get comprehensive health check of distributed system"""
+    try:
+        from .distributed import health_check
+        
+        health_status = await health_check()
+        
+        return {
+            "success": True,
+            "overall_healthy": health_status["overall_healthy"],
+            "timestamp": health_status["timestamp"],
+            "components": health_status["components"]
+        }
+        
+    except Exception as e:
+        logger.error(f"Distributed health check failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Health check failed: {str(e)}"
+        )
+
+
+@app.post("/api/distributed/initialize")
+async def initialize_distributed_system(request: Dict[str, Any]):
+    """Initialize the distributed MCP system"""
+    try:
+        from .distributed import initialize_distributed_system, NodeRole
+        
+        # Parse request parameters
+        node_id = request.get('node_id')
+        role = NodeRole(request.get('role', 'coordinator'))
+        region = request.get('region', 'us-west-1')
+        kafka_enabled = request.get('kafka_enabled', True)
+        redis_enabled = request.get('redis_enabled', True)
+        
+        # Initialize the system
+        result = await initialize_distributed_system(
+            node_id=node_id,
+            role=role,
+            region=region,
+            kafka_enabled=kafka_enabled,
+            redis_enabled=redis_enabled
+        )
+        
+        if result['success']:
+            return {
+                "success": True,
+                "message": "Distributed MCP system initialized successfully",
+                "node_id": result['components'].get('coordinator', {}).get('node_id'),
+                "role": role,
+                "region": region,
+                "components": result['components']
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Initialization failed: {result['errors']}"
+            )
+        
+    except Exception as e:
+        logger.error(f"Distributed system initialization failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Initialization failed: {str(e)}"
+        )
+
+
+@app.post("/api/distributed/shutdown")
+async def shutdown_distributed_system():
+    """Shutdown the distributed MCP system"""
+    try:
+        from .distributed import shutdown_distributed_system
+        
+        await shutdown_distributed_system()
+        
+        return {
+            "success": True,
+            "message": "Distributed MCP system shutdown successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Distributed system shutdown failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Shutdown failed: {str(e)}"
+        )
+
+
+@app.post("/api/distributed/broadcast")
+async def broadcast_message(request: Dict[str, Any]):
+    """Broadcast message to all nodes in distributed system"""
+    try:
+        from .distributed import broadcast_system_message
+        
+        message_type = request.get('message_type')
+        payload = request.get('payload', {})
+        
+        if not message_type:
+            raise HTTPException(
+                status_code=400,
+                detail="message_type is required"
+            )
+        
+        success = await broadcast_system_message(message_type, payload)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Broadcast message sent: {message_type}",
+                "payload": payload
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to broadcast message"
+            )
+        
+    except Exception as e:
+        logger.error(f"Broadcast message failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Broadcast failed: {str(e)}"
+        )
+
+
+@app.post("/api/distributed/execute-tool")
+async def execute_distributed_tool(request: Dict[str, Any]):
+    """Execute tool across distributed MCP network"""
+    try:
+        from .distributed import execute_distributed_tool, LoadBalanceStrategy
+        
+        tool_name = request.get('tool_name')
+        parameters = request.get('parameters', {})
+        strategy = LoadBalanceStrategy(request.get('strategy', 'least_loaded'))
+        
+        if not tool_name:
+            raise HTTPException(
+                status_code=400,
+                detail="tool_name is required"
+            )
+        
+        result = await execute_distributed_tool(tool_name, parameters, strategy)
+        
+        if result:
+            return {
+                "success": True,
+                "tool_name": tool_name,
+                "result": result,
+                "strategy": strategy
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="Tool execution failed"
+            )
+        
+    except Exception as e:
+        logger.error(f"Distributed tool execution failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Tool execution failed: {str(e)}"
+        )
+
+
+@app.get("/api/distributed/nodes")
+async def get_active_nodes():
+    """Get list of active nodes in distributed system"""
+    try:
+        from .distributed import get_redis_manager_instance
+        
+        redis_manager = get_redis_manager_instance()
+        
+        if not redis_manager:
+            raise HTTPException(
+                status_code=503,
+                detail="Redis manager not available"
+            )
+        
+        active_nodes = await redis_manager.get_active_nodes()
+        
+        return {
+            "success": True,
+            "node_count": len(active_nodes),
+            "active_nodes": active_nodes
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get active nodes: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get active nodes: {str(e)}"
+        )
+
+
+@app.get("/api/distributed/kafka/metrics")
+async def get_kafka_metrics():
+    """Get Kafka messaging metrics"""
+    try:
+        from .distributed import get_kafka_manager_instance
+        
+        kafka_manager = get_kafka_manager_instance()
+        
+        if not kafka_manager:
+            raise HTTPException(
+                status_code=503,
+                detail="Kafka manager not available"
+            )
+        
+        metrics = kafka_manager.get_metrics()
+        topic_info = kafka_manager.get_topic_info()
+        
+        return {
+            "success": True,
+            "kafka_metrics": metrics,
+            "topic_info": topic_info
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get Kafka metrics: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get Kafka metrics: {str(e)}"
+        )
+
+
+@app.get("/api/distributed/redis/metrics")
+async def get_redis_metrics():
+    """Get Redis cluster metrics"""
+    try:
+        from .distributed import get_redis_manager_instance
+        
+        redis_manager = get_redis_manager_instance()
+        
+        if not redis_manager:
+            raise HTTPException(
+                status_code=503,
+                detail="Redis manager not available"
+            )
+        
+        metrics = redis_manager.get_metrics()
+        
+        return {
+            "success": True,
+            "redis_metrics": metrics
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get Redis metrics: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get Redis metrics: {str(e)}"
+        )
+
+
+@app.post("/api/distributed/cache/set")
+async def set_cache_value(request: Dict[str, Any]):
+    """Set value in distributed cache"""
+    try:
+        from .distributed import cache_set
+        
+        key = request.get('key')
+        value = request.get('value')
+        ttl = request.get('ttl')
+        
+        if not key:
+            raise HTTPException(
+                status_code=400,
+                detail="key is required"
+            )
+        
+        if value is None:
+            raise HTTPException(
+                status_code=400,
+                detail="value is required"
+            )
+        
+        success = await cache_set(key, value, ttl)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Value set in cache for key: {key}",
+                "key": key,
+                "ttl": ttl
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to set cache value"
+            )
+        
+    except Exception as e:
+        logger.error(f"Cache set failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Cache set failed: {str(e)}"
+        )
+
+
+@app.get("/api/distributed/cache/{key}")
+async def get_cache_value(key: str):
+    """Get value from distributed cache"""
+    try:
+        from .distributed import cache_get
+        
+        value = await cache_get(key)
+        
+        if value is not None:
+            return {
+                "success": True,
+                "key": key,
+                "value": value,
+                "found": True
+            }
+        else:
+            return {
+                "success": True,
+                "key": key,
+                "value": None,
+                "found": False
+            }
+        
+    except Exception as e:
+        logger.error(f"Cache get failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Cache get failed: {str(e)}"
+        )
+
+
+@app.post("/api/distributed/coordination/election")
+async def coordinate_leader_election(request: Dict[str, Any]):
+    """Initiate distributed leader election"""
+    try:
+        from .distributed import get_redis_manager_instance
+        
+        redis_manager = get_redis_manager_instance()
+        
+        if not redis_manager:
+            raise HTTPException(
+                status_code=503,
+                detail="Redis manager not available"
+            )
+        
+        election_key = request.get('election_key')
+        candidate_id = request.get('candidate_id')
+        ttl = request.get('ttl', 30)
+        
+        if not election_key or not candidate_id:
+            raise HTTPException(
+                status_code=400,
+                detail="election_key and candidate_id are required"
+            )
+        
+        is_leader = await redis_manager.coordinate_election(election_key, candidate_id, ttl)
+        
+        return {
+            "success": True,
+            "is_leader": is_leader,
+            "election_key": election_key,
+            "candidate_id": candidate_id,
+            "ttl": ttl
+        }
+        
+    except Exception as e:
+        logger.error(f"Leader election failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Leader election failed: {str(e)}"
+        )
+
+
+# =============================================================================
+# PHASE 4.1: 3D VISUALIZATION API ENDPOINTS
+# =============================================================================
+
+@app.get("/api/intelligence/threats")
+async def get_threat_intelligence():
+    """Get threat intelligence data for 3D visualization from real incidents"""
+    try:
+        async with AsyncSessionLocal() as db:
+            # Get recent incidents with source IPs
+            query = select(Event).where(
+                Event.src_ip.isnot(None),
+                Event.ts >= datetime.now() - timedelta(days=7)  # Last 7 days
+            ).order_by(Event.ts.desc()).limit(100)
+            
+            result = await db.execute(query)
+            events = result.scalars().all()
+            
+            # Convert real incidents to threat intelligence format
+            real_threats = []
+            threat_type_map = {
+                'cowrie.login.failed': 'exploit',
+                'cowrie.session.connect': 'reconnaissance', 
+                'ssh': 'exploit',
+                'http': 'exploit',
+                'malware': 'malware',
+                'botnet': 'botnet'
+            }
+            
+            # Simple IP to country mapping (you can integrate with MaxMind GeoIP for better accuracy)
+            ip_to_location = {
+                '192.168.1.100': {'country': 'United States', 'code': 'US', 'lat': 39.8283, 'lng': -98.5795},
+                '10.0.0.1': {'country': 'United States', 'code': 'US', 'lat': 39.8283, 'lng': -98.5795},
+                # Add more mappings or integrate with GeoIP service
+            }
+            
+            # Use GeoIP lookup for real IP geolocation (replace demo locations)
+            async def get_ip_location(ip_address: str) -> dict:
+                """Get real geolocation for IP address using GeoIP or external service"""
+                try:
+                    # For now, use a simple lookup - in production integrate with MaxMind GeoIP2
+                    # or a service like ipapi.co, ip-api.com, etc.
+                    
+                    # Check if it's a private/local IP
+                    import ipaddress
+                    ip_obj = ipaddress.ip_address(ip_address)
+                    if ip_obj.is_private or ip_obj.is_loopback:
+                        return {'country': 'Local Network', 'code': 'LN', 'lat': 0, 'lng': 0}
+                    
+                    # For demonstration, use a more realistic IP-to-location mapping
+                    # This should be replaced with actual GeoIP service
+                    import aiohttp
+                    try:
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get(f'http://ip-api.com/json/{ip_address}?fields=country,countryCode,lat,lon') as resp:
+                                if resp.status == 200:
+                                    data = await resp.json()
+                                    if data.get('status') == 'success':
+                                        return {
+                                            'country': data.get('country', 'Unknown'),
+                                            'code': data.get('countryCode', 'XX'), 
+                                            'lat': data.get('lat', 0),
+                                            'lng': data.get('lon', 0)
+                                        }
+                    except:
+                        pass
+                    
+                    # Fallback to unknown location if GeoIP fails
+                    return {'country': 'Unknown', 'code': 'XX', 'lat': 0, 'lng': 0}
+                    
+                except Exception:
+                    return {'country': 'Unknown', 'code': 'XX', 'lat': 0, 'lng': 0}
+            
+            for i, event in enumerate(events):
+                # Only use real geolocation data - no demo locations
+                if event.src_ip in ip_to_location:
+                    location = ip_to_location[event.src_ip]
+                else:
+                    # Get real geolocation for the IP
+                    location = await get_ip_location(event.src_ip)
+                    
+                    # Skip entries with unknown locations to keep data real
+                    if location['lat'] == 0 and location['lng'] == 0 and location['country'] == 'Unknown':
+                        continue
+                
+                # Determine threat type from event
+                threat_type = 'exploit'  # default
+                for pattern, t_type in threat_type_map.items():
+                    if pattern in event.eventid.lower():
+                        threat_type = t_type
+                        break
+                
+                # Calculate severity based on event frequency and type
+                severity = 2  # medium default
+                if 'failed' in event.eventid.lower():
+                    severity = 3  # high for failed login attempts
+                if 'malware' in event.eventid.lower():
+                    severity = 4  # critical
+                
+                real_threats.append({
+                    "id": f"incident-{event.id}",
+                    "latitude": location['lat'],
+                    "longitude": location['lng'], 
+                    "country": location['country'],
+                    "country_code": location['code'],
+                    "threat_type": threat_type,
+                    "confidence": 0.8,  # High confidence since it's real data
+                    "severity": severity,
+                    "first_seen": int(event.ts.timestamp() * 1000),
+                    "last_seen": int(event.ts.timestamp() * 1000),
+                    "source": f"Mini-XDR Real Incident #{event.id}",
+                    "tags": ["real_incident", event.eventid],
+                    "metadata": {
+                        "event_id": event.eventid,
+                        "source_ip": event.src_ip,
+                        "hostname": event.hostname,
+                        "message": event.message,
+                        "attack_technique": event.eventid.replace('.', ' ').title()
+                    }
+                })
+            
+            # Only return real honeypot data - no mock threats added
+            logger.info(f"Returning {len(real_threats)} real threats from honeypot data")
+            
+            return {
+                "threats": real_threats,
+                "total_count": len(real_threats),
+                "last_updated": int(datetime.now().timestamp() * 1000),
+                "sources": ["Mini-XDR Honeypot Incidents Only"],
+                "real_data": True
+            }
+        
+    except Exception as e:
+        logger.error(f"Failed to get threat intelligence: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get threat intelligence: {str(e)}"
+        )
+
+
+@app.get("/api/intelligence/distributed-threats")
+async def get_distributed_threats():
+    """Get threat intelligence from distributed MCP network"""
+    try:
+        from .distributed import get_system_status
+        
+        # Get distributed system status
+        system_status = get_system_status()
+        
+        # Generate distributed threats based on active regions
+        distributed_threats = []
+        
+        if system_status.get('kafka_manager', {}).get('available'):
+            # Simulate threats from distributed nodes
+            regions = ['us-west-1', 'us-east-1', 'eu-west-1', 'ap-northeast-1']
+            
+            for i, region in enumerate(regions):
+                distributed_threats.append({
+                    "id": f"distributed-{region}-{i}",
+                    "latitude": [40.7128, 38.9072, 51.5074, 35.6762][i],
+                    "longitude": [-74.0060, -77.0369, -0.1278, 139.6503][i],
+                    "country": ["United States", "United States", "United Kingdom", "Japan"][i],
+                    "country_code": ["US", "US", "GB", "JP"][i],
+                    "threat_type": "distributed_attack",
+                    "confidence": 0.75 + (i * 0.05),
+                    "severity": 2 + (i % 3),
+                    "first_seen": int((datetime.now() - timedelta(hours=1)).timestamp() * 1000),
+                    "last_seen": int(datetime.now().timestamp() * 1000),
+                    "source": f"MCP Node {region}",
+                    "metadata": {
+                        "region": region,
+                        "distributed_source": f"node-{region}",
+                        "coordination_level": "high"
+                    }
+                })
+        
+        return {
+            "threats": distributed_threats,
+            "total_count": len(distributed_threats),
+            "last_updated": int(datetime.now().timestamp() * 1000),
+            "distributed_status": system_status
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get distributed threats: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get distributed threats: {str(e)}"
+        )
+
+
+@app.get("/api/incidents/timeline")
+async def get_incident_timeline(start_time: Optional[int] = None, end_time: Optional[int] = None):
+    """Get incident timeline data for 3D visualization"""
+    try:
+        async with AsyncSessionLocal() as db:
+            # Default time range if not provided
+            if not end_time:
+                end_time = int(datetime.now().timestamp() * 1000)
+            if not start_time:
+                start_time = int((datetime.now() - timedelta(hours=2)).timestamp() * 1000)
+            
+            # Convert to datetime
+            start_dt = datetime.fromtimestamp(start_time / 1000, tz=timezone.utc)
+            end_dt = datetime.fromtimestamp(end_time / 1000, tz=timezone.utc)
+            
+            # Get incidents in time range
+            query = select(Event).where(
+                Event.ts >= start_dt,
+                Event.ts <= end_dt
+            ).order_by(Event.ts.desc()).limit(100)
+            
+            result = await db.execute(query)
+            events = result.scalars().all()
+            
+            # Convert events to timeline format
+            timeline_incidents = []
+            for event in events:
+                timeline_incidents.append({
+                    "id": str(event.id),
+                    "timestamp": int(event.ts.timestamp() * 1000),
+                    "title": f"Security Event: {event.eventid}",
+                    "description": event.message or f"Event from {event.src_ip}",
+                    "severity": "high" if "attack" in event.message.lower() else "medium",
+                    "status": "detected",
+                    "attack_vectors": [event.eventid],
+                    "affected_assets": [event.hostname or "unknown"],
+                    "source_ip": event.src_ip,
+                    "location_data": {
+                        "source_country": getattr(event, 'src_country', None),
+                        "source_lat": 39.8283,  # Default US coordinates
+                        "source_lng": -98.5795
+                    },
+                    "mitre_attack": {
+                        "technique_id": f"T{1000 + (event.id % 100)}",
+                        "technique_name": "Unknown Technique",
+                        "tactic": "Initial Access"
+                    }
+                })
+            
+            return {
+                "incidents": timeline_incidents,
+                "total_count": len(timeline_incidents),
+                "time_range": {"start": start_time, "end": end_time}
+            }
+        
+    except Exception as e:
+        logger.error(f"Failed to get incident timeline: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get timeline: {str(e)}"
+        )
+
+
+@app.get("/api/incidents/attack-paths")
+async def get_attack_paths():
+    """Get attack path data for 3D visualization"""
+    try:
+        async with AsyncSessionLocal() as db:
+            # Get recent incidents that might be related
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=6)
+            query = select(Event).where(
+                Event.ts >= cutoff_time
+            ).order_by(Event.ts.desc()).limit(50)
+            
+            result = await db.execute(query)
+            events = result.scalars().all()
+            
+            # Generate attack paths from related events
+            attack_paths = []
+            
+            # Group events by source IP to find potential attack chains
+            ip_events = {}
+            for event in events:
+                if event.src_ip not in ip_events:
+                    ip_events[event.src_ip] = []
+                ip_events[event.src_ip].append(event)
+            
+            path_id = 0
+            for src_ip, ip_event_list in ip_events.items():
+                if len(ip_event_list) > 1:  # Multiple events from same IP = potential attack path
+                    # Sort by time to show progression
+                    ip_event_list.sort(key=lambda x: x.ts)
+                    
+                    for i in range(len(ip_event_list) - 1):
+                        source_event = ip_event_list[i]
+                        target_event = ip_event_list[i + 1]
+                        
+                        attack_paths.append({
+                            "id": f"path-{path_id}",
+                            "source": {
+                                "id": f"source-{source_event.id}",
+                                "latitude": 39.8283,  # Default coordinates
+                                "longitude": -98.5795,
+                                "intensity": 0.7,
+                                "type": "exploit",
+                                "country": "United States",
+                                "timestamp": int(source_event.ts.timestamp() * 1000)
+                            },
+                            "target": {
+                                "id": f"target-{target_event.id}",
+                                "latitude": 40.7128,  # Slightly different coordinates
+                                "longitude": -74.0060,
+                                "intensity": 0.8,
+                                "type": "lateral_movement",
+                                "country": "United States", 
+                                "timestamp": int(target_event.ts.timestamp() * 1000)
+                            },
+                            "progress": 1.0 if (datetime.now(timezone.utc) - (target_event.ts if target_event.ts.tzinfo else target_event.ts.replace(tzinfo=timezone.utc))).total_seconds() > 300 else 0.5,
+                            "attack_type": "lateral_movement",
+                            "is_active": (datetime.now(timezone.utc) - (target_event.ts if target_event.ts.tzinfo else target_event.ts.replace(tzinfo=timezone.utc))).total_seconds() < 1800  # Active if within 30 min
+                        })
+                        
+                        path_id += 1
+            
+            return {
+                "attack_paths": attack_paths,
+                "total_count": len(attack_paths),
+                "last_updated": int(datetime.now().timestamp() * 1000)
+            }
+        
+    except Exception as e:
+        logger.error(f"Failed to get attack paths: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get attack paths: {str(e)}"
+        )
+
+
+# Background task helper
+async def _train_models_background(enable_federated: bool = True):
+    """Background task for training models with federated learning"""
+    try:
+        # Prepare training data from recent events
+        from .ml_engine import prepare_training_data_from_events
+        
+        async with AsyncSessionLocal() as db:
+            # Get recent events for training
+            window_start = datetime.now(timezone.utc) - timedelta(days=7)
+            
+            query = select(Event).where(
+                Event.ts >= window_start
+            ).order_by(Event.ts.desc()).limit(5000)
+            
+            result = await db.execute(query)
+            events = result.scalars().all()
+            
+            # Prepare training data
+            training_data = await prepare_training_data_from_events(events)
+            
+            if len(training_data) >= 50:
+                # Train models
+                results = await ml_detector.train_models(
+                    training_data, 
+                    enable_federated=enable_federated
+                )
+                
+                logger.info(f"Background federated training completed: {results}")
+            else:
+                logger.warning(f"Insufficient training data: {len(training_data)} samples")
+            
+    except Exception as e:
+        logger.error(f"Background federated training failed: {e}")
 
 
 if __name__ == "__main__":

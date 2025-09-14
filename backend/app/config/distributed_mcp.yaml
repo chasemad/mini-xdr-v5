@@ -1,0 +1,323 @@
+# Distributed MCP Configuration
+# Configuration for Phase 3: Distributed MCP Architecture
+
+# Node Configuration
+node:
+  id: "auto"  # Auto-generate or set specific ID
+  role: "coordinator"  # coordinator, participant, observer, backup
+  region: "us-west-1"  # Geographic region for optimization
+  host: "localhost"
+  port: 3001
+  
+# Apache Kafka Configuration
+kafka:
+  enabled: true
+  servers:
+    - "localhost:9092"
+    # Add more brokers for production:
+    # - "kafka-2:9092" 
+    # - "kafka-3:9092"
+  
+  # Security Configuration (Production)
+  security:
+    protocol: "PLAINTEXT"  # Use SSL/SASL in production
+    ssl_ca_location: "/etc/ssl/certs/ca-cert.pem"
+    ssl_cert_location: "/etc/ssl/certs/client-cert.pem" 
+    ssl_key_location: "/etc/ssl/private/client-key.pem"
+    sasl_mechanism: "PLAIN"
+    sasl_username: "mcp-client"
+    sasl_password: "${KAFKA_PASSWORD}"
+  
+  # Producer Configuration
+  producer:
+    compression_type: "snappy"
+    batch_size: 16384
+    linger_ms: 10
+    max_request_size: 1048576  # 1MB
+    acks: "all"
+    retries: 3
+    enable_idempotence: true
+    
+  # Consumer Configuration  
+  consumer:
+    auto_offset_reset: "latest"
+    enable_auto_commit: true
+    auto_commit_interval_ms: 5000
+    max_poll_records: 100
+    session_timeout_ms: 30000
+    heartbeat_interval_ms: 10000
+    
+  # Topic Configuration
+  topics:
+    commands:
+      partitions: 6
+      replication_factor: 3
+      retention_ms: 3600000  # 1 hour
+      compression_type: "lz4"
+      
+    responses:
+      partitions: 6
+      replication_factor: 3
+      retention_ms: 3600000  # 1 hour
+      compression_type: "lz4"
+      
+    heartbeats:
+      partitions: 1
+      replication_factor: 3
+      retention_ms: 300000  # 5 minutes
+      cleanup_policy: "compact"
+      
+    discovery:
+      partitions: 1
+      replication_factor: 3
+      retention_ms: 1800000  # 30 minutes
+      cleanup_policy: "compact"
+      
+    broadcasts:
+      partitions: 3
+      replication_factor: 3
+      retention_ms: 86400000  # 24 hours
+      compression_type: "snappy"
+      
+    coordination:
+      partitions: 1
+      replication_factor: 3
+      retention_ms: 3600000  # 1 hour
+      cleanup_policy: "compact"
+      
+    logs:
+      partitions: 12
+      replication_factor: 3
+      retention_ms: 604800000  # 7 days
+      compression_type: "gzip"
+      
+    metrics:
+      partitions: 6
+      replication_factor: 3
+      retention_ms: 2592000000  # 30 days
+      compression_type: "snappy"
+
+# Redis Configuration
+redis:
+  enabled: true
+  
+  # Connection Settings
+  host: "localhost"
+  port: 6379
+  db: 0
+  password: "${REDIS_PASSWORD}"
+  ssl: false
+  
+  # Connection Pool
+  max_connections: 50
+  retry_on_timeout: true
+  socket_keepalive: true
+  socket_keepalive_options:
+    TCP_KEEPIDLE: 1
+    TCP_KEEPINTVL: 3
+    TCP_KEEPCNT: 5
+    
+  # Performance Settings
+  health_check_interval: 30
+  cache_strategy: "allkeys-lru"  # LRU eviction
+  max_memory_policy: "allkeys-lru"
+  
+  # Cluster Settings (for Redis Cluster mode)
+  cluster:
+    enabled: false
+    nodes:
+      - host: "redis-1"
+        port: 7001
+      - host: "redis-2" 
+        port: 7002
+      - host: "redis-3"
+        port: 7003
+    max_connections_per_node: 20
+    
+  # Key Expiration Settings
+  default_ttl: 3600  # 1 hour
+  session_ttl: 86400  # 24 hours
+  cache_ttl: 1800     # 30 minutes
+  lock_ttl: 30        # 30 seconds
+
+# Load Balancing Configuration
+load_balancing:
+  strategy: "least_loaded"  # round_robin, least_loaded, geographic, capability_based, consistent_hashing
+  
+  # Health Check Settings
+  health_check:
+    interval: 15  # seconds
+    timeout: 5    # seconds
+    failure_threshold: 3
+    recovery_threshold: 2
+    
+  # Geographic Routing
+  geographic:
+    prefer_local_region: true
+    max_cross_region_latency_ms: 100
+    
+  # Capability-based Routing
+  capabilities:
+    threat_detection: 
+      weight: 1.0
+      required_memory_mb: 512
+    incident_management:
+      weight: 0.8
+      required_cpu_cores: 2
+    forensics_analysis:
+      weight: 1.5
+      required_memory_mb: 1024
+    containment_actions:
+      weight: 1.2
+      required_permissions: ["network_admin"]
+    ml_analysis:
+      weight: 2.0
+      required_memory_mb: 2048
+      required_gpu: false
+    federated_learning:
+      weight: 3.0
+      required_memory_mb: 4096
+      required_cpu_cores: 4
+    explainable_ai:
+      weight: 2.5
+      required_memory_mb: 2048
+
+# Security Configuration
+security:
+  # JWT Authentication
+  jwt:
+    secret_key: "${MCP_JWT_SECRET}"
+    algorithm: "HS256"
+    expiration_hours: 24
+    issuer: "mini-xdr-mcp"
+    
+  # Message Encryption
+  encryption:
+    enabled: true
+    algorithm: "AES-256-GCM"
+    key_rotation_hours: 168  # 1 week
+    
+  # API Security
+  api:
+    rate_limiting:
+      enabled: true
+      requests_per_minute: 1000
+      burst_limit: 100
+    
+    # CORS Settings
+    cors:
+      enabled: true
+      origins:
+        - "http://localhost:3000"
+        - "https://mini-xdr.local"
+      methods: ["GET", "POST", "PUT", "DELETE"]
+      headers: ["Content-Type", "Authorization"]
+      
+  # Node Authentication
+  nodes:
+    require_authentication: true
+    shared_secret: "${MCP_SHARED_SECRET}"
+    certificate_path: "/etc/mcp/certs"
+
+# Monitoring & Observability
+monitoring:
+  # Metrics Collection
+  metrics:
+    enabled: true
+    collection_interval: 30  # seconds
+    retention_days: 30
+    
+    # Prometheus Integration
+    prometheus:
+      enabled: true
+      port: 9090
+      path: "/metrics"
+      
+  # Logging
+  logging:
+    level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    format: "structured"  # structured (JSON) or text
+    
+    # Log Aggregation
+    aggregation:
+      enabled: true
+      endpoint: "http://logstash:5044"
+      batch_size: 100
+      flush_interval: 10
+      
+  # Distributed Tracing
+  tracing:
+    enabled: true
+    jaeger_endpoint: "http://jaeger:14268"
+    sample_rate: 0.1  # 10% sampling
+    
+  # Health Checks
+  health:
+    enabled: true
+    endpoint: "/health"
+    checks:
+      - name: "kafka_connectivity"
+        timeout: 5
+      - name: "redis_connectivity"
+        timeout: 3
+      - name: "node_discovery"
+        timeout: 10
+
+# Performance Tuning
+performance:
+  # Connection Limits
+  max_concurrent_connections: 1000
+  connection_timeout: 30
+  request_timeout: 60
+  
+  # Message Processing
+  message_buffer_size: 1000
+  batch_processing_size: 50
+  processing_threads: 4
+  
+  # Caching
+  cache_size_mb: 512
+  cache_ttl_seconds: 1800
+  cache_compression: true
+  
+  # Resource Limits
+  max_memory_mb: 2048
+  max_cpu_cores: 4
+  disk_space_threshold_gb: 10
+
+# Deployment Configuration
+deployment:
+  # Environment
+  environment: "development"  # development, staging, production
+  
+  # Service Discovery
+  service_discovery:
+    enabled: true
+    consul_endpoint: "http://consul:8500"
+    service_name: "mini-xdr-mcp"
+    health_check_interval: 30
+    
+  # Auto-scaling
+  autoscaling:
+    enabled: false
+    min_instances: 2
+    max_instances: 10
+    cpu_threshold: 80
+    memory_threshold: 85
+    
+  # Backup & Recovery
+  backup:
+    enabled: true
+    interval_hours: 6
+    retention_days: 7
+    s3_bucket: "mini-xdr-backups"
+    
+# Feature Flags
+features:
+  distributed_coordination: true
+  cross_region_replication: true
+  advanced_load_balancing: true
+  message_compression: true
+  encryption_at_rest: true
+  audit_logging: true
+  performance_monitoring: true
