@@ -284,25 +284,40 @@ export default function SOCAnalystDashboard() {
             <div className="p-4">
               <nav className="space-y-2">
                 {[
-                  { id: 'overview', label: 'Threat Overview', icon: BarChart3 },
-                  { id: 'incidents', label: 'Active Incidents', icon: AlertTriangle },
-                  { id: 'intelligence', label: 'Threat Intel', icon: Globe },
-                  { id: 'hunting', label: 'Threat Hunting', icon: Target },
-                  { id: 'forensics', label: 'Forensics', icon: Search },
-                  { id: 'response', label: 'Response Actions', icon: Shield },
-                  { id: 'visualizations', label: '3D Visualization', icon: Activity }
-                ].map(({ id, label, icon: Icon }) => (
-                  <button
-                    key={id}
-                    onClick={() => setActiveTab(id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
-                      activeTab === id ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30' : 'hover:bg-gray-700/50 text-gray-300'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                    <span className="text-sm font-medium">{label}</span>
-                  </button>
-                ))}
+                  { id: 'overview', label: 'Threat Overview', icon: BarChart3, isTab: true },
+                  { id: 'incidents', label: 'Active Incidents', icon: AlertTriangle, isTab: true },
+                  { id: 'intelligence', label: 'Threat Intel', icon: Globe, isTab: true },
+                  { id: 'hunting', label: 'Threat Hunting', icon: Target, isTab: true },
+                  { id: 'forensics', label: 'Forensics', icon: Search, isTab: true },
+                  { id: 'response', label: 'Response Actions', icon: Shield, isTab: true },
+                  { id: 'visualizations', label: '3D Visualization', icon: Activity, href: '/visualizations' }
+                ].map(({ id, label, icon: Icon, isTab, href }) => {
+                  if (href) {
+                    return (
+                      <Link
+                        key={id}
+                        href={href}
+                        className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors hover:bg-gray-700/50 text-gray-300 hover:text-white"
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span className="text-sm font-medium">{label}</span>
+                      </Link>
+                    );
+                  }
+                  
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => setActiveTab(id)}
+                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
+                        activeTab === id ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30' : 'hover:bg-gray-700/50 text-gray-300'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span className="text-sm font-medium">{label}</span>
+                    </button>
+                  );
+                })}
               </nav>
             </div>
 
