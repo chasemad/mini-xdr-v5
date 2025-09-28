@@ -1,11 +1,22 @@
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+try:
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+except ImportError:
+    # SQLAlchemy 1.4 compatibility
+    from sqlalchemy.orm import sessionmaker
+    async_sessionmaker = sessionmaker
 from sqlalchemy.orm import declarative_base
 from .config import settings
 
 Base = declarative_base()
 
+# Ensure we use async SQLite URL
+database_url = settings.database_url
+if database_url.startswith('sqlite://'):
+    database_url = database_url.replace('sqlite://', 'sqlite+aiosqlite://')
+
 engine = create_async_engine(
-    settings.database_url,
+    database_url,
     echo=False,
     future=True
 )

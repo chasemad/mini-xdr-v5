@@ -6,6 +6,19 @@ echo "============================="
 
 API_KEY="xdr-secure-api-key-2024"
 BACKEND_URL="http://localhost:8000"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SEND_SCRIPT="$PROJECT_ROOT/scripts/send_signed_request.py"
+
+signed_request() {
+  local method="$1"
+  local path="$2"
+  local body="${3:-}"
+  local args=("--base-url" "$BACKEND_URL" "--path" "$path" "--method" "$method")
+  if [ -n "$body" ]; then
+    args+=("--body" "$body")
+  fi
+  python3 "$SEND_SCRIPT" "${args[@]}"
+}
 
 # Step 1: Check system health
 echo "1. System Health Check..."
@@ -74,10 +87,7 @@ attack_events='[
 ]'
 
 # Inject the events
-ingest_response=$(curl -s -X POST $BACKEND_URL/ingest/cowrie \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $API_KEY" \
-  -d "$attack_events")
+ingest_response=$(signed_request POST /ingest/cowrie "$attack_events" 2>/dev/null)
 
 echo "Ingestion Response:"
 echo "$ingest_response" | jq .
@@ -103,22 +113,19 @@ fi
 
 # Step 5: Test AI Agent Analysis
 echo -e "\n5. Testing AI Agent Analysis..."
-agent_response=$(curl -s -X POST $BACKEND_URL/api/agents/orchestrate \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: $API_KEY" \
-  -d '{"query": "analyze IP 203.0.113.45 and recommend containment actions"}')
+agent_response=$(signed_request POST /api/agents/orchestrate '{"query": "analyze IP 203.0.113.45 and recommend containment actions"}' 2>/dev/null)
 
 echo "AI Agent Response:"
 echo "$agent_response" | jq .
 
 # Step 6: Test ML Model Status
 echo -e "\n6. Checking ML Model Performance..."
-ml_status=$(curl -s $BACKEND_URL/api/ml/status)
+ml_status=$(signed_request GET /api/ml/status 2>/dev/null)
 echo "$ml_status" | jq .
 
 # Step 7: Test Log Sources
 echo -e "\n7. Checking Log Source Status..."
-sources=$(curl -s $BACKEND_URL/api/sources)
+sources=$(signed_request GET /api/sources 2>/dev/null)
 echo "$sources" | jq .
 
 # Step 8: Final System Status

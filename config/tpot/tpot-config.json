@@ -1,0 +1,20 @@
+{
+  "name": "T-Pot Honeypot",
+  "api_key": "6c49b95dd921e0003ce159e6b3c0b6eb4e126fc2b19a1530a0f72a4a9c0c1eee",
+  "source_type": "tpot",
+  "hostname": "tpot-honeypot",
+  "ingestion_endpoint": "http://localhost:8000/ingest/multi",
+  "log_sources": {
+    "cowrie": "/data/cowrie/log/cowrie.json",
+    "dionaea": "/data/dionaea/log/dionaea.json", 
+    "suricata": "/data/suricata/log/eve.json",
+    "honeytrap": "/data/honeytrap/log/honeytrap.json",
+    "elasticpot": "/data/elasticpot/log/elasticpot.json",
+    "heralding": "/data/heralding/log/heralding.log"
+  },
+  "security": {
+    "validate_signatures": true,
+    "rate_limit": 1000,
+    "allowed_ips": ["34.193.101.171"]
+  }
+}

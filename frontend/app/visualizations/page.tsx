@@ -6,12 +6,12 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/src/components/ui/tabs"
-import { Button } from "@/src/components/ui/button"
-import { Badge } from "@/src/components/ui/badge"
-import { Progress } from "@/src/components/ui/progress"
-import { ScrollArea } from "@/src/components/ui/scroll-area"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import dynamic from 'next/dynamic'
 
 // Dynamic imports for 3D components to prevent SSR issues
@@ -44,7 +44,6 @@ import { TimelineEvent } from './3d-timeline'
 import { threatDataService, useThreatData } from '../../lib/threat-data'
 import { 
   Globe, 
-  Timeline, 
   Activity, 
   Shield, 
   AlertTriangle, 
@@ -72,7 +71,8 @@ interface DashboardState {
   threats: ThreatPoint[]
   attackPaths: AttackPath[]
   timelineEvents: TimelineEvent[]
-  federatedInsights: any
+  federatedInsights: Record<string, unknown>
+  performance: PerformanceMetrics
   isLoading: {
     threats: boolean
     timeline: boolean
@@ -115,6 +115,21 @@ const VisualizationDashboard: React.FC = () => {
     attackPaths: [],
     timelineEvents: [],
     federatedInsights: {},
+    performance: {
+      fps: 60,
+      frameTime: 0,
+      geometries: 0,
+      materials: 0,
+      textures: 0,
+      drawCalls: 0,
+      vertices: 0,
+      triangles: 0,
+      memoryUsage: {
+        programs: 0,
+        geometries: 0,
+        textures: 0
+      }
+    },
     isLoading: {
       threats: true,
       timeline: true,
@@ -256,7 +271,11 @@ const VisualizationDashboard: React.FC = () => {
 
     // Use the threat data service directly to avoid unstable function references
     const unsubscribes = [
-      threatDataService.subscribeToUpdates('threats', (threats: ThreatPoint[]) => {
+      threatDataService.subscribeToUpdates('threats', data => {
+        if (!Array.isArray(data)) {
+          return
+        }
+        const threats = data as ThreatPoint[]
         setDashboardState(prev => ({
           ...prev,
           threats,
@@ -264,7 +283,11 @@ const VisualizationDashboard: React.FC = () => {
         }))
       }, stableUpdateInterval),
 
-      threatDataService.subscribeToUpdates('attacks', (attacks: AttackPath[]) => {
+      threatDataService.subscribeToUpdates('attacks', data => {
+        if (!Array.isArray(data)) {
+          return
+        }
+        const attacks = data as AttackPath[]
         setDashboardState(prev => ({
           ...prev,
           attackPaths: attacks,
@@ -272,7 +295,11 @@ const VisualizationDashboard: React.FC = () => {
         }))
       }, stableUpdateInterval),
 
-      threatDataService.subscribeToUpdates('incidents', (events: TimelineEvent[]) => {
+      threatDataService.subscribeToUpdates('incidents', data => {
+        if (!Array.isArray(data)) {
+          return
+        }
+        const events = data as TimelineEvent[]
         setDashboardState(prev => ({
           ...prev,
           timelineEvents: events,

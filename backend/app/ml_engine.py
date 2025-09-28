@@ -27,6 +27,8 @@ from .models import Event, Incident, MLModel
 from .config import settings
 
 # Federated Learning imports
+logger = logging.getLogger(__name__)
+
 try:
     from .federated_learning import federated_manager, FederatedModelType, FederatedRole
     from .crypto.secure_aggregation import create_secure_aggregation, AggregationProtocol
@@ -35,8 +37,6 @@ except ImportError:
     FEDERATED_AVAILABLE = False
     federated_manager = None
     logger.warning("Federated learning components not available")
-
-logger = logging.getLogger(__name__)
 
 
 class LSTMAutoencoder(nn.Module):
@@ -409,7 +409,7 @@ class LSTMDetector(BaseMLDetector):
             model_path = self.model_dir / "lstm_autoencoder.pth"
             
             if model_path.exists():
-                checkpoint = torch.load(model_path, map_location=self.device)
+                checkpoint = torch.load(model_path, map_location=self.device, weights_only=False)
                 
                 self.model = LSTMAutoencoder(
                     input_size=checkpoint['input_size'],
@@ -836,8 +836,140 @@ class FederatedEnsembleDetector:
             return {'error': str(e)}
 
 
-# Global federated ensemble detector instance
-ml_detector = FederatedEnsembleDetector()
+# Import deep learning models
+try:
+    from .deep_learning_models import deep_learning_manager
+    DEEP_LEARNING_AVAILABLE = True
+except ImportError:
+    deep_learning_manager = None
+    DEEP_LEARNING_AVAILABLE = False
+    logger.warning("Deep learning models not available")
+
+# Enhanced ML detector with deep learning integration
+class EnhancedFederatedDetector:
+    """Enhanced detector that combines traditional ML, federated learning, and deep learning"""
+
+    def __init__(self):
+        # Traditional ensemble
+        self.federated_detector = FederatedEnsembleDetector()
+
+        # Deep learning manager
+        self.deep_learning_manager = deep_learning_manager if DEEP_LEARNING_AVAILABLE else None
+        self.deep_learning_enabled = False
+
+        self.logger = logging.getLogger(__name__)
+
+        # Try to load deep learning models
+        if self.deep_learning_manager:
+            try:
+                results = self.deep_learning_manager.load_models()
+                self.deep_learning_enabled = any(results.values())
+                if self.deep_learning_enabled:
+                    self.logger.info("Deep learning models loaded successfully")
+                else:
+                    self.logger.info("No deep learning models available")
+            except Exception as e:
+                self.logger.warning(f"Failed to load deep learning models: {e}")
+
+    async def calculate_anomaly_score(self, src_ip: str, events: List[Event]) -> float:
+        """Enhanced anomaly scoring with deep learning integration"""
+        try:
+            # Get traditional ML score
+            traditional_score = await self.federated_detector.calculate_anomaly_score(src_ip, events)
+
+            # Get deep learning score if available
+            deep_score = 0.0
+            if self.deep_learning_enabled and self.deep_learning_manager:
+                deep_result = await self.deep_learning_manager.calculate_threat_score(src_ip, events)
+                deep_score = deep_result.get('ensemble_score', 0.0)
+
+            # Combine scores
+            if self.deep_learning_enabled and deep_score > 0:
+                # Weight: 60% deep learning, 40% traditional (deep learning is more accurate)
+                combined_score = 0.6 * deep_score + 0.4 * traditional_score
+
+                self.logger.debug(f"Combined scoring - Traditional: {traditional_score:.3f}, "
+                                f"Deep: {deep_score:.3f}, Combined: {combined_score:.3f}")
+            else:
+                combined_score = traditional_score
+                self.logger.debug(f"Traditional scoring only: {combined_score:.3f}")
+
+            return min(combined_score, 1.0)
+
+        except Exception as e:
+            self.logger.error(f"Enhanced scoring failed: {e}")
+            # Fallback to traditional scoring
+            return await self.federated_detector.calculate_anomaly_score(src_ip, events)
+
+    async def train_models(self, training_data: List[Dict[str, float]],
+                          enable_federated: bool = True) -> Dict[str, bool]:
+        """Train all available models"""
+        # Train traditional models
+        results = await self.federated_detector.train_models(training_data, enable_federated)
+
+        # Note: Deep learning models are trained separately via SageMaker
+        results['deep_learning'] = self.deep_learning_enabled
+
+        return results
+
+    def load_models(self) -> Dict[str, bool]:
+        """Load all available models"""
+        # Load traditional models
+        results = self.federated_detector.load_models()
+
+        # Try to load/reload deep learning models
+        if self.deep_learning_manager:
+            try:
+                deep_results = self.deep_learning_manager.load_models()
+                self.deep_learning_enabled = any(deep_results.values())
+                results.update({f"deep_{k}": v for k, v in deep_results.items()})
+            except Exception as e:
+                self.logger.error(f"Deep learning model loading failed: {e}")
+                results['deep_learning'] = False
+
+        return results
+
+    def get_model_status(self) -> Dict[str, Any]:
+        """Get comprehensive model status"""
+        # Get traditional status
+        status = self.federated_detector.get_model_status()
+
+        # Add deep learning status
+        if self.deep_learning_manager:
+            deep_status = self.deep_learning_manager.get_model_status()
+            status.update({f"deep_{k}": v for k, v in deep_status.items()})
+        else:
+            status['deep_learning_available'] = False
+
+        status['enhanced_detection'] = self.deep_learning_enabled
+
+        return status
+
+    def load_deep_learning_models_from_s3(self, s3_model_path: str) -> bool:
+        """Load deep learning models from S3 (e.g., after SageMaker training)"""
+        if not self.deep_learning_manager:
+            self.logger.error("Deep learning manager not available")
+            return False
+
+        try:
+            # This would download models from S3 and load them
+            # For now, we'll use local model loading
+            results = self.deep_learning_manager.load_models(s3_model_path)
+            self.deep_learning_enabled = any(results.values())
+
+            if self.deep_learning_enabled:
+                self.logger.info(f"Successfully loaded deep learning models from {s3_model_path}")
+                return True
+            else:
+                self.logger.warning(f"No models loaded from {s3_model_path}")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Failed to load models from S3: {e}")
+            return False
+
+# Global enhanced detector instance
+ml_detector = EnhancedFederatedDetector()
 
 
 async def prepare_training_data_from_events(events: List[Event]) -> List[Dict[str, float]]:

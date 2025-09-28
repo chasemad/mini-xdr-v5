@@ -353,7 +353,7 @@ export default function ExplainableAIDashboard() {
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                           <Target className="h-5 w-5" />
-                          "What If" Scenarios
+                          &quot;What If&quot; Scenarios
                         </CardTitle>
                         <div className="text-sm text-muted-foreground">
                           How to change the prediction outcome

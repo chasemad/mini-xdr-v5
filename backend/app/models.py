@@ -166,3 +166,30 @@ class ContainmentPolicy(Base):
     # Usage statistics
     times_triggered = Column(Integer, default=0)
     success_rate = Column(Float, default=0.0)
+
+
+class AgentCredential(Base):
+    __tablename__ = "agent_credentials"
+
+    id = Column(Integer, primary_key=True)
+    device_id = Column(String(64), unique=True, index=True)
+    public_id = Column(String(64), unique=True, index=True)
+    secret_hash = Column(String(128))
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    description = Column(String(256), nullable=True)
+
+
+class RequestNonce(Base):
+    __tablename__ = "request_nonces"
+
+    id = Column(Integer, primary_key=True)
+    device_id = Column(String(64), index=True)
+    nonce = Column(String(128), index=True)
+    endpoint = Column(String(256), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    __table_args__ = (
+        Index("ix_request_nonce_device_nonce", "device_id", "nonce", unique=True),
+    )

@@ -5,6 +5,18 @@
 BASE_URL="http://localhost:8000"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SEND_SCRIPT="$PROJECT_ROOT/scripts/send_signed_request.py"
+
+signed_request() {
+    local method="$1"
+    local path="$2"
+    local body="${3:-}"
+    local args=("--base-url" "$BASE_URL" "--path" "$path" "--method" "$method")
+    if [ -n "$body" ]; then
+        args+=("--body" "$body")
+    fi
+    python3 "$SEND_SCRIPT" "${args[@]}"
+}
 
 # Colors for output
 RED='\033[0;31m'
@@ -45,7 +57,7 @@ test_adaptive_detection() {
     
     # 2. Check adaptive detection status
     log "2. Checking adaptive detection status..."
-    adaptive_status=$(curl -s "$BASE_URL/api/adaptive/status")
+    adaptive_status=$(signed_request GET /api/adaptive/status 2>/dev/null)
     if [ $? -eq 0 ]; then
         learning_running=$(echo "$adaptive_status" | jq -r '.learning_pipeline.running' 2>/dev/null || echo "unknown")
         behavioral_threshold=$(echo "$adaptive_status" | jq -r '.adaptive_engine.behavioral_threshold' 2>/dev/null || echo "unknown")
@@ -72,11 +84,11 @@ test_adaptive_detection() {
         {"eventid":"webhoneypot.request","src_ip":"'$test_ip'","dst_port":80,"message":"GET /config.php","raw":{"path":"/config.php","status_code":404,"user_agent":"BadBot/1.0","attack_indicators":["sensitive_file_access"]}}
     ]'
     
-    response=$(curl -s -X POST "$BASE_URL/ingest/multi" \
-        -H 'Content-Type: application/json' \
-        -H 'Authorization: Bearer test-api-key' \
-        -d '{"source_type":"webhoneypot","hostname":"adaptive-test","events":'$web_attacks'}')
-    
+    local web_payload=$(cat <<JSON
+{"source_type":"webhoneypot","hostname":"adaptive-test","events":$web_attacks}
+JSON
+)
+    response=$(signed_request POST /ingest/multi "$web_payload" 2>/dev/null)
     curl_exit_code=$?
     echo "   • Response: $response"
     
@@ -132,9 +144,7 @@ test_adaptive_detection() {
         
         ssh_event='{"eventid":"cowrie.login.failed","src_ip":"'$ssh_ip'","dst_port":2222,"message":"SSH login failed: '$username'/'$password'","raw":{"username":"'$username'","password":"'$password'","session":"session_'$i'","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}}'
         
-        curl -s -X POST "$BASE_URL/ingest/cowrie" \
-            -H 'Content-Type: application/json' \
-            -d "$ssh_event" > /dev/null
+        signed_request POST /ingest/cowrie "$ssh_event" >/dev/null 2>&1
         
         echo -n "."
         sleep 0.2
@@ -160,7 +170,7 @@ test_adaptive_detection() {
     
     # 5. Test learning pipeline
     log "5. Testing learning pipeline..."
-    learning_response=$(curl -s -X POST "$BASE_URL/api/adaptive/force_learning")
+    learning_response=$(signed_request POST /api/adaptive/force_learning 2>/dev/null)
     if [ $? -eq 0 ]; then
         learning_success=$(echo "$learning_response" | jq -r '.success' 2>/dev/null || echo "false")
         if [ "$learning_success" = "true" ]; then
@@ -183,7 +193,7 @@ test_adaptive_detection() {
     echo ""
     
     # Get final system status
-    final_status=$(curl -s "$BASE_URL/api/adaptive/status")
+    final_status=$(signed_request GET /api/adaptive/status 2>/dev/null)
     if [ $? -eq 0 ]; then
         echo "📊 System Status:"
         echo "$final_status" | jq '.' 2>/dev/null || echo "$final_status"
