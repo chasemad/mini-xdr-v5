@@ -130,8 +130,8 @@ class ResponderAgent:
             'ssh',
             '-p', str(self.port),
             '-i', self.key_path,
-            '-o', 'StrictHostKeyChecking=no',
-            '-o', 'UserKnownHostsFile=/dev/null',
+            '-o', 'StrictHostKeyChecking=yes',
+            '-o', f'UserKnownHostsFile={os.path.expanduser("~/.ssh/known_hosts")}',
             '-o', 'ConnectTimeout=10',
             '-o', 'ServerAliveInterval=5',
             '-o', 'ServerAliveCountMax=2',
@@ -203,7 +203,15 @@ async def block_ip(ip: str, duration_seconds: int = None) -> Tuple[str, str]:
         logger.warning(f"Refusing to block private IP: {ip} (allow_private_ip_blocking=False)")
         return "failed", f"Refusing to block private IP: {ip} - Enable allow_private_ip_blocking for testing"
     
-    command = f"sudo ufw deny from {ip} to any"
+    # Check if UFW is available, otherwise use iptables
+    ufw_check_status, _, _ = await responder.execute_command("which ufw", timeout=5)
+    
+    if ufw_check_status == "success":
+        command = f"sudo ufw deny from {ip} to any"
+    else:
+        # Use iptables for T-Pot systems
+        command = f"sudo iptables -I INPUT -s {ip} -j DROP"
+    
     status, stdout, stderr = await responder.execute_command(command)
     
     detail = f"Command: {command}\nStatus: {status}\nStdout: {stdout}\nStderr: {stderr}"
@@ -245,7 +253,15 @@ async def unblock_ip(ip: str) -> Tuple[str, str]:
     if not _is_valid_ip(ip):
         return "failed", f"Invalid IP address: {ip}"
     
-    command = f"sudo ufw delete deny from {ip} to any"
+    # Check if UFW is available, otherwise use iptables
+    ufw_check_status, _, _ = await responder.execute_command("which ufw", timeout=5)
+    
+    if ufw_check_status == "success":
+        command = f"sudo ufw delete deny from {ip} to any"
+    else:
+        # Use iptables for T-Pot systems
+        command = f"sudo iptables -D INPUT -s {ip} -j DROP"
+    
     status, stdout, stderr = await responder.execute_command(command)
     
     detail = f"Command: {command}\nStatus: {status}\nStdout: {stdout}\nStderr: {stderr}"

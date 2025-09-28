@@ -6,17 +6,18 @@ import asyncio
 import aiohttp
 import aiofiles
 import json
-import hmac
-import hashlib
 import time
 import logging
 import argparse
 import signal
 import sys
+import os
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 from datetime import datetime
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
+
+from .hmac_signer import canonicalize_payload, build_hmac_headers, sign_event
 
 # This can be run as a standalone script on edge devices
 
@@ -25,7 +26,7 @@ from dataclasses import dataclass, asdict
 class AgentConfig:
     """Configuration for the ingestion agent"""
     backend_url: str
-    api_key: str
+    api_key: Optional[str] = None
     source_type: str
     hostname: str
     log_paths: Dict[str, str]
@@ -35,6 +36,10 @@ class AgentConfig:
     retry_delay: int = 5
     validate_ssl: bool = True
     compress_data: bool = True
+    device_id: Optional[str] = None
+    hmac_key: Optional[str] = None
+    device_id_env: Optional[str] = None
+    hmac_key_env: Optional[str] = None
 
 
 class LogTailer:
@@ -96,11 +101,49 @@ class IngestionAgent:
             'last_flush': None,
             'start_time': time.time()
         }
+
+        self.device_id = self._resolve_secret(
+            self.config.device_id,
+            self.config.device_id_env,
+            "device ID",
+            default_env="MINIXDR_AGENT_DEVICE_ID",
+        )
+        self.hmac_key = self._resolve_secret(
+            self.config.hmac_key,
+            self.config.hmac_key_env,
+            "HMAC key",
+            default_env="MINIXDR_AGENT_HMAC_KEY",
+        )
+
+        if not self.config.api_key:
+            self.config.api_key = os.getenv("MINIXDR_AGENT_BEARER") or os.getenv("API_KEY")
         
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
-    
+
+    def _resolve_secret(
+        self,
+        value: Optional[str],
+        env_var: Optional[str],
+        label: str,
+        *,
+        default_env: Optional[str] = None,
+    ) -> str:
+        """Resolve sensitive config either from direct value or environment."""
+        if value:
+            return value
+        candidates = []
+        if env_var:
+            candidates.append(env_var)
+        if default_env:
+            candidates.append(default_env)
+        for candidate in candidates:
+            env_value = os.getenv(candidate)
+            if env_value:
+                return env_value
+        raise ValueError(f"Agent {label} is required for authenticated requests")
+
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals"""
         self.logger.info(f"Received signal {signum}, shutting down...")
@@ -240,12 +283,8 @@ class IngestionAgent:
         """Sign event for integrity validation"""
         # Create signature
         event_json = json.dumps(event, sort_keys=True)
-        signature = hmac.new(
-            self.config.api_key.encode(),
-            event_json.encode(),
-            hashlib.sha256
-        ).hexdigest()
-        
+        signature = sign_event(self.hmac_key, event)
+
         event['signature'] = signature
         return event
     
@@ -297,17 +336,29 @@ class IngestionAgent:
         """Send events to the backend"""
         headers = {
             'Content-Type': 'application/json',
-            'Authorization': f'Bearer {self.config.api_key}',
             'User-Agent': f'Mini-XDR-Agent/{self.config.hostname}'
         }
-        
+
+        if self.config.api_key:
+            headers['Authorization'] = f'Bearer {self.config.api_key}'
+
         # Compress if enabled
+        body_text = canonicalize_payload(payload)
+        data = body_text.encode()
+
         if self.config.compress_data:
             headers['Content-Encoding'] = 'gzip'
             import gzip
-            data = gzip.compress(json.dumps(payload).encode())
-        else:
-            data = json.dumps(payload)
+            data = gzip.compress(data)
+
+        signed_headers, _, _ = build_hmac_headers(
+            self.device_id,
+            self.hmac_key,
+            'POST',
+            '/ingest/multi',
+            body_text
+        )
+        headers.update(signed_headers)
         
         try:
             async with self.session.post(
@@ -385,7 +436,9 @@ def create_default_config(output_path: str):
         "max_retries": 3,
         "retry_delay": 5,
         "validate_ssl": True,
-        "compress_data": True
+        "compress_data": True,
+        "device_id_env": "MINIXDR_AGENT_DEVICE_ID",
+        "hmac_key_env": "MINIXDR_AGENT_HMAC_KEY"
     }
     
     with open(output_path, 'w') as f:

@@ -125,7 +125,17 @@ class BaselineEngine:
         )
         
         result = await db.execute(query)
-        return {row.incident_date: row.incident_count for row in result}
+        daily_counts = {}
+        for row in result:
+            if isinstance(row.incident_date, str):
+                # Parse string date
+                date_obj = datetime.strptime(row.incident_date, '%Y-%m-%d').date()
+            else:
+                date_obj = row.incident_date
+            
+            datetime_obj = datetime.combine(date_obj, datetime.min.time()).replace(tzinfo=timezone.utc)
+            daily_counts[datetime_obj] = row.incident_count
+        return daily_counts
     
     async def _get_incident_ips_in_period(self, db: AsyncSession, start_date: datetime) -> set:
         """Get IPs that had incidents in the given period"""

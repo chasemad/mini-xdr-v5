@@ -5,9 +5,9 @@
  * Real-time cybersecurity threat visualization with WebGL optimization
  */
 
-import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react'
+import React, { useRef, useEffect, useState, useMemo } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { OrbitControls, Stars, Text, Html } from '@react-three/drei'
+import { OrbitControls, Stars, Text, Html, Line } from '@react-three/drei'
 import * as THREE from 'three'
 import { 
   ThreatPoint, 
@@ -329,10 +329,14 @@ const AttackPaths: React.FC<{
         })
         
         return (
-          <line
+          <Line
             key={attackPath.id}
-            geometry={geometry}
-            material={material}
+            points={[
+              [attackPath.source.latitude, attackPath.source.longitude, 1.01],
+              [attackPath.target.latitude, attackPath.target.longitude, 1.01]
+            ]}
+            color="#ff4444"
+            lineWidth={2}
           />
         )
       })}
@@ -567,11 +571,6 @@ const ThreatGlobe: React.FC<ThreatGlobeProps & {
   }, [])
 
   // Error boundary
-  const handleError = useCallback((error: Error) => {
-    console.error('ThreatGlobe Error:', error)
-    setError(error.message)
-  }, [])
-
   // Don't render on server-side
   if (!isClient) {
     return (
@@ -614,12 +613,16 @@ const ThreatGlobe: React.FC<ThreatGlobeProps & {
             powerPreference: 'high-performance',
             preserveDrawingBuffer: true // Prevent context loss
           }}
-          onError={handleError}
           onCreated={({ gl }) => {
+            const context = gl.getContext()
+            if (!context) {
+              return
+            }
+
             console.log('🎨 WebGL Context Created:', {
-              renderer: gl.info.render.renderer,
-              version: gl.capabilities.version,
-              maxTextures: gl.capabilities.maxTextures
+              vendor: context.getParameter(context.VENDOR),
+              version: context.getParameter(context.VERSION),
+              maxTextures: context.getParameter(context.MAX_TEXTURE_IMAGE_UNITS)
             });
           }}
           style={{ background: '#0a0a0f' }}

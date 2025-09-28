@@ -20,7 +20,7 @@ for i in $(seq 1 $ATTEMPTS); do
     USER=${USERS[$RANDOM % ${#USERS[@]}]}
     
     # Use sshpass or timeout for failed attempts
-    timeout 5 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -p 2222 "$USER@$HONEYPOT_IP" exit 2>/dev/null || true
+    timeout 5 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -p 2222 "$USER@$HONEYPOT_IP" exit 2>/dev/null || true
     
     sleep 1
 done

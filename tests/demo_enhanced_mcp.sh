@@ -9,9 +9,9 @@ echo ""
 
 # Check if backend is running
 echo "📋 Checking system status..."
-if ! curl -s http://localhost:8000/health > /dev/null; then
+if ! curl -s http://127.0.0.1:8000/health > /dev/null; then
     echo "❌ Backend server not running. Please start it first:"
-    echo "   cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    echo "   cd backend && python -m uvicorn app.entrypoint:app --host 127.0.0.1 --port 8000"
     exit 1
 fi
 

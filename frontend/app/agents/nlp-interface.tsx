@@ -10,14 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
 import { 
   Search, 
-  Send, 
   Bot, 
   Brain, 
   Target, 
-  Clock, 
   AlertTriangle,
   CheckCircle,
   Loader2,
@@ -41,24 +38,30 @@ interface NLPFinding {
   threat_type?: string
   unique_ips?: number
   time_span_hours?: number
-  [key: string]: any
+  iocs?: {
+    ip_addresses?: string[]
+    domains?: string[]
+    urls?: string[]
+  }
+  recommendations?: string[]
+  [key: string]: unknown
 }
 
 interface NLPResponse {
   success: boolean
   query: string
   query_understanding: string
-  structured_query: any
+  structured_query: Record<string, unknown>
   findings: NLPFinding[]
   recommendations: string[]
   confidence_score: number
   reasoning: string
   follow_up_questions: string[]
-  processing_stats?: any
-  analysis_metadata?: any
+  processing_stats?: Record<string, unknown>
+  analysis_metadata?: Record<string, unknown>
 }
 
-interface SemanticResult {
+interface SemanticSearchIncident {
   incident: {
     id: number
     src_ip: string
@@ -69,6 +72,14 @@ interface SemanticResult {
     escalation_level?: string
   }
   similarity_score: number
+}
+
+interface SemanticSearchResponse {
+  success?: boolean
+  total_found?: number
+  avg_similarity?: number
+  similar_incidents?: SemanticSearchIncident[]
+  [key: string]: unknown
 }
 
 const EXAMPLE_QUERIES = [
@@ -95,10 +106,21 @@ export default function NLPInterface() {
   const [timeRange, setTimeRange] = useState(24)
   const [isLoading, setIsLoading] = useState(false)
   const [results, setResults] = useState<NLPResponse | null>(null)
-  const [semanticResults, setSemanticResults] = useState<any>(null)
+  const [semanticResults, setSemanticResults] = useState<SemanticSearchResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState('query')
-  const [nlpStatus, setNlpStatus] = useState<any>(null)
+  const [nlpStatus, setNlpStatus] = useState<{
+    nlp_system?: {
+      langchain_available?: boolean
+      [key: string]: unknown
+    }
+    capabilities?: {
+      semantic_search?: boolean
+      ai_powered_insights?: boolean
+      [key: string]: unknown
+    }
+    [key: string]: unknown
+  } | null>(null)
 
   // Load NLP status on mount
   useEffect(() => {
@@ -297,17 +319,6 @@ export default function NLPInterface() {
                 )}
               </div>
 
-              {/* Additional finding data */}
-              {finding.iocs && (
-                <div className="mt-3">
-                  <span className="font-medium text-xs">IOCs:</span>
-                  <div className="grid grid-cols-1 gap-2 mt-1">
-                    {finding.iocs.ip_addresses?.slice(0, 3).map((ip: string, i: number) => (
-                      <Badge key={i} variant="outline" className="text-xs">{ip}</Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {finding.recommendations && (
                 <div className="mt-3">
@@ -329,7 +340,7 @@ export default function NLPInterface() {
     )
   }
 
-  const renderSemanticResults = (results: SemanticResult[]) => {
+  const renderSemanticResults = (results: SemanticSearchIncident[]) => {
     if (!results || results.length === 0) {
       return <div className="text-gray-500 text-center py-8">No similar incidents found</div>
     }
@@ -637,13 +648,13 @@ export default function NLPInterface() {
                       <FileSearch className="w-4 h-4 text-green-600" />
                       <AlertDescription>
                         <div className="font-medium">Semantic Search Results</div>
-                        Found {semanticResults.total_found} similar incidents with {Math.round(semanticResults.avg_similarity * 100)}% average similarity
+                        Found {semanticResults.total_found} similar incidents with {Math.round((semanticResults.avg_similarity || 0) * 100)}% average similarity
                       </AlertDescription>
                     </Alert>
 
                     {/* Results */}
                     <ScrollArea className="h-[500px]">
-                      {renderSemanticResults(semanticResults.similar_incidents)}
+                      {renderSemanticResults(semanticResults.similar_incidents || [])}
                     </ScrollArea>
                   </>
                 )}
@@ -666,11 +677,11 @@ export default function NLPInterface() {
                         <h3 className="font-medium mb-2">Processing Statistics</h3>
                         <div className="grid grid-cols-3 gap-4 text-sm">
                           <div className="text-center p-3 bg-blue-50 rounded">
-                            <div className="font-medium text-lg">{results.processing_stats.incidents_analyzed}</div>
+                            <div className="font-medium text-lg">{(results.processing_stats as { incidents_analyzed?: number })?.incidents_analyzed || 0}</div>
                             <div className="text-gray-600">Incidents Analyzed</div>
                           </div>
                           <div className="text-center p-3 bg-green-50 rounded">
-                            <div className="font-medium text-lg">{results.processing_stats.events_analyzed}</div>
+                            <div className="font-medium text-lg">{(results.processing_stats as { events_analyzed?: number })?.events_analyzed || 0}</div>
                             <div className="text-gray-600">Events Processed</div>
                           </div>
                           <div className="text-center p-3 bg-purple-50 rounded">
