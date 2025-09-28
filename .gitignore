@@ -1,60 +1,65 @@
-# Security - Never commit these!
-*.env
-.env.local
-.env.production.local
-.env.development.local
+# ===================================
+# Mini-XDR v2 Repository .gitignore
+# ===================================
 
-# API Keys and Secrets
-**/config/secrets.json
-**/*secret*
-**/*key*
-!**/package*.json
-!**/tsconfig.json
-!**/README.md
+# ============ SENSITIVE FILES ============
+# Environment files with credentials
+**/.env
+**/.env.local
+**/.env.production
+**/.env.staging
+**/env.local
+**/secrets.env
+**/config.local.*
 
-# Database files
+# Specific sensitive files in this project
+frontend/env.local
+backend/.env
+docs/secrets.md
+
+# SSH Keys and certificates
+*.pem
+*.key
+*.crt
+*.csr
+*.der
+*.cer
+*.p12
+*.pfx
+*.p7b
+*.p7c
+*.spc
+
+# Logs (may contain sensitive data)
+*.log
+logs/
+**/*.log
+
+# Database files (exclude demo database)
 *.db
+!backend/xdr.db
 *.sqlite
 *.sqlite3
 
-# ML Models and Data Files
-*.pkl
-*.pickle
-*.model
-*.h5
-*.csv
-*.json
-!package*.json
-!tsconfig.json
-!**/package.json
-!**/tsconfig.json
-backend/test_*.json
-backend/models/*.pkl
-backend/models/*.csv
+# ============ LARGE DEPENDENCIES ============
+# Python virtual environments
+venv/
+.venv/
+env/
+.env/
+ml-training-env/
+**/venv/
+**/.venv/
 
-# Logs
-*.log
-logs/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Node.js
+# Node.js dependencies
 node_modules/
-.npm
-.eslintcache
+**/node_modules/
 
-# Python
+# Python cache
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
+*.pyc
+*.pyo
+*.pyd
 .Python
 build/
 develop-eggs/
@@ -68,23 +73,73 @@ parts/
 sdist/
 var/
 wheels/
+pip-wheel-metadata/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-MANIFEST
-.venv/
-venv/
-ENV/
-env/
 
-# IDEs
-.vscode/
-.idea/
+# ============ LARGE DATASETS & MODELS ============
+# Datasets directory (too large for git)
+datasets/
+**/datasets/
+*.csv
+!**/example.csv
+!**/sample.csv
+
+# ML Models (use Git LFS if needed)
+models/
+*.pth
+*.pkl
+*.joblib
+*.h5
+*.model
+*.onnx
+*.pb
+
+# Archives
+*.zip
+*.tar.gz
+*.gz
+*.rar
+*.7z
+sourcedir.tar.gz
+
+# ============ BUILD ARTIFACTS ============
+# Next.js build files
+.next/
+out/
+build/
+
+# TypeScript build info
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# ============ BACKUP FILES ============
+# SSH backup files
+*.ssh-backup*
+*ssh-backup*
+
+# General backup files
+*.bak
+*.backup
+*.old
+*.orig
 *.swp
 *.swo
 *~
 
-# OS
+# ============ OS & EDITOR FILES ============
+# macOS
 .DS_Store
 .DS_Store?
 ._*
@@ -93,22 +148,73 @@ env/
 ehthumbs.db
 Thumbs.db
 
-# Build outputs
-.next/
-out/
-build/
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# IDEs
+.vscode/
+.idea/
+*.sublime-*
+.vim/
+
+# ============ DEVELOPMENT FILES ============
+# Jupyter Notebooks checkpoints
+.ipynb_checkpoints
+
+# Cache directories
+.cache/
+.parcel-cache/
 
 # Temporary files
 tmp/
 temp/
 *.tmp
 
-# SSH Keys (just in case)
-id_rsa*
-id_ed25519*
-*.pem
-*.key
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.nyc_output/
 
-# Backup files
-*.bak
-*.backup
+# Local development
+ngrok.log
+.ngrok*
+
+# ============ DOCKER & DEPLOYMENT ============
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Kubernetes secrets
+*secret*.yaml
+*secret*.yml
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# ============ SPECIFIC PROJECT EXCLUSIONS ============
+# Evidence files (may be sensitive)
+evidence/
+**/evidence/
+
+# Honeypot configs (may contain IPs)
+honeypot_configs/
+**/honeypot_configs/
+
+# Don't include these in public repo
+docs/secrets.md
+
+# Current working files that should stay local
+ngrok.log
+frontend/logs/
+backend/logs/
+
+# Large log files
+*.log.*

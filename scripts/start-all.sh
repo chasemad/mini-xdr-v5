@@ -6,6 +6,18 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_PORT=8000
 FRONTEND_PORT=3000
 MCP_PORT=3001
+SEND_SCRIPT="$PROJECT_ROOT/scripts/auth/send_signed_request.py"
+
+signed_request() {
+    local method="$1"
+    local path="$2"
+    local body="${3:-}"
+    local args=("--base-url" "http://localhost:$BACKEND_PORT" "--path" "$path" "--method" "$method")
+    if [ -n "$body" ]; then
+        args+=("--body" "$body")
+    fi
+    python3 "$SEND_SCRIPT" "${args[@]}"
+}
 
 # Required tools and versions
 REQUIRED_PYTHON_VERSION="3.8"
@@ -281,8 +293,8 @@ setup_python_environment() {
         
         # Install Phase 2B advanced ML dependencies using our custom script
         log "Installing Phase 2B Advanced ML dependencies..."
-        if [ -f "install_phase2b_deps.py" ]; then
-            python install_phase2b_deps.py || warning "Some Phase 2B dependencies failed (will use fallbacks)"
+        if [ -f "utils/install_phase2b_deps.py" ]; then
+            python utils/install_phase2b_deps.py || warning "Some Phase 2B dependencies failed (will use fallbacks)"
         else
             warning "Phase 2B installation script not found - using pip fallback"
             # Try to install advanced ML packages individually
@@ -534,12 +546,12 @@ print(f'{settings.honeypot_host}:{settings.honeypot_ssh_port}:{settings.honeypot
     
     # Test SSH connectivity - handle Cursor terminal networking issues gracefully
     log "Testing SSH connection (may fail in Cursor terminal due to networking issues)..."
-    if ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no -p "$port" -i "$key_path" "$user@$host" "echo 'SSH connection successful'" 2>/dev/null; then
+    if ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -p "$port" -i "$key_path" "$user@$host" "echo 'SSH connection successful'" 2>/dev/null; then
         success "SSH connection to honeypot successful"
         
         # Test UFW access
         log "Testing UFW access..."
-        if ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no -p "$port" -i "$key_path" "$user@$host" "sudo ufw --version" 2>/dev/null | grep -q "ufw"; then
+        if ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -p "$port" -i "$key_path" "$user@$host" "sudo ufw --version" 2>/dev/null | grep -q "ufw"; then
             success "UFW access verified"
             return 0
         else
@@ -601,7 +613,7 @@ start_backend() {
     
     # Activate virtual environment and start
     source .venv/bin/activate
-    uvicorn app.main:app --host 0.0.0.0 --port $BACKEND_PORT --reload > backend.log 2>&1 &
+    uvicorn app.entrypoint:app --host 127.0.0.1 --port $BACKEND_PORT --reload > logs/backend.log 2>&1 &
     BACKEND_PID=$!
     
     log "Backend starting (PID: $BACKEND_PID)..."
@@ -621,7 +633,7 @@ start_backend() {
     done
     
     error "Backend failed to start within 30 seconds"
-    log "Check backend.log for details"
+    log "Check logs/backend.log for details"
     return 1
 }
 
@@ -646,9 +658,9 @@ start_frontend() {
     # Start with specific port if needed
     if [ $frontend_port -ne $FRONTEND_PORT ]; then
         export PORT=$frontend_port
-        npm run dev > frontend.log 2>&1 &
+        npm run dev > logs/frontend.log 2>&1 &
     else
-        npm run dev > frontend.log 2>&1 &
+        npm run dev > logs/frontend.log 2>&1 &
     fi
     
     FRONTEND_PID=$!
@@ -684,10 +696,10 @@ start_frontend() {
     log "Check frontend.log for details"
     
     # Show last few lines of frontend log for debugging
-    if [ -f "frontend.log" ]; then
-        log "Last 10 lines of frontend.log:"
-        tail -10 frontend.log 2>/dev/null || true
-    fi
+        if [ -f "logs/frontend.log" ]; then
+            log "Last 10 lines of frontend.log:"
+            tail -10 logs/frontend.log 2>/dev/null || true
+        fi
     
     return 1
 }
@@ -700,7 +712,7 @@ start_mcp_server() {
     if [ -f "package.json" ] && npm list > /dev/null 2>&1; then
         # Start MCP server as background service
         log "Starting MCP server on port $MCP_PORT..."
-        npm run mcp-server > mcp.log 2>&1 &
+        npm run mcp-server > logs/mcp.log 2>&1 &
         MCP_PID=$!
         
         log "MCP server starting (PID: $MCP_PID)..."
@@ -716,12 +728,12 @@ start_mcp_server() {
             return 0
         else
             # Check stdio mode
-            if grep -q "Mini-XDR MCP server running" mcp.log 2>/dev/null; then
+            if grep -q "Mini-XDR MCP server running" logs/mcp.log 2>/dev/null; then
                 success "MCP server available (stdio mode)"
                 echo "   💡 MCP server runs on stdio for LLM integrations"
                 return 0
             else
-                warning "MCP server failed to start - check mcp.log"
+                warning "MCP server failed to start - check logs/mcp.log"
                 kill $MCP_PID 2>/dev/null || true
                 wait $MCP_PID 2>/dev/null || true
                 MCP_PID=""
@@ -743,14 +755,14 @@ test_mcp_server() {
     if [ -f "package.json" ] && npm list > /dev/null 2>&1; then
         # Test if MCP server can start by running it briefly
         log "Verifying MCP server can start..."
-        npm run mcp > mcp_test.log 2>&1 &
+        npm run mcp > logs/mcp_test.log 2>&1 &
         local test_pid=$!
         
         # Give it time to initialize
         sleep 2
         
         # Check if it started successfully
-        if grep -q "Mini-XDR MCP server running on stdio" mcp_test.log 2>/dev/null; then
+        if grep -q "Mini-XDR MCP server running on stdio" logs/mcp_test.log 2>/dev/null; then
             success "MCP server available and working"
             echo "   💡 MCP server runs on-demand for LLM integrations"
             echo "   💡 Use MCP clients or AI assistants to connect via stdio"
@@ -760,7 +772,7 @@ test_mcp_server() {
             wait $test_pid 2>/dev/null || true
             MCP_PID="available"
         else
-            warning "MCP server failed to initialize - check mcp_test.log"
+            warning "MCP server failed to initialize - check logs/mcp_test.log"
             kill $test_pid 2>/dev/null || true
             wait $test_pid 2>/dev/null || true
             MCP_PID=""
@@ -799,7 +811,7 @@ perform_health_checks() {
     
     # Test enhanced ML API
     log "🔍 Testing ML Status API..."
-    local ml_response=$(curl -s http://localhost:$BACKEND_PORT/api/ml/status 2>/dev/null)
+    local ml_response=$(signed_request GET /api/ml/status 2>/dev/null)
     if [ $? -eq 0 ]; then
         local models_trained=$(echo "$ml_response" | jq -r '.metrics.models_trained' 2>/dev/null || echo "unknown")
         local total_models=$(echo "$ml_response" | jq -r '.metrics.total_models' 2>/dev/null || echo "unknown")
@@ -810,9 +822,8 @@ perform_health_checks() {
     
     # Test AI Agents API
     log "🔍 Testing AI Agents API..."
-    local agent_response=$(curl -s -X POST http://localhost:$BACKEND_PORT/api/agents/orchestrate \
-        -H "Content-Type: application/json" \
-        -d '{"agent_type": "containment", "query": "System status check", "history": []}' 2>/dev/null)
+    local agent_payload='{"agent_type":"containment","query":"System status check","history":[]}'
+    local agent_response=$(signed_request POST /api/agents/orchestrate "$agent_payload" 2>/dev/null)
     if [ $? -eq 0 ]; then
         success "AI Agents API responding"
     else
@@ -853,7 +864,7 @@ perform_health_checks() {
     
     # Test adaptive detection system
     log "🔍 Testing Adaptive Detection System..."
-    local adaptive_status=$(curl -s http://localhost:$BACKEND_PORT/api/adaptive/status 2>/dev/null)
+    local adaptive_status=$(signed_request GET /api/adaptive/status 2>/dev/null)
     if [ $? -eq 0 ]; then
         local learning_running=$(echo "$adaptive_status" | jq -r '.learning_pipeline.running' 2>/dev/null || echo "unknown")
         local behavioral_threshold=$(echo "$adaptive_status" | jq -r '.adaptive_engine.behavioral_threshold' 2>/dev/null || echo "unknown")
@@ -866,7 +877,7 @@ perform_health_checks() {
         
         # Test forced learning update
         log "🔍 Testing Learning Pipeline..."
-        local learning_result=$(curl -s -X POST http://localhost:$BACKEND_PORT/api/adaptive/force_learning 2>/dev/null)
+        local learning_result=$(signed_request POST /api/adaptive/force_learning 2>/dev/null)
         if [ $? -eq 0 ]; then
             local update_success=$(echo "$learning_result" | jq -r '.success' 2>/dev/null || echo "false")
             if [ "$update_success" = "true" ]; then
@@ -920,11 +931,43 @@ perform_health_checks() {
         warning "Honeypot configuration using defaults - please update .env file"
     fi
     
-    # Check if LLM keys are configured
-    if python -c "from app.config import settings; print('configured' if settings.openai_api_key or settings.xai_api_key else 'not configured')" 2>/dev/null | grep -q "configured"; then
-        success "LLM API keys configured"
+    # Check if LLM keys are configured (including Secrets Manager)
+    local llm_configured=$(python -c "
+import os
+import sys
+sys.path.append('.')
+from app.config import settings
+
+# Check if Secrets Manager is enabled
+secrets_enabled = os.getenv('SECRETS_MANAGER_ENABLED', 'false').lower() == 'true'
+
+if secrets_enabled:
+    # Check for secret names in environment
+    openai_secret = os.getenv('OPENAI_API_KEY_SECRET_NAME')
+    xai_secret = os.getenv('XAI_API_KEY_SECRET_NAME')
+    
+    if openai_secret or xai_secret:
+        print('configured-secrets')
+    else:
+        # Fallback to direct keys
+        print('configured' if settings.openai_api_key or settings.xai_api_key else 'not configured')
+else:
+    # Standard configuration check
+    print('configured' if settings.openai_api_key or settings.xai_api_key else 'not configured')
+" 2>/dev/null)
+    
+    if [[ "$llm_configured" == *"configured"* ]]; then
+        if [[ "$llm_configured" == "configured-secrets" ]]; then
+            success "LLM API keys configured via AWS Secrets Manager"
+        else
+            success "LLM API keys configured"
+        fi
     else
         warning "LLM API keys not configured - AI analysis will be disabled"
+        warning "LLM integration not configured (optional):"
+        echo "   1. Get API key from OpenAI or X.AI"
+        echo "   2. Store in AWS Secrets Manager using: ./aws/utils/get-secret.sh mini-xdr/openai-api-key"
+        echo "   3. Keys will be loaded automatically from secure storage"
     fi
     
     # Check enhanced ML configuration
@@ -955,10 +998,11 @@ perform_health_checks() {
     
     # Test enhanced multi-source ingestion
     log "🔍 Testing Enhanced Multi-Source Ingestion..."
-    local sample_response=$(curl -s -X POST http://localhost:$BACKEND_PORT/ingest/multi \
-        -H 'Content-Type: application/json' \
-        -H 'Authorization: Bearer test-api-key' \
-        -d '{"source_type":"cowrie","hostname":"startup-test","events":[{"eventid":"cowrie.login.failed","src_ip":"192.168.1.100","username":"admin","password":"123456","message":"Test event from startup script","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}]}' 2>/dev/null)
+    local sample_payload=$(cat <<JSON
+{"source_type":"cowrie","hostname":"startup-test","events":[{"eventid":"cowrie.login.failed","src_ip":"192.168.1.100","dst_port":2222,"message":"Test event from startup script","raw":{"username":"admin","password":"123456","test_event":true,"test_type":"startup_validation","test_timestamp":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"},"timestamp":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}]}
+JSON
+)
+    local sample_response=$(signed_request POST /ingest/multi "$sample_payload" 2>/dev/null)
     
     if [ $? -eq 0 ]; then
         local processed=$(echo "$sample_response" | jq -r '.processed' 2>/dev/null || echo "unknown")
@@ -972,15 +1016,16 @@ perform_health_checks() {
     log "🔍 Testing Adaptive Detection with Behavioral Patterns..."
     local test_ip="192.168.1.200"
     local adaptive_test_events='[
-        {"eventid":"webhoneypot.request","src_ip":"'$test_ip'","message":"GET /admin.php","raw":{"path":"/admin.php","status_code":404,"attack_indicators":["admin_scan"]}},
-        {"eventid":"webhoneypot.request","src_ip":"'$test_ip'","message":"GET /wp-admin/","raw":{"path":"/wp-admin/","status_code":404,"attack_indicators":["admin_scan"]}},
-        {"eventid":"webhoneypot.request","src_ip":"'$test_ip'","message":"GET /index.php?id=1 OR 1=1","raw":{"path":"/index.php","parameters":["id=1 OR 1=1"],"status_code":500,"attack_indicators":["sql_injection"]}}
+        {"eventid":"webhoneypot.request","src_ip":"'$test_ip'","message":"GET /admin.php","raw":{"path":"/admin.php","status_code":404,"attack_indicators":["admin_scan"],"test_event":true,"test_type":"adaptive_detection_validation"}},
+        {"eventid":"webhoneypot.request","src_ip":"'$test_ip'","message":"GET /wp-admin/","raw":{"path":"/wp-admin/","status_code":404,"attack_indicators":["admin_scan"],"test_event":true,"test_type":"adaptive_detection_validation"}},
+        {"eventid":"webhoneypot.request","src_ip":"'$test_ip'","message":"GET /index.php?id=1 OR 1=1","raw":{"path":"/index.php","parameters":["id=1 OR 1=1"],"status_code":500,"attack_indicators":["sql_injection"],"test_event":true,"test_type":"adaptive_detection_validation"}}
     ]'
     
-    local adaptive_response=$(curl -s -X POST http://localhost:$BACKEND_PORT/ingest/multi \
-        -H 'Content-Type: application/json' \
-        -H 'Authorization: Bearer test-api-key' \
-        -d '{"source_type":"webhoneypot","hostname":"adaptive-test","events":'$adaptive_test_events'}' 2>/dev/null)
+    local adaptive_payload=$(cat <<JSON
+{"source_type":"webhoneypot","hostname":"adaptive-test","events":$adaptive_test_events}
+JSON
+)
+    local adaptive_response=$(signed_request POST /ingest/multi "$adaptive_payload" 2>/dev/null)
     
     if [ $? -eq 0 ]; then
         local adaptive_incidents=$(echo "$adaptive_response" | jq -r '.incidents_detected' 2>/dev/null || echo "0")
@@ -1007,14 +1052,14 @@ perform_health_checks() {
     
     # Test federated learning system
     log "🔍 Testing Federated Learning System..."
-    local federated_status=$(curl -s http://localhost:$BACKEND_PORT/api/federated/status 2>/dev/null)
+    local federated_status=$(signed_request GET /api/federated/status 2>/dev/null)
     if [ $? -eq 0 ]; then
         local federated_available=$(echo "$federated_status" | jq -r '.available' 2>/dev/null || echo "unknown")
         if [ "$federated_available" = "true" ]; then
             success "Federated Learning System operational"
             
             # Test federated models status
-            local models_status=$(curl -s http://localhost:$BACKEND_PORT/api/federated/models/status 2>/dev/null)
+            local models_status=$(signed_request GET /api/federated/models/status 2>/dev/null)
             if [ $? -eq 0 ]; then
                 local federated_enabled=$(echo "$models_status" | jq -r '.federated_capabilities.ensemble_with_federated' 2>/dev/null || echo "false")
                 success "Federated ML integration ready (enabled: $federated_enabled)"
@@ -1031,13 +1076,13 @@ perform_health_checks() {
     
     # Test 3D Visualization APIs (Phase 4.1)
     log "🔍 Testing 3D Visualization APIs..."
-    local threats_response=$(curl -s http://localhost:$BACKEND_PORT/api/intelligence/threats 2>/dev/null)
+    local threats_response=$(signed_request GET /api/intelligence/threats 2>/dev/null)
     if [ $? -eq 0 ]; then
         local threat_count=$(echo "$threats_response" | jq -r '.total_count' 2>/dev/null || echo "unknown")
         success "Threat Intelligence API responding ($threat_count threats)"
         
         # Test timeline API
-        local timeline_response=$(curl -s http://localhost:$BACKEND_PORT/api/incidents/timeline 2>/dev/null)
+        local timeline_response=$(signed_request GET /api/incidents/timeline 2>/dev/null)
         if [ $? -eq 0 ]; then
             local timeline_count=$(echo "$timeline_response" | jq -r '.total_count' 2>/dev/null || echo "unknown")
             success "Timeline API responding ($timeline_count events)"
@@ -1046,7 +1091,7 @@ perform_health_checks() {
         fi
         
         # Test attack paths API
-        local paths_response=$(curl -s http://localhost:$BACKEND_PORT/api/incidents/attack-paths 2>/dev/null)
+        local paths_response=$(signed_request GET /api/incidents/attack-paths 2>/dev/null)
         if [ $? -eq 0 ]; then
             local paths_count=$(echo "$paths_response" | jq -r '.total_count' 2>/dev/null || echo "unknown")
             success "Attack Paths API responding ($paths_count paths)"
@@ -1059,13 +1104,13 @@ perform_health_checks() {
     
     # Test distributed system APIs
     log "🔍 Testing Distributed MCP System..."
-    local distributed_status=$(curl -s http://localhost:$BACKEND_PORT/api/distributed/status 2>/dev/null)
+    local distributed_status=$(signed_request GET /api/distributed/status 2>/dev/null)
     if [ $? -eq 0 ]; then
         local capabilities_count=$(echo "$distributed_status" | jq -r '.capabilities | length' 2>/dev/null || echo "unknown")
         success "Distributed MCP System responding ($capabilities_count capabilities)"
         
         # Test distributed health
-        local health_response=$(curl -s http://localhost:$BACKEND_PORT/api/distributed/health 2>/dev/null)
+        local health_response=$(signed_request GET /api/distributed/health 2>/dev/null)
         if [ $? -eq 0 ]; then
             local overall_healthy=$(echo "$health_response" | jq -r '.overall_healthy' 2>/dev/null || echo "unknown")
             success "Distributed system health check (healthy: $overall_healthy)"
@@ -1121,9 +1166,9 @@ print(f'{settings.honeypot_user}@{settings.honeypot_host}:{settings.honeypot_ssh
     echo ""
     
     echo "📝 Logs:"
-    echo "   • Backend:  $PROJECT_ROOT/backend/backend.log"
-    echo "   • Frontend: $PROJECT_ROOT/frontend/frontend.log"
-    echo "   • MCP:      $PROJECT_ROOT/backend/mcp.log"
+    echo "   • Backend:  $PROJECT_ROOT/backend/logs/backend.log"
+    echo "   • Frontend: $PROJECT_ROOT/frontend/logs/frontend.log"
+    echo "   • MCP:      $PROJECT_ROOT/backend/logs/mcp.log"
     echo ""
     
     echo "🔧 Configuration Files:"
@@ -1131,18 +1176,18 @@ print(f'{settings.honeypot_user}@{settings.honeypot_host}:{settings.honeypot_ssh
     echo "   • Frontend: $PROJECT_ROOT/frontend/.env.local"
     echo ""
     
-    echo "🧪 Quick Tests:"
-    echo "   • Test Event:   curl -X POST http://localhost:$BACKEND_PORT/ingest/multi -H 'Content-Type: application/json' -H 'Authorization: Bearer test-api-key' -d '{\"source_type\":\"cowrie\",\"hostname\":\"test\",\"events\":[{\"eventid\":\"cowrie.login.failed\",\"src_ip\":\"192.168.1.100\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}]}'"
-    echo "   • Build Test:   cd frontend && npm run build"
-    echo "   • ML Status:    curl http://localhost:$BACKEND_PORT/api/ml/status"
-    echo "   • AI Agent:     curl -X POST http://localhost:$BACKEND_PORT/api/agents/orchestrate -H 'Content-Type: application/json' -d '{\"agent_type\":\"containment\",\"query\":\"status\",\"history\":[]}'"
+    echo "🧪 Quick Tests (HMAC signed):"
+    echo "   • Test Event:   python3 scripts/auth/send_signed_request.py --base-url http://localhost:$BACKEND_PORT --path /ingest/multi --body '{\"source_type\":\"cowrie\",\"hostname\":\"test\",\"events\":[{\"eventid\":\"cowrie.login.failed\",\"src_ip\":\"192.168.1.100\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}]}'"
+    echo "   • ML Status:    python3 scripts/auth/send_signed_request.py --base-url http://localhost:$BACKEND_PORT --path /api/ml/status --method GET"
+    echo "   • AI Agent:     python3 scripts/auth/send_signed_request.py --base-url http://localhost:$BACKEND_PORT --path /api/agents/orchestrate --body '{\"agent_type\":\"containment\",\"query\":\"status\",\"history\":[]}'"
+    echo "   • Adaptive:     python3 scripts/auth/send_signed_request.py --base-url http://localhost:$BACKEND_PORT --path /api/adaptive/status --method GET"
+    echo "   • Learning:     python3 scripts/auth/send_signed_request.py --base-url http://localhost:$BACKEND_PORT --path /api/adaptive/force_learning --method POST"
+    echo "   • Fed Status:   python3 scripts/auth/send_signed_request.py --base-url http://localhost:$BACKEND_PORT --path /api/federated/status --method GET"
+    echo "   • Fed Models:   python3 scripts/auth/send_signed_request.py --base-url http://localhost:$BACKEND_PORT --path /api/federated/models/status --method GET"
+    echo "   • Fed Insights: python3 scripts/auth/send_signed_request.py --base-url http://localhost:$BACKEND_PORT --path /api/federated/insights --method GET"
     echo "   • SSH Test:     curl http://localhost:$BACKEND_PORT/test/ssh"
-    echo "   • Adaptive:     curl http://localhost:$BACKEND_PORT/api/adaptive/status"
-    echo "   • Learning:     curl -X POST http://localhost:$BACKEND_PORT/api/adaptive/force_learning"
-    echo "   • Fed Status:   curl http://localhost:$BACKEND_PORT/api/federated/status"
-    echo "   • Fed Models:   curl http://localhost:$BACKEND_PORT/api/federated/models/status"
-    echo "   • Fed Insights: curl http://localhost:$BACKEND_PORT/api/federated/insights"
-    echo "   • View Logs:    tail -f $PROJECT_ROOT/backend/backend.log"
+    echo "   • Build Test:   cd frontend && npm run build"
+    echo "   • View Logs:    tail -f $PROJECT_ROOT/backend/logs/backend.log"
     echo ""
     
     echo "🧠 Adaptive Detection Features:"
@@ -1226,13 +1271,32 @@ show_configuration_guidance() {
         fi
     fi
     
-    # Check LLM configuration
+    # Check LLM configuration (Secrets Manager aware)
     source .venv/bin/activate 2>/dev/null
-    if ! python -c "from app.config import settings; exit(0 if settings.openai_api_key or settings.xai_api_key else 1)" 2>/dev/null; then
-        warning "LLM integration not configured (optional):"
-        echo "   1. Get API key from OpenAI or X.AI"
-        echo "   2. Add to .env file: OPENAI_API_KEY=your_key or XAI_API_KEY=your_key"
-        echo ""
+    
+    local secrets_enabled=$(grep "^SECRETS_MANAGER_ENABLED=true" .env 2>/dev/null)
+    if [ -n "$secrets_enabled" ]; then
+        # Check if secret names are configured
+        local openai_secret=$(grep "^OPENAI_API_KEY_SECRET_NAME=" .env | cut -d'=' -f2)
+        local xai_secret=$(grep "^XAI_API_KEY_SECRET_NAME=" .env | cut -d'=' -f2)
+        
+        if [ -z "$openai_secret" ] && [ -z "$xai_secret" ]; then
+            warning "LLM integration not configured (optional):"
+            echo "   🔐 Secure setup detected! API keys will be loaded from AWS Secrets Manager"
+            echo "   1. Get API key from OpenAI or X.AI"
+            echo "   2. Store securely: aws secretsmanager put-secret-value --secret-id mini-xdr/openai-api-key --secret-string 'your_key'"
+            echo "   3. Your .env is already configured to use Secrets Manager"
+            echo ""
+        fi
+    else
+        # Legacy configuration check
+        if ! python -c "from app.config import settings; exit(0 if settings.openai_api_key or settings.xai_api_key else 1)" 2>/dev/null; then
+            warning "LLM integration not configured (optional):"
+            echo "   1. Get API key from OpenAI or X.AI" 
+            echo "   2. Store securely in AWS Secrets Manager (recommended)"
+            echo "   3. Or add to .env file: OPENAI_API_KEY=your_key"
+            echo ""
+        fi
     fi
 }
 

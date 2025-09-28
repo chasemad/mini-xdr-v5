@@ -282,6 +282,11 @@ class ThreatIntelligence:
         
         if not self.providers:
             self.logger.warning("No threat intelligence providers configured")
+
+    def reinitialize_providers(self):
+        """Reinitialize providers (useful after secrets are loaded)"""
+        self.providers.clear()
+        self._init_providers()
     
     async def _ensure_session(self):
         """Ensure aiohttp session is available"""

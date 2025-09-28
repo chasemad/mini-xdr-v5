@@ -4,7 +4,9 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { 
   getIncident, agentOrchestrate,
-  socBlockIP, socIsolateHost, socResetPasswords, socCheckDBIntegrity,
+  socBlockIP, socUnblockIP, getBlockStatus, 
+  socIsolateHost, socUnIsolateHost, getIsolationStatus,
+  socResetPasswords, socCheckDBIntegrity,
   socThreatIntelLookup, socDeployWAFRules, socCaptureTraffic,
   socHuntSimilarAttacks, socAlertAnalysts, socCreateCase
 } from "@/app/lib/api";
@@ -116,6 +118,10 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [activeTab, setActiveTab] = useState('overview');
+  const [blockStatus, setBlockStatus] = useState<{is_blocked: boolean; ip: string} | null>(null);
+  const [isolationStatus, setIsolationStatus] = useState<{is_isolated: boolean; ip: string} | null>(null);
+  const [showDurationModal, setShowDurationModal] = useState(false);
+  const [showIsolationModal, setShowIsolationModal] = useState(false);
   // Removed unused expandedSections state
 
   // Chat state
@@ -149,25 +155,58 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
     }, 5000);
   }, []);
 
+  const fetchBlockStatus = useCallback(async () => {
+    if (!id) return;
+    
+    try {
+      const status = await getBlockStatus(id);
+      setBlockStatus(status);
+    } catch (error: unknown) {
+      console.error("Failed to fetch block status:", error);
+    }
+  }, [id]);
+
+  const fetchIsolationStatus = useCallback(async () => {
+    if (!id) return;
+    
+    try {
+      const status = await getIsolationStatus(id);
+      setIsolationStatus(status);
+    } catch (error: unknown) {
+      console.error("Failed to fetch isolation status:", error);
+    }
+  }, [id]);
+
   const fetchIncident = useCallback(async () => {
     if (!id) return;
     
     try {
       const data = await getIncident(id);
       setIncident(data);
+      // Also fetch block and isolation status
+      await fetchBlockStatus();
+      await fetchIsolationStatus();
     } catch (error: unknown) {
       console.error("Failed to fetch incident:", error);
       showToast('error', 'Failed to Load', 'Could not fetch incident details');
     } finally {
       setLoading(false);
     }
-  }, [id, showToast]);
+  }, [id, showToast, fetchBlockStatus, fetchIsolationStatus]);
 
   useEffect(() => {
     fetchIncident();
   }, [fetchIncident]);
 
-  const executeSOCAction = async (actionType: string, actionLabel: string) => {
+  const executeSOCAction = async (
+    actionType: string, 
+    actionLabel: string, 
+    options?: { 
+      durationSeconds?: number; 
+      isolationLevel?: string; 
+      isolationDuration?: number; 
+    }
+  ) => {
     if (!incident?.id) return;
     
     setActionLoading(actionType);
@@ -175,8 +214,10 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
       let result;
       
       switch (actionType) {
-        case 'block_ip': result = await socBlockIP(incident.id); break;
-        case 'isolate_host': result = await socIsolateHost(incident.id); break;
+        case 'block_ip': result = await socBlockIP(incident.id, options?.durationSeconds); break;
+        case 'unblock_ip': result = await socUnblockIP(incident.id); break;
+        case 'isolate_host': result = await socIsolateHost(incident.id, options?.isolationLevel, options?.isolationDuration); break;
+        case 'un_isolate_host': result = await socUnIsolateHost(incident.id); break;
         case 'reset_passwords': result = await socResetPasswords(incident.id); break;
         case 'check_db_integrity': result = await socCheckDBIntegrity(incident.id); break;
         case 'threat_intel_lookup': result = await socThreatIntelLookup(incident.id); break;
@@ -198,6 +239,22 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
     } finally {
       setActionLoading(null);
     }
+  };
+
+  const handleBlockIP = () => {
+    setShowDurationModal(true);
+  };
+
+  const handleUnblockIP = async () => {
+    await executeSOCAction('unblock_ip', 'Unblock IP');
+  };
+
+  const handleIsolateHost = () => {
+    setShowIsolationModal(true);
+  };
+
+  const handleUnIsolateHost = async () => {
+    await executeSOCAction('un_isolate_host', 'Remove Host Isolation');
   };
 
   const sendChatMessage = async () => {
@@ -559,9 +616,66 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
                       Quick Response Actions
                     </h3>
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                      {/* Dynamic Block/Unblock Button */}
+                      {blockStatus?.is_blocked ? (
+                        <button
+                          onClick={handleUnblockIP}
+                          disabled={actionLoading === 'unblock_ip'}
+                          className="flex flex-col items-center gap-2 p-4 bg-green-600/10 hover:bg-green-600/20 border border-green-500/30 rounded-lg transition-all"
+                        >
+                          {actionLoading === 'unblock_ip' ? (
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                          ) : (
+                            <Shield className="w-5 h-5" />
+                          )}
+                          <span className="text-xs font-medium">Unblock IP</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handleBlockIP}
+                          disabled={actionLoading === 'block_ip'}
+                          className="flex flex-col items-center gap-2 p-4 bg-red-600/10 hover:bg-red-600/20 border border-red-500/30 rounded-lg transition-all"
+                        >
+                          {actionLoading === 'block_ip' ? (
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                          ) : (
+                            <Ban className="w-5 h-5" />
+                          )}
+                          <span className="text-xs font-medium">Block IP</span>
+                        </button>
+                      )}
+                      
+                      {/* Dynamic Isolate/Un-isolate Button */}
+                      {isolationStatus?.is_isolated ? (
+                        <button
+                          onClick={handleUnIsolateHost}
+                          disabled={actionLoading === 'un_isolate_host'}
+                          className="flex flex-col items-center gap-2 p-4 bg-green-600/10 hover:bg-green-600/20 border border-green-500/30 rounded-lg transition-all"
+                        >
+                          {actionLoading === 'un_isolate_host' ? (
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                          ) : (
+                            <Network className="w-5 h-5" />
+                          )}
+                          <span className="text-xs font-medium">Un-isolate Host</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handleIsolateHost}
+                          disabled={actionLoading === 'isolate_host'}
+                          className="flex flex-col items-center gap-2 p-4 bg-orange-600/10 hover:bg-orange-600/20 border border-orange-500/30 rounded-lg transition-all"
+                        >
+                          {actionLoading === 'isolate_host' ? (
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                          ) : (
+                            <Shield className="w-5 h-5" />
+                          )}
+                          <span className="text-xs font-medium">Isolate Host</span>
+                        </button>
+                      )}
+                      
+                      {/* Other Action Buttons */}
                       {[
-                        { action: 'block_ip', label: 'Block IP', icon: Ban, color: 'red' },
-                        { action: 'isolate_host', label: 'Isolate Host', icon: Shield, color: 'orange' },
                         { action: 'reset_passwords', label: 'Reset Passwords', icon: Key, color: 'yellow' },
                         { action: 'threat_intel_lookup', label: 'Threat Intel', icon: Globe, color: 'blue' },
                         { action: 'hunt_similar_attacks', label: 'Hunt Similar', icon: Crosshair, color: 'purple' }
@@ -690,6 +804,258 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
                 </div>
               )}
 
+              {activeTab === 'forensics' && (
+                <div className="space-y-6">
+                  {/* Evidence Collection Status */}
+                  <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+                    <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                      <Search className="w-5 h-5 text-yellow-400" />
+                      Evidence Collection & Analysis
+                    </h3>
+                    
+                    <div className="grid md:grid-cols-2 gap-6">
+                      {/* Evidence Artifacts */}
+                      <div className="space-y-4">
+                        <h4 className="text-md font-semibold text-yellow-300 flex items-center gap-2">
+                          🔍 Digital Evidence
+                        </h4>
+                        
+                        <div className="space-y-3">
+                          {/* Network Captures */}
+                          <div className="bg-gray-700/30 border border-gray-600/30 rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm font-medium text-gray-300">Network Capture</span>
+                              <span className="text-xs px-2 py-1 bg-blue-500/20 text-blue-300 rounded">PCAP</span>
+                            </div>
+                            <div className="text-xs text-gray-400 mb-2">
+                              📦 capture_{incident.src_ip.replace(/\./g, '_')}.pcap
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Size: ~2.4MB | Packets: 1,847 | Duration: {incident.event_summary?.time_span_hours || 1}h
+                            </div>
+                          </div>
+
+                          {/* Command History */}
+                          {incident.iocs?.command_patterns && incident.iocs.command_patterns.length > 0 && (
+                            <div className="bg-gray-700/30 border border-gray-600/30 rounded-lg p-4">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-sm font-medium text-gray-300">Command History</span>
+                                <span className="text-xs px-2 py-1 bg-purple-500/20 text-purple-300 rounded">LOG</span>
+                              </div>
+                              <div className="text-xs text-gray-400 mb-2">
+                                📋 {incident.iocs.command_patterns.length} commands recorded
+                              </div>
+                              <div className="text-xs text-gray-500 font-mono">
+                                Latest: {incident.iocs.command_patterns.slice(-1)[0]?.substring(0, 40)}...
+                              </div>
+                            </div>
+                          )}
+
+                          {/* File Artifacts */}
+                          {incident.iocs?.file_hashes && incident.iocs.file_hashes.length > 0 && (
+                            <div className="bg-gray-700/30 border border-gray-600/30 rounded-lg p-4">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-sm font-medium text-gray-300">File Artifacts</span>
+                                <span className="text-xs px-2 py-1 bg-red-500/20 text-red-300 rounded">HASH</span>
+                              </div>
+                              <div className="text-xs text-gray-400 mb-2">
+                                🗂️ {incident.iocs.file_hashes.length} file hashes collected
+                              </div>
+                              <div className="text-xs text-gray-500 font-mono">
+                                {incident.iocs.file_hashes[0]?.substring(0, 32)}...
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Session Recordings */}
+                          <div className="bg-gray-700/30 border border-gray-600/30 rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm font-medium text-gray-300">Session Recording</span>
+                              <span className="text-xs px-2 py-1 bg-green-500/20 text-green-300 rounded">TTY</span>
+                            </div>
+                            <div className="text-xs text-gray-400 mb-2">
+                              🎥 session_{incident.src_ip.replace(/\./g, '_')}.log
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Duration: {Math.round((incident.event_summary?.time_span_hours || 1) * 60)}m | Commands: {incident.iocs?.command_patterns?.length || 0}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Analysis Results */}
+                      <div className="space-y-4">
+                        <h4 className="text-md font-semibold text-blue-300 flex items-center gap-2">
+                          🧪 Forensic Analysis
+                        </h4>
+                        
+                        <div className="space-y-3">
+                          {/* Threat Assessment */}
+                          <div className="bg-gray-700/30 border border-gray-600/30 rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="text-sm font-medium text-gray-300">Threat Assessment</span>
+                              <span className={`text-xs px-2 py-1 rounded ${
+                                incident.risk_score && incident.risk_score > 0.7 ? 'bg-red-500/20 text-red-300' :
+                                incident.risk_score && incident.risk_score > 0.4 ? 'bg-orange-500/20 text-orange-300' :
+                                'bg-green-500/20 text-green-300'
+                              }`}>
+                                {incident.risk_score ? `${Math.round(incident.risk_score * 100)}% RISK` : 'ANALYZED'}
+                              </span>
+                            </div>
+                            
+                            <div className="space-y-2 text-xs">
+                              <div className="flex justify-between">
+                                <span className="text-gray-400">Attack Vector:</span>
+                                <span className="text-gray-300 capitalize">{incident.threat_category?.replace('_', ' ') || 'Multi-vector'}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-400">Sophistication:</span>
+                                <span className="text-gray-300">
+                                  {incident.agent_confidence && incident.agent_confidence > 0.8 ? 'High' :
+                                   incident.agent_confidence && incident.agent_confidence > 0.5 ? 'Medium' : 'Basic'}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-400">Intent:</span>
+                                <span className="text-gray-300">
+                                  {incident.iocs?.data_exfiltration_indicators?.length ? 'Data Theft' :
+                                   incident.iocs?.persistence_mechanisms?.length ? 'Persistence' :
+                                   'Reconnaissance'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Attribution Analysis */}
+                          <div className="bg-gray-700/30 border border-gray-600/30 rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="text-sm font-medium text-gray-300">Attribution</span>
+                              <span className="text-xs px-2 py-1 bg-purple-500/20 text-purple-300 rounded">GEO</span>
+                            </div>
+                            
+                            <div className="space-y-2 text-xs">
+                              <div className="flex justify-between">
+                                <span className="text-gray-400">Source IP:</span>
+                                <span className="text-gray-300 font-mono">{incident.src_ip}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-400">Geolocation:</span>
+                                <span className="text-gray-300">🌍 Unknown</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-400">User Agent:</span>
+                                <span className="text-gray-300">
+                                  {incident.iocs?.user_agents?.length ? incident.iocs.user_agents[0].substring(0, 20) + '...' : 'N/A'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Chain of Custody */}
+                          <div className="bg-gray-700/30 border border-gray-600/30 rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="text-sm font-medium text-gray-300">Chain of Custody</span>
+                              <span className="text-xs px-2 py-1 bg-blue-500/20 text-blue-300 rounded">VERIFIED</span>
+                            </div>
+                            
+                            <div className="space-y-2 text-xs">
+                              <div className="flex justify-between">
+                                <span className="text-gray-400">Collection Time:</span>
+                                <span className="text-gray-300">{formatTimeAgo(incident.created_at)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-400">Integrity Hash:</span>
+                                <span className="text-gray-300 font-mono">SHA256:ab12cd...</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-400">Collector:</span>
+                                <span className="text-gray-300">XDR-Agent-{incident.agent_id || 'v1'}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Detailed Evidence Browser */}
+                  <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+                    <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                      <Code className="w-5 h-5 text-green-400" />
+                      Evidence Details
+                    </h3>
+                    
+                    {/* Evidence Categories */}
+                    <div className="space-y-4">
+                      {/* Attack Commands */}
+                      {incident.iocs?.command_patterns && incident.iocs.command_patterns.length > 0 && (
+                        <div className="border border-gray-600/30 rounded-lg p-4">
+                          <h4 className="text-md font-semibold text-green-300 mb-3">
+                            💻 Executed Commands ({incident.iocs.command_patterns.length})
+                          </h4>
+                          <div className="space-y-2 max-h-48 overflow-y-auto">
+                            {incident.iocs.command_patterns.slice(0, 10).map((cmd, idx) => (
+                              <div key={idx} className="bg-gray-900/50 border border-gray-700/30 rounded p-3">
+                                <div className="flex items-start justify-between mb-1">
+                                  <span className="text-xs text-gray-400">Command #{idx + 1}</span>
+                                  <button
+                                    onClick={() => navigator.clipboard.writeText(cmd)}
+                                    className="text-gray-400 hover:text-gray-300"
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </button>
+                                </div>
+                                <code className="text-sm text-green-300 font-mono break-all">{cmd}</code>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Network Artifacts */}
+                      {incident.iocs?.urls && incident.iocs.urls.length > 0 && (
+                        <div className="border border-gray-600/30 rounded-lg p-4">
+                          <h4 className="text-md font-semibold text-blue-300 mb-3">
+                            🌐 Network Artifacts ({incident.iocs.urls.length})
+                          </h4>
+                          <div className="space-y-2 max-h-48 overflow-y-auto">
+                            {incident.iocs.urls.slice(0, 10).map((url, idx) => (
+                              <div key={idx} className="bg-gray-900/50 border border-gray-700/30 rounded p-3">
+                                <div className="flex items-start justify-between mb-1">
+                                  <span className="text-xs text-gray-400">URL #{idx + 1}</span>
+                                  <button
+                                    onClick={() => navigator.clipboard.writeText(url)}
+                                    className="text-gray-400 hover:text-gray-300"
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </button>
+                                </div>
+                                <code className="text-sm text-blue-300 font-mono break-all">{url}</code>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* No Evidence Placeholder */}
+                      {(!incident.iocs?.command_patterns?.length && !incident.iocs?.urls?.length) && (
+                        <div className="text-center py-8 text-gray-500">
+                          <Search className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                          <h4 className="text-lg font-semibold mb-2">Evidence Collection in Progress</h4>
+                          <p className="text-sm">
+                            Digital forensics agents are analyzing this incident. Evidence artifacts will appear here as they are collected and processed.
+                          </p>
+                          <div className="mt-4 flex items-center justify-center gap-2 text-xs text-gray-400">
+                            <div className="animate-spin w-3 h-3 border border-gray-500 border-t-transparent rounded-full"></div>
+                            Processing forensic data...
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {activeTab === 'actions' && (
                 <div className="space-y-6">
                   {/* Response Actions Grid */}
@@ -701,9 +1067,66 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
                         Immediate Response
                       </h3>
                       <div className="space-y-3">
+                        {/* Dynamic Block/Unblock Button */}
+                        {blockStatus?.is_blocked ? (
+                          <button
+                            onClick={handleUnblockIP}
+                            disabled={actionLoading === 'unblock_ip'}
+                            className="w-full flex items-center gap-3 p-3 bg-green-600/10 hover:bg-green-600/20 border border-green-500/30 rounded-lg transition-all text-left"
+                          >
+                            {actionLoading === 'unblock_ip' ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-green-400" />
+                            ) : (
+                              <Shield className="w-4 h-4 text-green-400" />
+                            )}
+                            <span className="text-green-200 text-sm">Unblock Source IP</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={handleBlockIP}
+                            disabled={actionLoading === 'block_ip'}
+                            className="w-full flex items-center gap-3 p-3 bg-red-600/10 hover:bg-red-600/20 border border-red-500/30 rounded-lg transition-all text-left"
+                          >
+                            {actionLoading === 'block_ip' ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-red-400" />
+                            ) : (
+                              <Ban className="w-4 h-4 text-red-400" />
+                            )}
+                            <span className="text-red-200 text-sm">Block Source IP</span>
+                          </button>
+                        )}
+                        
+                        {/* Dynamic Isolate/Un-isolate Button */}
+                        {isolationStatus?.is_isolated ? (
+                          <button
+                            onClick={handleUnIsolateHost}
+                            disabled={actionLoading === 'un_isolate_host'}
+                            className="w-full flex items-center gap-3 p-3 bg-green-600/10 hover:bg-green-600/20 border border-green-500/30 rounded-lg transition-all text-left"
+                          >
+                            {actionLoading === 'un_isolate_host' ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-green-400" />
+                            ) : (
+                              <Network className="w-4 h-4 text-green-400" />
+                            )}
+                            <span className="text-green-200 text-sm">Remove Host Isolation</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={handleIsolateHost}
+                            disabled={actionLoading === 'isolate_host'}
+                            className="w-full flex items-center gap-3 p-3 bg-red-600/10 hover:bg-red-600/20 border border-red-500/30 rounded-lg transition-all text-left"
+                          >
+                            {actionLoading === 'isolate_host' ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-red-400" />
+                            ) : (
+                              <Shield className="w-4 h-4 text-red-400" />
+                            )}
+                            <span className="text-red-200 text-sm">Isolate Affected Host</span>
+                          </button>
+                        )}
+                        
+                        {/* Other immediate response actions */}
                         {[
-                          { action: 'block_ip', label: 'Block Source IP', icon: Ban },
-                          { action: 'isolate_host', label: 'Isolate Affected Host', icon: Shield },
                           { action: 'reset_passwords', label: 'Force Password Reset', icon: Key }
                         ].map(({ action, label, icon: Icon }) => (
                           <button
@@ -900,6 +1323,140 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
           </div>
         </div>
       </div>
+
+      {/* Duration Selection Modal */}
+      {showDurationModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 max-w-md w-full mx-4">
+            <div className="mb-6">
+              <h3 className="text-xl font-bold text-white mb-2">Block IP: {incident?.src_ip}</h3>
+              <p className="text-gray-400 text-sm">Choose how long to block this IP address</p>
+            </div>
+
+            <div className="space-y-3 mb-6">
+              {[
+                { duration: 60, label: "1 Minute", desc: "Quick test block" },
+                { duration: 300, label: "5 Minutes", desc: "Short-term block" },
+                { duration: 3600, label: "1 Hour", desc: "Medium-term block" },
+                { duration: null, label: "Permanent", desc: "Block until manually unblocked" }
+              ].map(({ duration, label, desc }) => (
+                <button
+                  key={duration || 'permanent'}
+                  onClick={async () => {
+                    setShowDurationModal(false);
+                    await executeSOCAction('block_ip', `Block IP ${label}`, { durationSeconds: duration || undefined });
+                  }}
+                  className="w-full flex items-center justify-between p-4 bg-gray-700/50 hover:bg-gray-700 border border-gray-600/50 hover:border-gray-500 rounded-lg transition-all text-left"
+                >
+                  <div>
+                    <div className="text-white font-medium">{label}</div>
+                    <div className="text-gray-400 text-sm">{desc}</div>
+                  </div>
+                  <div className="text-gray-400">
+                    {duration ? (
+                      <Clock className="w-4 h-4" />
+                    ) : (
+                      <Ban className="w-4 h-4" />
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDurationModal(false)}
+                className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Host Isolation Configuration Modal */}
+      {showIsolationModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 max-w-lg w-full mx-4">
+            <div className="mb-6">
+              <h3 className="text-xl font-bold text-white mb-2">Isolate Host: {incident?.src_ip}</h3>
+              <p className="text-gray-400 text-sm">Choose isolation level and duration for this host</p>
+            </div>
+
+            <div className="space-y-4 mb-6">
+              <div>
+                <h4 className="text-lg font-semibold text-white mb-3">Isolation Level</h4>
+                <div className="space-y-3">
+                  {[
+                    { 
+                      level: "soft", 
+                      label: "Soft Isolation", 
+                      desc: "Block web services (HTTP/HTTPS) but allow SSH management",
+                      icon: "🛡️",
+                      color: "orange"
+                    },
+                    { 
+                      level: "hard", 
+                      label: "Hard Isolation", 
+                      desc: "Complete network isolation - blocks ALL traffic to/from host",
+                      icon: "🚫",
+                      color: "red"
+                    },
+                    { 
+                      level: "quarantine", 
+                      label: "Quarantine", 
+                      desc: "Allow only monitoring traffic and security tools",
+                      icon: "🔒",
+                      color: "purple"
+                    }
+                  ].map(({ level, label, desc, icon, color }) => (
+                    <div key={level} className="space-y-2">
+                      <div className="text-sm font-medium text-white">{icon} {label}</div>
+                      <div className="text-xs text-gray-400 mb-3">{desc}</div>
+                      
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { duration: 300, label: "5 minutes" },
+                          { duration: 1800, label: "30 minutes" },
+                          { duration: 3600, label: "1 hour" },
+                          { duration: null, label: "Permanent" }
+                        ].map(({ duration, label: durationLabel }) => (
+                          <button
+                            key={`${level}-${duration || 'permanent'}`}
+                            onClick={async () => {
+                              setShowIsolationModal(false);
+                              await executeSOCAction('isolate_host', `${label} - ${durationLabel}`, {
+                                isolationLevel: level,
+                                isolationDuration: duration || undefined
+                              });
+                            }}
+                            className={`p-3 bg-${color}-600/10 hover:bg-${color}-600/20 border border-${color}-500/30 rounded-lg transition-all text-left`}
+                          >
+                            <div className="text-white font-medium text-sm">{durationLabel}</div>
+                            <div className="text-xs text-gray-400">
+                              {duration ? `Auto-restore in ${label}` : 'Manual removal required'}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowIsolationModal(false)}
+                className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

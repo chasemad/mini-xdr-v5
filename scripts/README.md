@@ -1,248 +1,316 @@
-# Mini-XDR Management Scripts
+# 📂 Mini-XDR Scripts Directory
 
-This directory contains powerful management scripts for the Mini-XDR system that provide complete lifecycle management with health checks and monitoring.
+This directory contains all operational scripts for the Mini-XDR system, organized by function for easy management and maintenance.
 
-## 🚀 Scripts Overview
+## Directory Structure
 
-### **`start-all.sh`** - Complete System Startup
-**The main script you'll use** - Handles complete system lifecycle with health verification.
+```
+scripts/
+├── 🚀 start-all.sh              # Start complete Mini-XDR system
+├── 🛑 stop-all.sh               # Stop all Mini-XDR services  
+├── 📊 system-status.sh          # Check system health and status
+├── 📋 README.md                 # This documentation
+├── 🔐 auth/                     # Authentication & security scripts
+├── 📊 datasets/                 # Dataset download & processing
+├── 🧠 ml-training/              # Machine learning & training
+├── 🏗️ infrastructure/           # VM, networking & infrastructure
+├── 🧪 testing/                  # Testing & validation scripts
+├── ☁️ aws-deployment/           # AWS-specific deployment scripts
+├── 🚨 attack-simulation/        # Attack testing and simulation
+├── 🍯 tpot-management/          # T-Pot honeypot management
+└── 🛠️ system-maintenance/       # System maintenance & troubleshooting
+```
 
-**Features:**
-- ✅ **Smart Cleanup**: Automatically kills existing backend/frontend processes
-- ✅ **Prerequisites Check**: Verifies Python venv, Node modules, config files
-- ✅ **Health Monitoring**: Waits for services to start and validates they're working
-- ✅ **Comprehensive Testing**: Tests all API endpoints and system components
-- ✅ **Error Handling**: Fails fast with clear error messages and logs
-- ✅ **Status Display**: Shows complete system status after startup
+## Quick Start Guide
 
-**Usage:**
+### 🚀 System Operations
 ```bash
 # Start the complete Mini-XDR system
-./scripts/start-all.sh
+./start-all.sh
 
-# The script will:
-# 1. Kill any existing processes on ports 8000, 3000, 3001
-# 2. Check all prerequisites (venv, node_modules, configs)
-# 3. Start backend with health monitoring
-# 4. Start frontend with connectivity testing  
-# 5. Start MCP server (if available)
-# 6. Perform comprehensive health checks
-# 7. Display system status and access URLs
+# Check system status
+./system-status.sh
+
+# Stop all services
+./stop-all.sh
 ```
 
-**Output Example:**
-```
-=== 🛡️  Mini-XDR Complete System Startup ===
-
-[23:30:15] Cleaning up existing Mini-XDR services...
-✅ Service cleanup completed
-
-[23:30:17] Checking system prerequisites...
-✅ Prerequisites check completed
-
-[23:30:19] Starting all services...
-[23:30:19] Starting backend server...
-[23:30:19] Backend starting (PID: 12345)...
-✅ Backend server ready on port 8000
-
-[23:30:22] Starting frontend server...
-[23:30:22] Frontend starting (PID: 12346)...
-✅ Frontend server ready on port 3000
-
-[23:30:25] Starting MCP server...
-✅ MCP server started
-
-[23:30:28] Performing system health checks...
-
-🔍 Testing Backend API...
-✅ Backend API responding
-   Response: {"status":"healthy","timestamp":"...","auto_contain":false}
-
-🔍 Testing Incidents API...
-✅ Incidents API responding (5 incidents)
-
-🔍 Testing Frontend...
-✅ Frontend responding
-
-🔍 Testing Auto-contain API...
-✅ Auto-contain API responding
-   Setting: {"enabled":false}
-
-🔍 Testing Database...
-✅ Database file exists
-
-🔍 Checking Configuration...
-✅ LLM configuration detected
-
-✅ Health checks completed!
-
-✅ 🎉 Mini-XDR System Successfully Started!
-
-=== 🚀 Mini-XDR System Status ===
-
-📊 Services:
-   • Frontend:  http://localhost:3000
-   • Backend:   http://localhost:8000
-   • API Docs:  http://localhost:8000/docs
-
-📋 Process IDs:
-   • Backend PID:  12345
-   • Frontend PID: 12346
-   • MCP PID:      12347
-
-📝 Logs:
-   • Backend:  /path/to/mini-xdr/backend/backend.log
-   • Frontend: /path/to/mini-xdr/frontend/frontend.log
-   • MCP:      /path/to/mini-xdr/backend/mcp.log
-
-🎮 Controls:
-   • Dashboard: Open http://localhost:3000
-   • Stop All:  Press Ctrl+C
-   • Restart:   Run this script again
-
-Press Ctrl+C to stop all services
-```
-
-### **`stop-all.sh`** - Clean System Shutdown
-Gracefully stops all Mini-XDR services.
-
-**Features:**
-- ✅ **Graceful Shutdown**: Sends TERM signals first, then force kills if needed
-- ✅ **Port-based Cleanup**: Finds and stops processes by port numbers
-- ✅ **Process Pattern Cleanup**: Kills processes by command patterns
-- ✅ **Verification**: Confirms all processes are stopped
-
-**Usage:**
+### 🚨 Attack Testing
 ```bash
-# Stop all Mini-XDR services
-./scripts/stop-all.sh
+# Quick attack test
+cd attack-simulation
+./quick_attack.sh 192.168.1.100
+
+# Advanced attack chain simulation
+cd testing
+./simulate-advanced-attack-chain.sh
 ```
 
-### **`system-status.sh`** - Real-time Status Check
-Provides detailed status of all system components without starting/stopping anything.
-
-**Features:**
-- ✅ **Port Status**: Checks which services are running on expected ports
-- ✅ **API Testing**: Tests backend API endpoints for functionality
-- ✅ **Process Information**: Shows process IDs for running services
-- ✅ **Database Status**: Checks database file existence and size
-- ✅ **Configuration Check**: Verifies all required files are present
-
-**Usage:**
+### 🧠 ML Training & Datasets
 ```bash
-# Check current system status
-./scripts/system-status.sh
+# Download and train with real datasets
+cd datasets && python3 download-real-datasets.py --download-all
+cd ../ml-training && python3 train-with-real-datasets.py
+
+# Generate training data and optimize
+cd ml-training
+python3 generate-training-data.py --mode comprehensive
+python3 optimize-training.py --mode continuous
 ```
 
-## 🔧 Configuration
-
-The scripts automatically detect and use these configuration files:
-
-- **Backend**: `backend/.env` - API keys, database settings, honeypot config
-- **Frontend**: `frontend/env.local` - API endpoints and keys
-- **Python Environment**: `backend/.venv/` - Python virtual environment
-- **Node Dependencies**: `frontend/node_modules/` - Frontend dependencies
-
-## 📊 Ports Used
-
-| Service | Port | Purpose |
-|---------|------|---------|
-| Backend API | 8000 | FastAPI server with XDR endpoints |
-| Frontend | 3000 | Next.js development server |
-| MCP Server | 3001 | LLM integration server |
-
-## 🔍 Health Checks Performed
-
-The startup script performs these comprehensive checks:
-
-1. **Backend Health**: `/health` endpoint responding
-2. **Incidents API**: `/incidents` endpoint with data count
-3. **Frontend**: HTTP connectivity test
-4. **Auto-contain**: `/settings/auto_contain` endpoint
-5. **Database**: SQLite file existence and accessibility
-6. **Configuration**: Environment variables and API keys
-7. **Dependencies**: Python venv and Node modules
-
-## 🚨 Troubleshooting
-
-### **"Port already in use" errors**
-The scripts automatically handle this by killing existing processes before starting.
-
-### **"Prerequisites check failed"**
-Install missing dependencies:
+### 🍯 T-Pot Honeypot Management
 ```bash
-# Backend dependencies
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+cd tpot-management
 
-# Frontend dependencies  
-cd frontend
-npm install
+# Start T-Pot securely
+./start-secure-tpot.sh
+
+# Allow Kali testing access
+./kali-access.sh add KALI_IP 22 80 443
+
+# Deploy log forwarding
+./deploy-tpot-logging.sh 34.193.101.171 YOUR_LOCAL_IP
 ```
 
-### **"Health checks failed"**
-Check the log files for detailed error information:
-- Backend: `backend/backend.log`
-- Frontend: `frontend/frontend.log`
-- MCP: `backend/mcp.log`
-
-### **Services won't start**
-Run the stop script first, then try starting again:
+### 🔐 Authentication & Security
 ```bash
-./scripts/stop-all.sh
-./scripts/start-all.sh
+# Generate agent credentials
+cd auth && python3 mint_agent_cred.py
+
+# Send authenticated requests  
+python3 auth/send_signed_request.py --path /api/ml/status --method GET
+
+# Secure homelab
+./auth/homelab_lockdown.sh --apply
 ```
 
-## 📝 Log Files
+### 🛠️ System Maintenance
+```bash
+cd system-maintenance
 
-All services create log files for debugging:
+# Fix dependency issues
+./fix_dependencies.sh
+```
 
-- **Backend Log**: `backend/backend.log` - FastAPI server logs
-- **Frontend Log**: `frontend/frontend.log` - Next.js development logs  
-- **MCP Log**: `backend/mcp.log` - MCP server logs
+## Script Categories
 
-## 🎯 Quick Start
+### 🔐 Authentication & Security (`auth/`)
+**Purpose**: Manage authentication, credentials, and security configurations
+- `agent_auth.py` - HMAC authentication utilities for agents
+- `mint_agent_cred.py` - Generate new agent credentials
+- `send_signed_request.py` - Send authenticated API requests
+- `homelab_lockdown.sh` - Network security lockdown for homelab
 
-1. **First Time Setup**:
-   ```bash
-   # Install all dependencies first
-   cd backend && python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
-   cd ../frontend && npm install
-   
-   # Start the system
-   ./scripts/start-all.sh
-   ```
+### 📊 Dataset Management (`datasets/`)
+**Purpose**: Download, process, and convert cybersecurity datasets
+- `download-*-datasets.py` - Various dataset downloaders (CICIDS2017, real-world, etc.)
+- `enhanced-cicids-processor.py` - Enhanced CICIDS2017 processing
+- `enhanced-threat-feeds.py` - Live threat intelligence downloader
+- `process-cicids2017-ml.py` - Official CICIDS2017 MachineLearningCSV processor
 
-2. **Daily Usage**:
-   ```bash
-   # Start everything
-   ./scripts/start-all.sh
-   
-   # Check status anytime
-   ./scripts/system-status.sh
-   
-   # Stop everything
-   ./scripts/stop-all.sh
-   ```
+### 🧠 ML Training (`ml-training/`)
+**Purpose**: Train and optimize machine learning models
+- `massive-dataset-trainer.py` - Train with ALL available datasets
+- `train-with-real-datasets.py` - Enhanced training with real-world data
+- `generate-training-data.py` - Synthetic training data generator
+- `optimize-training.py` - Training optimization and scheduling
+- `import-historical-data.py` - Import existing logs for training
 
-3. **Troubleshooting**:
-   ```bash
-   # Force clean restart
-   ./scripts/stop-all.sh
-   ./scripts/start-all.sh
-   
-   # Check what's running
-   ./scripts/system-status.sh
-   ```
+### 🏗️ Infrastructure (`infrastructure/`)
+**Purpose**: VM management, networking, and infrastructure setup
+- `find-vm-ip.sh` - VM IP discovery script
+- `fix-vmware-networking.sh` - VMware networking diagnostics
+- `setup.sh` - Complete Mini-XDR system setup
+- `ssh-*.sh` - SSH connectivity utilities for various environments
+- `setup-*-relay.sh` - AWS relay setup scripts
 
-## 🎮 Integration with IDE
+### 🧪 Testing & Validation (`testing/`)
+**Purpose**: Test detection capabilities and validate system functionality
+- `simple-test-adaptive.sh` - Basic adaptive detection testing
+- `simulate-advanced-attack-chain.sh` - Multi-phase APT-style attack simulation
+- `verify_ip_blocks.py` - IP block verification on honeypot
 
-These scripts work great with your development workflow:
+### ☁️ AWS Deployment (`aws-deployment/`)
+**Purpose**: AWS-specific deployment and security management
+- `secure-tpot-for-testing.sh` - Lock down T-Pot for safe testing
+- `open-tpot-to-internet.sh` - Expose T-Pot to real internet attacks
 
-- **VS Code**: Add tasks in `.vscode/tasks.json` to run scripts from Command Palette
-- **Terminal**: Run scripts from any terminal in the project root
-- **CI/CD**: Use in automation pipelines for testing and deployment
+### 🚨 Attack Simulation (`attack-simulation/`)
+**Purpose**: Test Mini-XDR detection and response capabilities
+- `attack_simulation.py` - Comprehensive multi-vector attack simulator
+- `simple_attack_test.py` - Quick focused attack validation
+- `multi_ip_attack.sh` - Advanced multi-source attack simulation
+- `simple_multi_ip_attack.sh` - Quick multi-IP attack test
+- `quick_attack.sh` - Rapid attack sequence for immediate testing
 
-The enhanced `start-all.sh` script ensures your Mini-XDR system starts reliably every time with full health verification!
+### 🍯 T-Pot Management (`tpot-management/`)
+**Purpose**: Manage T-Pot honeypot deployment and security
+- `setup-tpot-integration.sh` - Complete T-Pot integration setup
+- `start-secure-tpot.sh` - Secure T-Pot startup script
+- `secure-tpot.sh` - T-Pot security hardening (already applied)
+- `kali-access.sh` - Kali machine access control
+- `deploy-tpot-logging.sh` - Log forwarding deployment
+
+### 🛠️ System Maintenance (`system-maintenance/`)
+**Purpose**: Maintain and troubleshoot Mini-XDR system
+- `fix_dependencies.sh` - Phase 2B dependencies fix and installation
+
+## Common Workflows
+
+### 🔄 Daily Operations
+```bash
+# 1. Start system
+./start-all.sh
+
+# 2. Check status
+./system-status.sh
+
+# 3. Run attack tests
+cd attack-simulation && ./quick_attack.sh localhost
+
+# 4. Check results in dashboard at http://localhost:3000
+```
+
+### 🧠 ML Training Workflow
+```bash
+# 1. Download real datasets
+cd datasets && python3 download-real-datasets.py --download-all
+
+# 2. Train enhanced models
+cd ../ml-training && python3 train-with-real-datasets.py
+
+# 3. Optimize training
+python3 optimize-training.py --mode continuous --duration 30
+
+# 4. Test adaptive detection
+cd ../testing && ./simple-test-adaptive.sh
+```
+
+### 🧪 T-Pot Testing Session
+```bash
+cd tpot-management
+
+# 1. Start T-Pot
+./start-secure-tpot.sh
+
+# 2. Deploy logging
+./deploy-tpot-logging.sh 34.193.101.171 $(ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -1)
+
+# 3. Allow Kali access
+./kali-access.sh add $(curl -s -4 icanhazip.com) 22 80 443
+
+# 4. Run attacks from Kali
+cd ../attack-simulation
+python3 simple_attack_test.py 34.193.101.171
+
+# 5. Test advanced detection
+cd ../testing && ./simulate-advanced-attack-chain.sh
+
+# 6. Remove access when done
+cd ../tpot-management
+./kali-access.sh remove $(curl -s -4 icanhazip.com) 22 80 443
+```
+
+### 🔧 Troubleshooting Session
+```bash
+# 1. Fix dependencies
+cd system-maintenance && ./fix_dependencies.sh
+
+# 2. Fix infrastructure issues
+cd ../infrastructure && ./fix-vmware-networking.sh
+
+# 3. Restart system
+cd .. && ./stop-all.sh && ./start-all.sh
+
+# 4. Verify functionality
+./system-status.sh
+
+# 5. Test detection capabilities
+cd testing && ./simple-test-adaptive.sh
+```
+
+## Security Considerations
+
+### 🔒 T-Pot Security Status
+- **Public Access**: ❌ BLOCKED (all honeypot ports secured)
+- **Management**: ✅ YOUR IP ONLY (SSH/Web interface)
+- **Testing Access**: 🎯 CONTROLLED (via kali-access.sh)
+
+### ⚠️ Attack Script Safety
+- Only use against systems you own or have permission to test
+- Attack scripts generate real malicious traffic
+- Always inform security teams before testing
+- Follow responsible disclosure practices
+
+### 🛡️ Best Practices
+- Always remove Kali access after testing
+- Monitor AWS costs when T-Pot is running
+- Regularly review security group rules
+- Keep API keys secure and rotate them monthly
+
+## Integration Points
+
+### 📊 Mini-XDR Dashboard
+- **URL**: http://localhost:3000
+- **SOC Interface**: Real-time incident monitoring
+- **Analytics**: ML model performance and drift detection
+- **3D Visualization**: Interactive threat landscape
+
+### 📡 Log Flow Architecture
+```
+Attack Scripts → Mini-XDR → Incident Detection
+T-Pot Honeypot → Fluent Bit → Mini-XDR → ML Analysis
+External Threats → T-Pot → Log Processing → SOC Dashboard
+```
+
+### 🤖 AI Agent Integration
+- **Detection**: Automated threat identification
+- **Analysis**: ML-powered incident analysis  
+- **Response**: Autonomous containment actions
+- **Learning**: Continuous model improvement
+
+## Support and Documentation
+
+### 📚 Detailed Documentation
+- Each script directory contains detailed README.md
+- Individual scripts have built-in help (`--help` flag)
+- Configuration files include inline documentation
+
+### 🆘 Getting Help
+- Check script-specific README files
+- Use `--help` flag on Python scripts
+- Review logs in `/var/log/mini-xdr/`
+- Check system status with `./system-status.sh`
+
+### 🐛 Issue Reporting
+- Include output of `./system-status.sh`
+- Provide relevant log excerpts
+- Describe steps to reproduce
+- Include system configuration details
+
+---
+
+## 🗂️ Navigation Guide
+
+- **🚀 Core Operations**: Root directory (`start-all.sh`, `stop-all.sh`, `system-status.sh`)
+- **🔐 Security & Auth**: `auth/` - Credentials, HMAC signing, security lockdown
+- **📊 Data Management**: `datasets/` - Download, process cybersecurity datasets
+- **🧠 ML & Training**: `ml-training/` - Model training, optimization, data generation
+- **🏗️ Infrastructure**: `infrastructure/` - VM setup, networking, deployment setup
+- **🧪 Testing**: `testing/` - Detection testing, validation, verification
+- **☁️ AWS**: `aws-deployment/` - AWS-specific T-Pot security management
+- **🚨 Attack Testing**: `attack-simulation/` - Multi-vector attack simulations
+- **🍯 Honeypot Mgmt**: `tpot-management/` - T-Pot deployment and control
+- **🛠️ Maintenance**: `system-maintenance/` - Dependencies and troubleshooting
+
+Each subdirectory contains detailed README.md files with specific usage instructions.
+
+---
+
+**Organization Status**: ✅ **COMPLETELY REORGANIZED**  
+**Root Directory**: 🧹 **CLEANED & STRUCTURED**  
+**Script Locations**: 📁 **CATEGORIZED BY PURPOSE**  
+**AWS Deployment**: 🚀 **READY**
+
+**Last Updated**: September 27, 2025  
+**Maintained by**: Mini-XDR Operations Team

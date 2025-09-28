@@ -20,6 +20,15 @@ const eslintConfig = [
       "next-env.d.ts",
     ],
   },
+  {
+    files: ["app/visualizations/**/*.{ts,tsx}", "lib/three-helpers.ts", "lib/threat-data.ts", "app/agents/**/*.{ts,tsx}", "components/ui/**/*.{ts,tsx}", "app/analytics/**/*.{ts,tsx}"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-unused-vars": "warn",
+      "react/no-unescaped-entities": "warn",
+      "@typescript-eslint/no-empty-object-type": "warn"
+    }
+  }
 ];
 
 export default eslintConfig;

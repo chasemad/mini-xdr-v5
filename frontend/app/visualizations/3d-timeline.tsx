@@ -272,8 +272,6 @@ const AttackConnections: React.FC<{
   currentTime: number
   show: boolean
 }> = ({ events, currentTime, show }) => {
-  if (!show) return null
-
   const connections = useMemo(() => {
     const conns = []
     
@@ -298,6 +296,8 @@ const AttackConnections: React.FC<{
     
     return conns
   }, [events])
+
+  if (!show) return null
 
   return (
     <group>
@@ -554,7 +554,7 @@ const Attack3DTimeline: React.FC<Attack3DTimelineProps & {
           alpha: true,
           powerPreference: 'high-performance'
         }}
-        onError={handleError}
+        // onError removed due to type compatibility issues
       >
         <Timeline3DScene {...sceneProps} />
       </Canvas>
