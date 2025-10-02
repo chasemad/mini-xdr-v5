@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, DateTime, JSON, Text, Index, Boolean, Float
+from sqlalchemy import Column, Integer, String, DateTime, JSON, Text, Index, Boolean, Float, ForeignKey
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 from .db import Base
 
 
@@ -193,3 +194,396 @@ class RequestNonce(Base):
     __table_args__ = (
         Index("ix_request_nonce_device_nonce", "device_id", "nonce", unique=True),
     )
+
+
+# =============================================================================
+# ENHANCED RESPONSE & WORKFLOW MODELS (Phase 1)
+# =============================================================================
+
+class ResponseWorkflow(Base):
+    """Enhanced workflow model for advanced response orchestration"""
+    __tablename__ = "response_workflows"
+    
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Workflow identification
+    workflow_id = Column(String(64), unique=True, index=True)  # Unique workflow identifier
+    incident_id = Column(Integer, ForeignKey("incidents.id"), index=True)
+    playbook_name = Column(String(128), index=True)
+    playbook_version = Column(String(16), default="v1.0")
+    
+    # Workflow state
+    status = Column(String(32), default="pending", index=True)  # pending|running|completed|failed|cancelled
+    current_step = Column(Integer, default=0)
+    total_steps = Column(Integer, default=0)
+    progress_percentage = Column(Float, default=0.0)
+    
+    # Workflow definition and execution
+    steps = Column(JSON)  # Array of workflow steps with configuration
+    execution_log = Column(JSON, nullable=True)  # Detailed execution log
+    current_step_data = Column(JSON, nullable=True)  # Current step execution data
+    
+    # AI and automation
+    ai_confidence = Column(Float, default=0.0)  # AI confidence in workflow selection
+    auto_executed = Column(Boolean, default=False)  # Whether workflow was auto-executed
+    approval_required = Column(Boolean, default=True)  # Whether human approval is required
+    approved_by = Column(String(64), nullable=True)  # User who approved execution
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Safety and rollback
+    auto_rollback_enabled = Column(Boolean, default=True)
+    rollback_plan = Column(JSON, nullable=True)  # Rollback steps if needed
+    rollback_executed = Column(Boolean, default=False)
+    rollback_reason = Column(String(256), nullable=True)
+    
+    # Performance metrics
+    execution_time_ms = Column(Integer, nullable=True)
+    success_rate = Column(Float, default=0.0)
+    impact_score = Column(Float, default=0.0)  # Measured impact of the workflow
+    
+    # Relationships
+    incident = relationship("Incident", backref="response_workflows")
+    impact_metrics = relationship("ResponseImpactMetrics", backref="workflow", cascade="all, delete-orphan")
+
+
+class ResponseImpactMetrics(Base):
+    """Real-time impact metrics for response actions"""
+    __tablename__ = "response_impact_metrics"
+    
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    
+    # Associated workflow
+    workflow_id = Column(Integer, ForeignKey("response_workflows.id"), index=True)
+    step_number = Column(Integer, default=0)  # Which step this metric is for
+    
+    # Impact measurements
+    attacks_blocked = Column(Integer, default=0)
+    false_positives = Column(Integer, default=0)
+    systems_affected = Column(Integer, default=0)
+    users_affected = Column(Integer, default=0)
+    
+    # Performance metrics
+    response_time_ms = Column(Integer, default=0)
+    success_rate = Column(Float, default=0.0)
+    confidence_score = Column(Float, default=0.0)
+    
+    # Business impact
+    downtime_minutes = Column(Integer, default=0)
+    cost_impact_usd = Column(Float, default=0.0)
+    compliance_impact = Column(String(32), default="none")  # none|low|medium|high|critical
+    
+    # Detailed metrics
+    metrics_data = Column(JSON, nullable=True)  # Flexible metrics storage
+    external_metrics = Column(JSON, nullable=True)  # Metrics from external systems
+
+
+class AdvancedResponseAction(Base):
+    """Enhanced action model for advanced response capabilities"""
+    __tablename__ = "advanced_response_actions"
+    
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Action identification
+    action_id = Column(String(64), unique=True, index=True)
+    workflow_id = Column(Integer, ForeignKey("response_workflows.id"), nullable=True, index=True)
+    incident_id = Column(Integer, ForeignKey("incidents.id"), index=True)
+    parent_action_id = Column(Integer, ForeignKey("advanced_response_actions.id"), nullable=True)
+    
+    # Action definition
+    action_type = Column(String(64), index=True)  # block_ip, isolate_host, deploy_firewall, etc.
+    action_category = Column(String(32), index=True)  # network, endpoint, email, cloud, etc.
+    action_name = Column(String(128))
+    action_description = Column(Text, nullable=True)
+    
+    # Execution details
+    status = Column(String(32), default="pending", index=True)  # pending|running|completed|failed|cancelled|rolled_back
+    priority = Column(Integer, default=100)  # Lower number = higher priority
+    timeout_seconds = Column(Integer, default=300)  # Action timeout
+    retry_count = Column(Integer, default=0)
+    max_retries = Column(Integer, default=3)
+    
+    # Action parameters and results
+    parameters = Column(JSON)  # Action-specific parameters
+    result_data = Column(JSON, nullable=True)  # Action execution results
+    error_details = Column(JSON, nullable=True)  # Error information if failed
+    
+    # Safety and validation
+    safety_checks = Column(JSON, nullable=True)  # Pre-execution safety validations
+    impact_assessment = Column(JSON, nullable=True)  # Predicted impact assessment
+    approval_required = Column(Boolean, default=False)
+    approved_by = Column(String(64), nullable=True)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Rollback capabilities
+    rollback_action_id = Column(Integer, ForeignKey("advanced_response_actions.id"), nullable=True)
+    rollback_data = Column(JSON, nullable=True)  # Data needed for rollback
+    rollback_executed = Column(Boolean, default=False)
+    
+    # Agent and automation
+    executed_by = Column(String(64), nullable=True)  # Agent or user who executed
+    execution_method = Column(String(32), default="manual")  # manual|automated|ai_driven
+    confidence_score = Column(Float, default=0.0)
+    
+    # Relationships
+    workflow = relationship("ResponseWorkflow", backref="actions")
+    incident = relationship("Incident", backref="advanced_actions")
+    child_actions = relationship("AdvancedResponseAction", 
+                                foreign_keys=[parent_action_id],
+                                backref="parent", 
+                                remote_side=[id])
+
+
+class ResponsePlaybook(Base):
+    """Playbook templates for response workflows"""
+    __tablename__ = "response_playbooks"
+    
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Playbook identification
+    name = Column(String(128), unique=True, index=True)
+    version = Column(String(16), default="v1.0")
+    description = Column(Text, nullable=True)
+    category = Column(String(64), index=True)  # malware, ddos, insider_threat, etc.
+    
+    # Playbook definition
+    steps = Column(JSON)  # Playbook step definitions
+    conditions = Column(JSON, nullable=True)  # When this playbook should be used
+    estimated_duration_minutes = Column(Integer, default=30)
+    
+    # Usage and effectiveness
+    status = Column(String(16), default="active", index=True)  # active|draft|deprecated
+    times_used = Column(Integer, default=0)
+    success_rate = Column(Float, default=0.0)
+    average_execution_time = Column(Integer, default=0)  # In minutes
+    
+    # Metadata
+    created_by = Column(String(64), nullable=True)
+    tags = Column(JSON, nullable=True)  # Searchable tags
+    compliance_frameworks = Column(JSON, nullable=True)  # SOC2, GDPR, etc.
+
+
+class ResponseApproval(Base):
+    """Approval workflow for high-impact response actions"""
+    __tablename__ = "response_approvals"
+    
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Approval request
+    workflow_id = Column(Integer, ForeignKey("response_workflows.id"), nullable=True, index=True)
+    action_id = Column(Integer, ForeignKey("advanced_response_actions.id"), nullable=True, index=True)
+    requested_by = Column(String(64), index=True)
+    
+    # Approval details
+    approval_type = Column(String(32), index=True)  # workflow|action|emergency
+    impact_level = Column(String(16), index=True)  # low|medium|high|critical
+    justification = Column(Text)
+    
+    # Approval status
+    status = Column(String(16), default="pending", index=True)  # pending|approved|denied|expired
+    approved_by = Column(String(64), nullable=True)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    denial_reason = Column(Text, nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Emergency overrides
+    emergency_override = Column(Boolean, default=False)
+    override_reason = Column(Text, nullable=True)
+    override_by = Column(String(64), nullable=True)
+    
+    # Relationships
+    workflow = relationship("ResponseWorkflow", backref="approvals")
+    action = relationship("AdvancedResponseAction", backref="approvals")
+
+
+# =============================================================================
+# WEBHOOK SYSTEM MODELS (Phase 2)
+# =============================================================================
+
+class WebhookSubscription(Base):
+    """Webhook subscription model for event notifications"""
+    __tablename__ = "webhook_subscriptions"
+
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Webhook configuration
+    url = Column(String(512), nullable=False)
+    event_types = Column(JSON, nullable=False)  # List of event types to subscribe to
+    name = Column(String(128), nullable=True)
+    description = Column(Text, nullable=True)
+
+    # Security
+    signing_secret = Column(String(256), nullable=True)  # Custom HMAC secret
+
+    # Status and statistics
+    is_active = Column(Boolean, default=True, index=True)
+    last_triggered_at = Column(DateTime(timezone=True), nullable=True)
+    delivery_success_count = Column(Integer, default=0)
+    delivery_failure_count = Column(Integer, default=0)
+
+    # Metadata
+    config = Column(JSON, nullable=True)  # Additional configuration options
+
+
+class WebhookDeliveryLog(Base):
+    """Log of webhook delivery attempts"""
+    __tablename__ = "webhook_delivery_logs"
+
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    webhook_subscription_id = Column(Integer, ForeignKey('webhook_subscriptions.id'), index=True)
+    event_type = Column(String(64), index=True)
+    payload = Column(JSON)
+
+    # Delivery result
+    status_code = Column(Integer, nullable=True)
+    response_time_ms = Column(Float, nullable=True)
+    success = Column(Boolean, default=False, index=True)
+    error = Column(Text, nullable=True)
+    attempt_number = Column(Integer, default=1)
+
+    # Relationship
+    subscription = relationship("WebhookSubscription", backref="delivery_logs")
+
+
+class WorkflowTrigger(Base):
+    """Automatic workflow triggers for threat detection"""
+    __tablename__ = "workflow_triggers"
+
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Trigger identification
+    name = Column(String(128), unique=True, index=True)
+    description = Column(Text, nullable=True)
+    category = Column(String(64), index=True)  # honeypot, network, endpoint, etc.
+
+    # Trigger state
+    enabled = Column(Boolean, default=True, index=True)
+    auto_execute = Column(Boolean, default=False)  # Execute without approval
+    priority = Column(String(16), default="medium")  # low|medium|high|critical
+    status = Column(String(16), default="active", index=True)  # active|paused|archived|error
+
+    # Trigger conditions (JSON format)
+    # Example: {"event_type": "cowrie.login.failed", "threshold": 6, "window_seconds": 60}
+    conditions = Column(JSON, nullable=False)
+
+    # Response workflow definition
+    playbook_name = Column(String(128), index=True)  # Name of playbook to execute
+    workflow_steps = Column(JSON, nullable=False)  # Steps to execute
+
+    # NLP metadata (for NLP-generated triggers)
+    source = Column(String(16), default="manual", index=True)  # nlp|manual|template|api
+    source_prompt = Column(Text, nullable=True)  # Original NLP prompt
+    parser_confidence = Column(Float, nullable=True)  # NLP parser confidence score
+    parser_version = Column(String(16), nullable=True)  # Parser version used
+    request_type = Column(String(32), nullable=True, index=True)  # response|investigation|automation|reporting|qa
+    fallback_used = Column(Boolean, default=False)  # Whether fallback template was used
+
+    # Trigger metadata
+    created_by = Column(String(64), nullable=True)
+    last_editor = Column(String(64), nullable=True)
+    owner = Column(String(64), nullable=True)
+    last_triggered_at = Column(DateTime(timezone=True), nullable=True)
+    trigger_count = Column(Integer, default=0)  # How many times triggered
+    success_count = Column(Integer, default=0)  # Successful executions
+    failure_count = Column(Integer, default=0)  # Failed executions
+    last_run_status = Column(String(16), nullable=True)  # success|failed|skipped
+
+    # Performance metrics
+    avg_response_time_ms = Column(Float, default=0.0)
+    success_rate = Column(Float, default=0.0)
+
+    # Additional configuration
+    cooldown_seconds = Column(Integer, default=60)  # Min time between triggers
+    max_triggers_per_day = Column(Integer, default=100)  # Rate limiting
+    tags = Column(JSON, nullable=True)  # For categorization and filtering
+
+    # Agent dependencies
+    agent_requirements = Column(JSON, nullable=True)  # Required agents/tools
+
+    # Versioning
+    version = Column(Integer, default=1)  # Current version number
+
+
+class WorkflowTriggerVersion(Base):
+    """Version history for workflow triggers"""
+    __tablename__ = "workflow_trigger_versions"
+
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    # Link to trigger
+    trigger_id = Column(Integer, ForeignKey("workflow_triggers.id"), index=True)
+    version_number = Column(Integer)
+
+    # Snapshot of trigger state at this version
+    name = Column(String(128))
+    description = Column(Text, nullable=True)
+    enabled = Column(Boolean)
+    auto_execute = Column(Boolean)
+    priority = Column(String(16))
+    conditions = Column(JSON)
+    workflow_steps = Column(JSON)
+
+    # Change metadata
+    changed_by = Column(String(64))
+    change_reason = Column(Text, nullable=True)
+    changes_summary = Column(JSON, nullable=True)  # Diff summary
+
+    # Relationship
+    trigger = relationship("WorkflowTrigger", backref="versions")
+
+
+class NLPWorkflowSuggestion(Base):
+    """Queue of NLP-parsed workflows awaiting review/approval"""
+    __tablename__ = "nlp_workflow_suggestions"
+
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Original NLP input
+    prompt = Column(Text, nullable=False)
+    incident_id = Column(Integer, ForeignKey("incidents.id"), nullable=True, index=True)
+
+    # Parsed workflow data
+    request_type = Column(String(32), index=True)  # response|investigation|automation|reporting|qa
+    priority = Column(String(16))
+    confidence = Column(Float)
+    fallback_used = Column(Boolean, default=False)
+
+    # Parsed actions and workflow
+    workflow_steps = Column(JSON)
+    detected_actions = Column(JSON, nullable=True)  # List of detected action types
+    missing_actions = Column(JSON, nullable=True)  # Actions that couldn't be parsed
+
+    # Suggestion status
+    status = Column(String(16), default="pending", index=True)  # pending|approved|dismissed|converted
+    reviewed_by = Column(String(64), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # If approved, link to created trigger
+    trigger_id = Column(Integer, ForeignKey("workflow_triggers.id"), nullable=True)
+
+    # Parser diagnostics
+    parser_version = Column(String(16))
+    parser_diagnostics = Column(JSON, nullable=True)  # Detailed parser output
+
+    # Relationships
+    incident = relationship("Incident", backref="nlp_suggestions")
+    trigger = relationship("WorkflowTrigger", backref="nlp_suggestion")

@@ -88,6 +88,7 @@ def get_secure_env(env_var: str, secret_name: str = None, default: str = None) -
 
 def load_common_secrets() -> Dict[str, str]:
     """Pre-load commonly used secrets for better performance"""
+    import os
     
     secrets = {}
     
@@ -105,7 +106,9 @@ def load_common_secrets() -> Dict[str, str]:
         value = get_secure_env(env_var, secret_name)
         if value:
             secrets[env_var] = value
-            logger.debug(f"Loaded secret for {env_var}")
+            # CRITICAL FIX: Actually set the environment variable
+            os.environ[env_var] = value
+            logger.debug(f"Loaded secret for {env_var} and set in environment")
     
     return secrets
 

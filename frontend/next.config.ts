@@ -22,11 +22,11 @@ const nextConfig: NextConfig = {
   async headers() {
     const isDevelopment = process.env.NODE_ENV === 'development'
     
-    // Development CSP allows unsafe directives for Next.js hot reloading
-    const devCSP = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' http://localhost:8000 http://54.237.168.3:8000 ws://localhost:8000 ws://54.237.168.3:8000 wss://localhost:8000 wss://54.237.168.3:8000;"
-    
-    // Production CSP is more restrictive
-    const prodCSP = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' http://localhost:8000 http://54.237.168.3:8000 ws://localhost:8000 ws://54.237.168.3:8000 wss://localhost:8000 wss://54.237.168.3:8000;"
+    // Enhanced Development CSP - Secure while allowing Next.js development features
+    const devCSP = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https: http://localhost:8000; connect-src 'self' http://localhost:8000 http://54.237.168.3:8000 ws://localhost:8000 ws://54.237.168.3:8000 wss://localhost:8000 wss://54.237.168.3:8000 https://api.github.com https://cdn.jsdelivr.net; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none';"
+
+    // Production CSP - Maximum security for enterprise deployment
+    const prodCSP = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://54.237.168.3:8000 wss://54.237.168.3:8000 https://api.github.com https://cdn.jsdelivr.net; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests;"
 
     return [
       {
@@ -58,7 +58,23 @@ const nextConfig: NextConfig = {
           },
           {
             key: 'Strict-Transport-Security',
-            value: 'max-age=31536000; includeSubDomains'
+            value: 'max-age=31536000; includeSubDomains; preload'
+          },
+          {
+            key: 'Cross-Origin-Embedder-Policy',
+            value: 'require-corp'
+          },
+          {
+            key: 'Cross-Origin-Opener-Policy',
+            value: 'same-origin'
+          },
+          {
+            key: 'Cross-Origin-Resource-Policy',
+            value: 'cross-origin'
+          },
+          {
+            key: 'X-DNS-Prefetch-Control',
+            value: 'off'
           }
         ]
       }

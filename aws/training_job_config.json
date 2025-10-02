@@ -1,0 +1,57 @@
+{
+    "TrainingJobName": "enhanced-xdr-real-data-20250929-070000",
+    "RoleArn": "arn:aws:iam::675076709589:role/SageMakerExecutionRole",
+    "AlgorithmSpecification": {
+        "TrainingImage": "763104351884.dkr.ecr.us-east-1.amazonaws.com/pytorch-training:2.0.1-gpu-py310-cu118-ubuntu20.04-sagemaker",
+        "TrainingInputMode": "File"
+    },
+    "InputDataConfig": [
+        {
+            "ChannelName": "training",
+            "DataSource": {
+                "S3DataSource": {
+                    "S3DataType": "S3Prefix",
+                    "S3Uri": "s3://mini-xdr-ml-data-bucket-675076709589/data/train",
+                    "S3DataDistributionType": "FullyReplicated"
+                }
+            },
+            "ContentType": "text/csv",
+            "CompressionType": "None"
+        }
+    ],
+    "OutputDataConfig": {
+        "S3OutputPath": "s3://mini-xdr-ml-data-bucket-675076709589/enhanced_models/"
+    },
+    "ResourceConfig": {
+        "InstanceType": "ml.p3.2xlarge",
+        "InstanceCount": 1,
+        "VolumeSizeInGB": 100
+    },
+    "StoppingCondition": {
+        "MaxRuntimeInSeconds": 14400
+    },
+    "HyperParameters": {
+        "hidden-dims": "512,256,128,64",
+        "num-classes": "7",
+        "dropout-rate": "0.3",
+        "use-attention": "True",
+        "batch-size": "256",
+        "epochs": "50",
+        "learning-rate": "0.001",
+        "patience": "15",
+        "use-cuda": "True",
+        "sagemaker_program": "enhanced_sagemaker_train_real.py",
+        "sagemaker_submit_directory": "s3://mini-xdr-ml-data-bucket-675076709589/code/enhanced_training_code_real.tar.gz"
+    },
+    "Environment": {
+        "SM_MODEL_DIR": "/opt/ml/model",
+        "SM_OUTPUT_DIR": "/opt/ml/output",
+        "SM_CHANNEL_TRAINING": "/opt/ml/input/data/training"
+    },
+    "CheckpointConfig": {
+        "S3Uri": "s3://mini-xdr-ml-data-bucket-675076709589/checkpoints/enhanced-xdr-real-data-20250929-070000/"
+    },
+    "EnableNetworkIsolation": false,
+    "EnableInterContainerTrafficEncryption": false,
+    "EnableManagedSpotTraining": false
+}

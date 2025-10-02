@@ -16,19 +16,30 @@ from sqlalchemy import delete, select
 
 from .db import AsyncSessionLocal
 from .models import AgentCredential, RequestNonce
+from .config import settings
 
 MAX_CLOCK_SKEW_SECONDS = 300  # +/- 5 minutes
 NONCE_TTL_SECONDS = 600
 SECURED_PREFIXES = ("/ingest", "/api")
+
+# Paths that bypass HMAC authentication (use simple API key instead)
+SIMPLE_AUTH_PREFIXES = [
+    "/api/response",  # All response system endpoints use simple API key
+    "/api/intelligence",  # Visualization endpoints
+    "/api/incidents",  # Incident endpoints including AI analysis
+    "/api/ml",  # ML and SageMaker endpoints
+    "/api/workflows",  # Workflow and NLP endpoints
+    "/api/nlp-suggestions",  # NLP workflow suggestions
+    "/api/triggers",  # Workflow trigger management endpoints
+    "/api/agents",  # Agent orchestration and chat endpoints
+    "/ingest/multi"  # Multi-source ingestion (for testing - use HMAC in production)
+]
+
 ALLOWED_PATHS = {
-    "/health", 
-    "/docs", 
+    "/health",
+    "/docs",
     "/openapi.json",
-    # Visualization API endpoints for frontend dashboard
-    "/api/intelligence/threats",
-    "/api/intelligence/distributed-threats", 
-    "/api/incidents/timeline",
-    "/api/incidents/attack-paths"
+    "/api/auth/config"
 }
 
 
@@ -38,6 +49,22 @@ def build_canonical_message(method: str, path: str, body: str, timestamp: str, n
 
 def compute_signature(secret_hash: str, canonical_message: str) -> str:
     return hmac.new(secret_hash.encode("utf-8"), canonical_message.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def require_api_key(request: Request) -> bool:
+    """Simple API key authentication for trigger endpoints"""
+    if not settings.api_key:
+        # If no API key is configured, allow access (for development)
+        return True
+
+    api_key = request.headers.get("x-api-key")
+    if not api_key:
+        raise HTTPException(status_code=401, detail="Missing API key header")
+
+    if not hmac.compare_digest(api_key, settings.api_key):
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    return True
 
 
 def is_timestamp_valid(timestamp: int, now: datetime | None = None, max_skew: int = MAX_CLOCK_SKEW_SECONDS) -> bool:
@@ -147,8 +174,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     def _requires_auth(self, request: Request) -> bool:
         path = request.url.path
+        
+        # Check for paths that don't require any auth
         if path in ALLOWED_PATHS or path.startswith("/static"):
             return False
+            
+        # Check for paths that use simple API key auth (bypass HMAC)
+        if any(path.startswith(prefix) for prefix in SIMPLE_AUTH_PREFIXES):
+            return False
+            
+        # Check if path requires HMAC authentication  
         return any(path.startswith(prefix) for prefix in SECURED_PREFIXES)
 
     async def _get_active_credential(self, session, device_id: str) -> AgentCredential:

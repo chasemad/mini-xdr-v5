@@ -4,6 +4,36 @@ import os
 from pathlib import Path
 
 
+def _load_secrets_on_init():
+    """Load secrets from AWS Secrets Manager before Settings initialization"""
+    # Only load secrets if not already done and if enabled
+    if (os.getenv('SECRETS_MANAGER_ENABLED', 'false').lower() == 'true' and
+        not os.getenv('_SECRETS_LOADED')):
+        try:
+            # Import here to avoid circular imports
+            from .secrets_manager import load_common_secrets
+            secrets = load_common_secrets()
+
+            # Set environment variables for Settings to pick up
+            secrets_loaded = 0
+            for key, value in secrets.items():
+                if value:
+                    os.environ[key] = value
+                    secrets_loaded += 1
+
+            if secrets_loaded > 0:
+                os.environ['_SECRETS_LOADED'] = 'true'
+                print(f"✅ Loaded {secrets_loaded} secrets from AWS Secrets Manager for Settings")
+
+        except ImportError:
+            pass
+        except Exception as e:
+            print(f"Warning: Could not load secrets during Settings init: {e}")
+
+# Load secrets before Settings class is instantiated
+_load_secrets_on_init()
+
+
 class Settings(BaseSettings):
     # API Configuration
     api_host: str = "127.0.0.1"

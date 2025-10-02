@@ -1,0 +1,91 @@
+{
+  "timestamp": "2025-09-30T22:52:44.719917",
+  "total_tests": 4,
+  "passed_tests": 3,
+  "test_results": [
+    {
+      "test_name": "Workflow Creation from Chat",
+      "results": [
+        {
+          "test": "Block IP + Isolate Host",
+          "success": true,
+          "workflow_id": "chat_e96fff94360b",
+          "workflow_db_id": 22,
+          "message": "\u2705 **Workflow Created Successfully!**\n\n\ud83d\udcdd **Parsed Workflow from:** \"Block IP from incident 8 and isolate the host\"\n\n**Priority:** MEDIUM\n**Actions Identified:** 1\n**Confidence:** 60%\n**Approval Require"
+        },
+        {
+          "test": "Alert Security Team",
+          "success": false,
+          "reason": "No workflow created"
+        },
+        {
+          "test": "Identity Protection",
+          "success": true,
+          "workflow_id": "chat_0fba6a86e861",
+          "workflow_db_id": 23,
+          "message": "\u2705 **Workflow Created Successfully!**\n\n\ud83d\udcdd **Parsed Workflow from:** \"Reset passwords and enable MFA for compromised accounts in incident 8\"\n\n**Priority:** MEDIUM\n**Actions Identified:** 1\n**Confidence:*"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test_name": "Investigation Trigger",
+      "results": [
+        {
+          "query": "Investigate this attack pattern and check for simi",
+          "success": true,
+          "case_id": "inv_ca57afef657e",
+          "evidence_count": 0
+        },
+        {
+          "query": "Analyze the events and look for anomalies",
+          "success": true,
+          "case_id": "inv_048261ac75b1",
+          "evidence_count": 0
+        },
+        {
+          "query": "Deep dive into the forensics of this incident",
+          "success": true,
+          "case_id": "inv_cabf63a76a85",
+          "evidence_count": 0
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test_name": "Workflow Sync",
+      "passed": false,
+      "reason": "Workflow not created from chat"
+    },
+    {
+      "test_name": "Attack Type Testing",
+      "results": [
+        {
+          "attack_type": "SSH Brute Force",
+          "workflow_created": false,
+          "investigation_started": false,
+          "success": false
+        },
+        {
+          "attack_type": "DDoS Attack",
+          "workflow_created": true,
+          "investigation_started": false,
+          "success": true
+        },
+        {
+          "attack_type": "Malware Detection",
+          "workflow_created": false,
+          "investigation_started": true,
+          "success": true
+        },
+        {
+          "attack_type": "Data Exfiltration",
+          "workflow_created": true,
+          "investigation_started": false,
+          "success": true
+        }
+      ],
+      "passed": true
+    }
+  ]
+}
