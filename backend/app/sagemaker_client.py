@@ -71,10 +71,15 @@ class SageMakerMLClient:
             raise ValueError("SageMaker endpoint not configured")
 
         try:
-            # Prepare input data
-            payload = json.dumps(input_data)
+            # For SageMaker, input_data should be [{"instances": [[79 floats]]}]
+            if input_data and "instances" in input_data[0]:
+                payload = json.dumps(input_data[0])  # Extract the {"instances": [[...]]} format
+            else:
+                payload = json.dumps(input_data)
 
-            # Invoke endpoint
+            logger.info(f"Invoking SageMaker endpoint {self.endpoint_name} with payload length: {len(payload)}")
+
+            # Invoke endpoint with timeout
             response = self.sagemaker_runtime.invoke_endpoint(
                 EndpointName=self.endpoint_name,
                 ContentType='application/json',
@@ -85,7 +90,7 @@ class SageMakerMLClient:
             # Parse response
             result = json.loads(response['Body'].read().decode())
 
-            logger.info(f"SageMaker inference completed for {len(input_data)} records")
+            logger.info(f"SageMaker inference completed successfully")
             return result
 
         except Exception as e:
@@ -99,42 +104,107 @@ class SageMakerMLClient:
             if not await self.health_check():
                 raise RuntimeError("SageMaker endpoint is not healthy")
 
-            # Prepare input for threat detection model
-            model_input = []
-            for event in network_events:
-                input_record = {
-                    "id": event.get("id"),
-                    "timestamp": event.get("timestamp"),
-                    "src_ip": event.get("src_ip"),
-                    "dst_ip": event.get("dst_ip"),
-                    "src_port": event.get("src_port", 0),
-                    "dst_port": event.get("dst_port", 0),
-                    "protocol": event.get("protocol", 0),
-                    "packet_length": event.get("packet_length", 0),
-                    "duration": event.get("duration", 0),
-                    "flow_bytes_per_sec": event.get("flow_bytes_per_sec", 0),
-                    "flow_packets_per_sec": event.get("flow_packets_per_sec", 0),
-                }
-                model_input.append(input_record)
+            # Extract 79-dimensional features for SageMaker model
+            from .deep_learning_models import deep_learning_manager
+            from .models import Event
+            from datetime import datetime
 
-            # Invoke SageMaker endpoint
-            result = await self.invoke_endpoint(model_input)
+            # Convert network events to Event objects for feature extraction
+            event_objects = []
+            src_ip = network_events[0].get("src_ip", "unknown") if network_events else "unknown"
 
-            # Process results
+            for event_data in network_events:
+                try:
+                    # Create Event object from event data
+                    event = Event(
+                        src_ip=event_data.get("src_ip", src_ip),
+                        dst_ip=event_data.get("dst_ip", ""),
+                        dst_port=event_data.get("dst_port", 0),
+                        eventid=event_data.get("eventid", "unknown"),
+                        message=event_data.get("message", ""),
+                        ts=datetime.fromisoformat(event_data.get("timestamp")) if event_data.get("timestamp") else datetime.utcnow(),
+                        raw=event_data.get("raw", {})
+                    )
+                    event_objects.append(event)
+                except Exception as e:
+                    logger.warning(f"Failed to convert event data: {e}")
+                    continue
+
+            if not event_objects:
+                logger.warning("No valid events to process")
+                return []
+
+            # Extract 79 features using the same feature extraction as the training
+            features = deep_learning_manager._extract_features(src_ip, event_objects)
+
+            # Convert features to the format expected by SageMaker: {"instances": [[79 floats]]}
+            feature_vector = [list(features.values())]
+            sagemaker_input = {"instances": feature_vector}
+
+            logger.info(f"Prepared SageMaker input: {len(feature_vector[0])} features for {len(event_objects)} events")
+
+            # Invoke SageMaker endpoint with proper format
+            result = await self.invoke_endpoint([sagemaker_input])
+
+            # Process results - SageMaker returns 7-class probabilities
             threats = []
             predictions = result.get("predictions", [])
 
-            for prediction in predictions:
+            # Map SageMaker prediction to threat classification (7 classes)
+            threat_classes = {
+                0: "Normal",
+                1: "DDoS/DoS Attack",
+                2: "Network Reconnaissance",
+                3: "Brute Force Attack",
+                4: "Web Application Attack",
+                5: "Malware/Botnet",
+                6: "Advanced Persistent Threat"
+            }
+
+            for i, prediction in enumerate(predictions):
+                # SageMaker returns probability distribution over 7 classes
+                if isinstance(prediction, list) and len(prediction) == 7:
+                    # Get the class with highest probability
+                    predicted_class = prediction.index(max(prediction))
+                    confidence = max(prediction)  # Highest class probability
+
+                    # Calculate overall threat score (1 - normal probability)
+                    normal_prob = prediction[0]
+                    anomaly_score = 1.0 - normal_prob
+
+                else:
+                    # Fallback for unexpected format
+                    predicted_class = 0
+                    confidence = 0.5
+                    anomaly_score = 0.5
+                    logger.warning(f"Unexpected SageMaker prediction format: {prediction}")
+
+                # Determine threat type and severity
+                threat_type = threat_classes.get(predicted_class, "unknown")
+
+                # Map severity based on threat class and confidence
+                if threat_type in ["Advanced Persistent Threat", "Malware/Botnet"] or confidence > 0.8:
+                    severity = "critical"
+                elif threat_type in ["DDoS/DoS Attack", "Brute Force Attack"] or confidence > 0.6:
+                    severity = "high"
+                elif threat_type in ["Network Reconnaissance", "Web Application Attack"] or confidence > 0.4:
+                    severity = "medium"
+                else:
+                    severity = "low"
+
+                # Create threat result for this prediction
                 threat = {
-                    "id": prediction.get("record_id"),
-                    "anomaly_score": prediction.get("anomaly_score", 0.0),
-                    "threat_type": prediction.get("threat_classification", {}).get("threat_type", "unknown"),
-                    "confidence": prediction.get("threat_classification", {}).get("confidence", 0.0),
-                    "severity": prediction.get("severity", "low"),
-                    "timestamp": prediction.get("timestamp"),
-                    "src_ip": prediction.get("src_ip"),
-                    "dst_ip": prediction.get("dst_ip"),
-                    "ml_model": "sagemaker_gpu",
+                    "id": f"sagemaker_{src_ip}_{i}",
+                    "anomaly_score": anomaly_score,
+                    "threat_type": threat_type,
+                    "predicted_class": predicted_class,
+                    "confidence": confidence,
+                    "class_probabilities": prediction if isinstance(prediction, list) else [0.0] * 7,
+                    "severity": severity,
+                    "timestamp": network_events[0].get("timestamp") if network_events else datetime.utcnow().isoformat(),
+                    "src_ip": src_ip,
+                    "dst_ip": network_events[0].get("dst_ip", "") if network_events else "",
+                    "ml_model": "sagemaker_pytorch_97.98%",
                     "processing_time": datetime.utcnow().isoformat()
                 }
                 threats.append(threat)

@@ -97,6 +97,13 @@ models/
 *.onnx
 *.pb
 
+# Training data files (too large for GitHub)
+**/training_data/*.npy
+**/training_data/*.npz
+aws/training_data/
+aws/enhanced_training_code*.tar.gz
+aws/sourcedir.tar.gz
+
 # Archives
 *.zip
 *.tar.gz

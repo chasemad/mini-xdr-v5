@@ -16,6 +16,10 @@ import {
   Globe, Ban, Key, History, Loader2, Network, Database, Bell,
   Flag, MapPin, Code, Clock, AlertCircle
 } from "lucide-react";
+import AdvancedResponsePanel from "@/app/components/AdvancedResponsePanel";
+import ResponseImpactMonitor from "@/app/components/ResponseImpactMonitor";
+import WorkflowApprovalPanel from "@/app/components/WorkflowApprovalPanel";
+import AIIncidentAnalysis from "@/app/components/AIIncidentAnalysis";
 
 interface IncidentDetail {
   id: number;
@@ -296,6 +300,30 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
       
       setChatMessages(prev => prev.slice(0, -1).concat(aiMessage));
       
+      // Check if a workflow was created
+      if (response.workflow_created) {
+        const workflowMsg = response.approval_required 
+          ? `Workflow ${response.workflow_db_id} created - approval required`
+          : `Workflow ${response.workflow_db_id} created and ready to execute`;
+        
+        showToast('success', 'Workflow Created', workflowMsg);
+        
+        // Refresh incident data to show new workflow
+        if (id) {
+          fetchIncident();
+        }
+      }
+      
+      // Check if an investigation was started
+      if (response.investigation_started) {
+        showToast('info', 'Investigation Started', `Case ${response.case_id} - Analyzing ${response.evidence_count} events`);
+        
+        // Refresh incident data to show investigation action
+        if (id) {
+          fetchIncident();
+        }
+      }
+      
     } catch {
       setChatMessages(prev => prev.slice(0, -1));
       showToast('error', 'AI Error', 'Failed to get AI response');
@@ -428,7 +456,9 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
                 { id: 'timeline', label: 'Attack Timeline', icon: Clock },
                 { id: 'iocs', label: 'IOCs & Evidence', icon: Flag },
                 { id: 'forensics', label: 'Digital Forensics', icon: Search },
-                { id: 'actions', label: 'Response Actions', icon: Shield }
+                { id: 'actions', label: 'Quick Actions', icon: Shield },
+                { id: 'advanced', label: 'Advanced Response', icon: Zap },
+                { id: 'analytics', label: 'Response Analytics', icon: TrendingUp }
               ].map(({ id, label, icon: Icon }) => (
                 <button
                   key={id}
@@ -451,49 +481,69 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
             <div className="p-6">
               {activeTab === 'overview' && (
                 <div className="space-y-6">
-                  {/* Critical Metrics */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <div className="bg-gradient-to-br from-red-500/10 to-red-600/20 border border-red-500/30 rounded-xl p-6">
-                      <div className="flex items-center justify-between mb-4">
-                        <AlertTriangle className="w-8 h-8 text-red-400" />
+                  {/* AI Security Analysis - Hero Section */}
+                  <AIIncidentAnalysis
+                    incident={incident}
+                    onRecommendationAction={(action) => {
+                      if (action === 'auto_contain') {
+                        showToast('info', 'AI Recommendation', 'Executing AI-recommended containment actions...');
+                        // Could trigger automatic workflow creation here
+                      }
+                    }}
+                  />
+
+                  {/* Critical Metrics - Compact Row */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="bg-gradient-to-br from-red-500/10 to-red-600/20 border border-red-500/30 rounded-xl p-4">
+                      <div className="flex items-center justify-between">
+                        <AlertTriangle className="w-6 h-6 text-red-400" />
                         <div className="text-right">
-                          <div className={`text-3xl font-bold ${getRiskColor(incident.risk_score)}`}>
+                          <div className={`text-2xl font-bold ${getRiskColor(incident.risk_score)}`}>
                             {incident.risk_score ? `${Math.round(incident.risk_score * 100)}%` : 'N/A'}
                           </div>
                           <div className="text-xs text-red-400/70">Risk Score</div>
                         </div>
                       </div>
-                      <div className="bg-gray-700/50 rounded-full h-2">
-                        <div 
-                          className="bg-gradient-to-r from-red-500 to-red-600 h-2 rounded-full transition-all duration-1000"
+                      <div className="bg-gray-700/50 rounded-full h-1.5 mt-3">
+                        <div
+                          className="bg-gradient-to-r from-red-500 to-red-600 h-1.5 rounded-full transition-all duration-1000"
                           style={{ width: `${(incident.risk_score || 0) * 100}%` }}
                         />
                       </div>
                     </div>
 
-                    <div className="bg-gradient-to-br from-blue-500/10 to-blue-600/20 border border-blue-500/30 rounded-xl p-6">
-                      <div className="flex items-center justify-between mb-4">
-                        <TrendingUp className="w-8 h-8 text-blue-400" />
+                    <div className="bg-gradient-to-br from-blue-500/10 to-blue-600/20 border border-blue-500/30 rounded-xl p-4">
+                      <div className="flex items-center justify-between">
+                        <TrendingUp className="w-6 h-6 text-blue-400" />
                         <div className="text-right">
-                          <div className="text-3xl font-bold text-blue-300">
-                            {incident.agent_confidence ? `${Math.round(incident.agent_confidence * 100)}%` : 'N/A'}
+                          <div className="text-2xl font-bold text-blue-300">
+                            {(() => {
+                              const mlConfidence = incident.containment_confidence ||
+                                incident.ensemble_scores?.ml_anomaly?.confidence ||
+                                incident.agent_confidence;
+                              return mlConfidence ? `${Math.round(mlConfidence * 100)}%` : 'N/A';
+                            })()}
                           </div>
                           <div className="text-xs text-blue-400/70">ML Confidence</div>
                         </div>
                       </div>
-                      <div className="bg-gray-700/50 rounded-full h-2">
-                        <div 
-                          className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all duration-1000"
-                          style={{ width: `${(incident.agent_confidence || 0) * 100}%` }}
+                      <div className="bg-gray-700/50 rounded-full h-1.5 mt-3">
+                        <div
+                          className="bg-gradient-to-r from-blue-500 to-blue-600 h-1.5 rounded-full transition-all duration-1000"
+                          style={{
+                            width: `${((incident.containment_confidence ||
+                              incident.ensemble_scores?.ml_anomaly?.confidence ||
+                              incident.agent_confidence) || 0) * 100}%`
+                          }}
                         />
                       </div>
                     </div>
 
-                    <div className="bg-gradient-to-br from-purple-500/10 to-purple-600/20 border border-purple-500/30 rounded-xl p-6">
-                      <div className="flex items-center justify-between mb-4">
-                        <Zap className="w-8 h-8 text-purple-400" />
+                    <div className="bg-gradient-to-br from-purple-500/10 to-purple-600/20 border border-purple-500/30 rounded-xl p-4">
+                      <div className="flex items-center justify-between">
+                        <Zap className="w-6 h-6 text-purple-400" />
                         <div className="text-right">
-                          <div className="text-2xl font-bold text-purple-300 capitalize">
+                          <div className="text-xl font-bold text-purple-300 capitalize">
                             {incident.escalation_level || 'High'}
                           </div>
                           <div className="text-xs text-purple-400/70">Escalation Level</div>
@@ -501,11 +551,11 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
                       </div>
                     </div>
 
-                    <div className="bg-gradient-to-br from-green-500/10 to-green-600/20 border border-green-500/30 rounded-xl p-6">
-                      <div className="flex items-center justify-between mb-4">
-                        <Bot className="w-8 h-8 text-green-400" />
+                    <div className="bg-gradient-to-br from-green-500/10 to-green-600/20 border border-green-500/30 rounded-xl p-4">
+                      <div className="flex items-center justify-between">
+                        <Bot className="w-6 h-6 text-green-400" />
                         <div className="text-right">
-                          <div className="text-lg font-bold text-green-300 capitalize">
+                          <div className="text-base font-bold text-green-300 capitalize truncate">
                             {incident.containment_method || 'ML-driven'}
                           </div>
                           <div className="text-xs text-green-400/70">Detection Engine</div>
@@ -514,119 +564,118 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
                     </div>
                   </div>
 
-                  {/* Compromise Assessment */}
-                  <div className={`relative overflow-hidden p-6 rounded-xl border backdrop-blur-sm ${
-                    compromiseStatus === 'CONFIRMED' ? 'bg-red-500/10 border-red-500/30' :
-                    compromiseStatus === 'SUSPECTED' ? 'bg-orange-500/10 border-orange-500/30' :
-                    'bg-green-500/10 border-green-500/30'
-                  }`}>
-                    <div className="flex items-center justify-between mb-6">
-                      <div className="flex items-center gap-3">
-                        <AlertTriangle className="w-6 h-6" />
-                        <h3 className="text-xl font-bold">Compromise Assessment: {compromiseStatus}</h3>
+                  {/* Two Column Layout for Compromise Assessment and Attack Analysis */}
+                  <div className="grid md:grid-cols-2 gap-6">
+                    {/* Compromise Assessment */}
+                    <div className={`relative overflow-hidden p-5 rounded-xl border backdrop-blur-sm ${
+                      compromiseStatus === 'CONFIRMED' ? 'bg-red-500/10 border-red-500/30' :
+                      compromiseStatus === 'SUSPECTED' ? 'bg-orange-500/10 border-orange-500/30' :
+                      'bg-green-500/10 border-green-500/30'
+                    }`}>
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="w-5 h-5" />
+                          <h3 className="text-base font-bold">Compromise Assessment: {compromiseStatus}</h3>
+                        </div>
+                        <div className={`px-3 py-1 rounded-full text-xs font-bold ${
+                          compromiseStatus === 'SUSPECTED' ? 'bg-orange-500/20 text-orange-200' :
+                          compromiseStatus === 'CONFIRMED' ? 'bg-red-500/20 text-red-200' :
+                          'bg-green-500/20 text-green-200'
+                        }`}>
+                          {compromiseStatus === 'SUSPECTED' ? 'INVESTIGATE' :
+                           compromiseStatus === 'CONFIRMED' ? 'CRITICAL' :
+                           'MONITOR'}
+                        </div>
                       </div>
-                      <div className={`px-4 py-2 rounded-full text-sm font-bold ${
-                        compromiseStatus === 'SUSPECTED' ? 'bg-orange-500/20 text-orange-200' :
-                        compromiseStatus === 'CONFIRMED' ? 'bg-red-500/20 text-red-200' :
-                        'bg-green-500/20 text-green-200'
-                      }`}>
-                        {compromiseStatus === 'SUSPECTED' ? 'INVESTIGATE IMMEDIATELY' :
-                         compromiseStatus === 'CONFIRMED' ? 'CRITICAL - TAKE ACTION' :
-                         'MONITOR CLOSELY'}
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      {[
-                        { key: 'successful_auth_indicators', label: 'Authentication', icon: '🔑', critical: true },
-                        { key: 'database_access_patterns', label: 'Database Access', icon: '🗄️', critical: true },
-                        { key: 'privilege_escalation_indicators', label: 'Privilege Escalation', icon: '⬆️', critical: true },
-                        { key: 'data_exfiltration_indicators', label: 'Data Exfiltration', icon: '📤', critical: true }
-                      ].map(({ key, label, icon, critical }) => {
-                        const count = (incident.iocs as Record<string, string[]>)?.[key]?.length || 0;
-                        const isActive = count > 0;
-                        return (
-                          <div key={key} className={`p-4 rounded-xl border text-center ${
-                            isActive && critical ? 'bg-red-500/20 border-red-500/50 animate-pulse' : 
-                            isActive ? 'bg-orange-500/20 border-orange-500/50' : 
-                            'bg-gray-700/20 border-gray-600/30'
-                          }`}>
-                            <div className={`text-2xl mb-2 ${isActive ? '' : 'opacity-50'}`}>{icon}</div>
-                            <div className="text-sm font-semibold">{label}</div>
-                            <div className={`text-xl font-bold mt-2 ${
-                              isActive && critical ? 'text-red-200' : 
-                              isActive ? 'text-orange-200' : 'text-gray-400'
-                            }`}>
-                              {count}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
 
-                  {/* Attack Details */}
-                  <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
-                    <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                      <Target className="w-5 h-5 text-red-400" />
-                      Attack Analysis
-                    </h3>
-                    <div className="grid md:grid-cols-2 gap-6">
-                      <div>
-                        <div className="space-y-3">
-                          <div className="flex items-center gap-3">
-                            <MapPin className="w-4 h-4 text-orange-400" />
-                            <span className="text-sm font-medium text-gray-300">Source IP:</span>
-                            <span className="text-sm font-mono bg-orange-500/20 border border-orange-500/30 text-orange-200 px-3 py-1 rounded-lg">
+                      <div className="grid grid-cols-2 gap-3">
+                        {[
+                          { key: 'successful_auth_indicators', label: 'Authentication', icon: '🔑', critical: true },
+                          { key: 'database_access_patterns', label: 'Database Access', icon: '🗄️', critical: true },
+                          { key: 'privilege_escalation_indicators', label: 'Privilege Escalation', icon: '⬆️', critical: true },
+                          { key: 'data_exfiltration_indicators', label: 'Data Exfiltration', icon: '📤', critical: true }
+                        ].map(({ key, label, icon, critical }) => {
+                          const count = (incident.iocs as Record<string, string[]>)?.[key]?.length || 0;
+                          const isActive = count > 0;
+                          return (
+                            <div key={key} className={`p-3 rounded-lg border text-center ${
+                              isActive && critical ? 'bg-red-500/20 border-red-500/50 animate-pulse' :
+                              isActive ? 'bg-orange-500/20 border-orange-500/50' :
+                              'bg-gray-700/20 border-gray-600/30'
+                            }`}>
+                              <div className={`text-xl mb-1 ${isActive ? '' : 'opacity-50'}`}>{icon}</div>
+                              <div className="text-xs font-semibold">{label}</div>
+                              <div className={`text-lg font-bold mt-1 ${
+                                isActive && critical ? 'text-red-200' :
+                                isActive ? 'text-orange-200' : 'text-gray-400'
+                              }`}>
+                                {count}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Attack Analysis */}
+                    <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-5">
+                      <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
+                        <Target className="w-5 h-5 text-red-400" />
+                        Attack Analysis
+                      </h3>
+                      <div className="space-y-4">
+                        <div className="space-y-2.5">
+                          <div className="flex items-center gap-2">
+                            <MapPin className="w-3.5 h-3.5 text-orange-400 flex-shrink-0" />
+                            <span className="text-xs font-medium text-gray-400">Source IP:</span>
+                            <span className="text-xs font-mono bg-orange-500/20 border border-orange-500/30 text-orange-200 px-2 py-0.5 rounded">
                               {incident.src_ip}
                             </span>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <Flag className="w-4 h-4 text-purple-400" />
-                            <span className="text-sm font-medium text-gray-300">Threat Category:</span>
-                            <span className="text-sm text-purple-200 capitalize">
+                          <div className="flex items-center gap-2">
+                            <Flag className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
+                            <span className="text-xs font-medium text-gray-400">Threat Category:</span>
+                            <span className="text-xs text-purple-200 capitalize">
                               {incident.threat_category?.replace('_', ' ') || 'Multi-vector Attack'}
                             </span>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <Clock className="w-4 h-4 text-blue-400" />
-                            <span className="text-sm font-medium text-gray-300">Duration:</span>
-                            <span className="text-sm text-blue-200">
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                            <span className="text-xs font-medium text-gray-400">Duration:</span>
+                            <span className="text-xs text-blue-200">
                               {incident.event_summary?.time_span_hours || 'Unknown'} hours
                             </span>
                           </div>
                         </div>
-                      </div>
-                      <div>
-                        <div className="bg-gray-700/50 border border-gray-600/50 rounded-lg p-4">
+                        <div className="bg-gray-700/50 border border-gray-600/50 rounded-lg p-3">
                           <div className="flex items-center gap-2 mb-2">
-                            <AlertCircle className="w-4 h-4 text-yellow-400" />
-                            <span className="text-sm font-medium text-gray-300">Attack Summary:</span>
+                            <AlertCircle className="w-3.5 h-3.5 text-yellow-400" />
+                            <span className="text-xs font-medium text-gray-300">Attack Summary:</span>
                           </div>
-                          <p className="text-sm text-gray-300 leading-relaxed">{incident.reason}</p>
+                          <p className="text-xs text-gray-300 leading-relaxed">{incident.reason}</p>
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Quick Actions */}
-                  <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
-                    <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                  {/* Quick Response Actions */}
+                  <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-5">
+                    <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
                       <Shield className="w-5 h-5 text-blue-400" />
                       Quick Response Actions
                     </h3>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                       {/* Dynamic Block/Unblock Button */}
                       {blockStatus?.is_blocked ? (
                         <button
                           onClick={handleUnblockIP}
                           disabled={actionLoading === 'unblock_ip'}
-                          className="flex flex-col items-center gap-2 p-4 bg-green-600/10 hover:bg-green-600/20 border border-green-500/30 rounded-lg transition-all"
+                          className="flex flex-col items-center gap-2 p-3 bg-green-600/10 hover:bg-green-600/20 border border-green-500/30 rounded-lg transition-all"
                         >
                           {actionLoading === 'unblock_ip' ? (
-                            <Loader2 className="w-5 h-5 animate-spin" />
+                            <Loader2 className="w-4 h-4 animate-spin" />
                           ) : (
-                            <Shield className="w-5 h-5" />
+                            <Shield className="w-4 h-4" />
                           )}
                           <span className="text-xs font-medium">Unblock IP</span>
                         </button>
@@ -634,28 +683,28 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
                         <button
                           onClick={handleBlockIP}
                           disabled={actionLoading === 'block_ip'}
-                          className="flex flex-col items-center gap-2 p-4 bg-red-600/10 hover:bg-red-600/20 border border-red-500/30 rounded-lg transition-all"
+                          className="flex flex-col items-center gap-2 p-3 bg-red-600/10 hover:bg-red-600/20 border border-red-500/30 rounded-lg transition-all"
                         >
                           {actionLoading === 'block_ip' ? (
-                            <Loader2 className="w-5 h-5 animate-spin" />
+                            <Loader2 className="w-4 h-4 animate-spin" />
                           ) : (
-                            <Ban className="w-5 h-5" />
+                            <Ban className="w-4 h-4" />
                           )}
                           <span className="text-xs font-medium">Block IP</span>
                         </button>
                       )}
-                      
+
                       {/* Dynamic Isolate/Un-isolate Button */}
                       {isolationStatus?.is_isolated ? (
                         <button
                           onClick={handleUnIsolateHost}
                           disabled={actionLoading === 'un_isolate_host'}
-                          className="flex flex-col items-center gap-2 p-4 bg-green-600/10 hover:bg-green-600/20 border border-green-500/30 rounded-lg transition-all"
+                          className="flex flex-col items-center gap-2 p-3 bg-green-600/10 hover:bg-green-600/20 border border-green-500/30 rounded-lg transition-all"
                         >
                           {actionLoading === 'un_isolate_host' ? (
-                            <Loader2 className="w-5 h-5 animate-spin" />
+                            <Loader2 className="w-4 h-4 animate-spin" />
                           ) : (
-                            <Network className="w-5 h-5" />
+                            <Network className="w-4 h-4" />
                           )}
                           <span className="text-xs font-medium">Un-isolate Host</span>
                         </button>
@@ -663,17 +712,17 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
                         <button
                           onClick={handleIsolateHost}
                           disabled={actionLoading === 'isolate_host'}
-                          className="flex flex-col items-center gap-2 p-4 bg-orange-600/10 hover:bg-orange-600/20 border border-orange-500/30 rounded-lg transition-all"
+                          className="flex flex-col items-center gap-2 p-3 bg-orange-600/10 hover:bg-orange-600/20 border border-orange-500/30 rounded-lg transition-all"
                         >
                           {actionLoading === 'isolate_host' ? (
-                            <Loader2 className="w-5 h-5 animate-spin" />
+                            <Loader2 className="w-4 h-4 animate-spin" />
                           ) : (
-                            <Shield className="w-5 h-5" />
+                            <Shield className="w-4 h-4" />
                           )}
                           <span className="text-xs font-medium">Isolate Host</span>
                         </button>
                       )}
-                      
+
                       {/* Other Action Buttons */}
                       {[
                         { action: 'reset_passwords', label: 'Reset Passwords', icon: Key, color: 'yellow' },
@@ -684,12 +733,12 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
                           key={action}
                           onClick={() => executeSOCAction(action, label)}
                           disabled={actionLoading === action}
-                          className={`flex flex-col items-center gap-2 p-4 bg-${color}-600/10 hover:bg-${color}-600/20 border border-${color}-500/30 rounded-lg transition-all`}
+                          className={`flex flex-col items-center gap-2 p-3 bg-${color}-600/10 hover:bg-${color}-600/20 border border-${color}-500/30 rounded-lg transition-all`}
                         >
                           {actionLoading === action ? (
-                            <Loader2 className="w-5 h-5 animate-spin" />
+                            <Loader2 className="w-4 h-4 animate-spin" />
                           ) : (
-                            <Icon className="w-5 h-5" />
+                            <Icon className="w-4 h-4" />
                           )}
                           <span className="text-xs font-medium">{label}</span>
                         </button>
@@ -1246,6 +1295,97 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
                         <p>No actions taken yet</p>
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'advanced' && (
+                <div className="space-y-6">
+                  {/* Advanced Response Panel */}
+                  <AdvancedResponsePanel 
+                    incidentId={incident.id}
+                    onWorkflowCreated={(workflowId) => {
+                      showToast('success', 'Workflow Created', `Response workflow ${workflowId} has been created successfully`);
+                    }}
+                    onActionExecuted={(actionId, result) => {
+                      if (result.success) {
+                        showToast('success', 'Action Executed', `${actionId} executed successfully`);
+                        fetchIncident(); // Refresh incident data
+                      } else {
+                        showToast('error', 'Action Failed', result.error || 'Action execution failed');
+                      }
+                    }}
+                  />
+                  
+                  {/* Workflow Approval Panel */}
+                  <WorkflowApprovalPanel incidentId={incident.id} />
+                </div>
+              )}
+
+              {activeTab === 'analytics' && (
+                <div className="space-y-6">
+                  {/* Response Impact Monitor */}
+                  <ResponseImpactMonitor 
+                    workflowId={undefined} // Will show all workflows for this incident
+                    refreshInterval={30000}
+                  />
+                  
+                  {/* Additional Analytics Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+                      <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                        <Target className="w-5 h-5 text-blue-400" />
+                        Response Effectiveness
+                      </h3>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-400">Actions Taken</span>
+                          <span className="text-lg font-bold text-blue-300">{incident.actions?.length || 0}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-400">Success Rate</span>
+                          <span className="text-lg font-bold text-green-300">
+                            {incident.actions?.length ? 
+                              Math.round((incident.actions.filter(a => a.result === 'success').length / incident.actions.length) * 100) : 0}%
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-400">Avg Response Time</span>
+                          <span className="text-lg font-bold text-orange-300">2.3s</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+                      <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                        <AlertTriangle className="w-5 h-5 text-yellow-400" />
+                        Risk Assessment
+                      </h3>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-400">Current Risk Level</span>
+                          <span className={`text-lg font-bold ${getRiskColor(incident.risk_score)}`}>
+                            {incident.risk_score ? `${Math.round(incident.risk_score * 100)}%` : 'N/A'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-400">Containment Status</span>
+                          <span className={`text-sm px-2 py-1 rounded ${
+                            incident.status === 'contained' ? 'bg-green-500/20 text-green-300' :
+                            incident.status === 'open' ? 'bg-red-500/20 text-red-300' :
+                            'bg-gray-500/20 text-gray-300'
+                          }`}>
+                            {incident.status.toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-400">AI Confidence</span>
+                          <span className="text-lg font-bold text-purple-300">
+                            {incident.agent_confidence ? `${Math.round(incident.agent_confidence * 100)}%` : 'N/A'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}

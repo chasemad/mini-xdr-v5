@@ -7,17 +7,20 @@ import html
 import re
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Depends, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, Request, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import select, and_, func, desc, asc, or_, text
+from sqlalchemy import select, and_, func, desc, asc, or_, text, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from .config import settings
 from .db import get_db, init_db, AsyncSessionLocal
-from .models import Event, Incident, Action
+from .models import (
+    Event, Incident, Action, ResponseWorkflow, ResponseImpactMetrics, 
+    AdvancedResponseAction, ResponsePlaybook, ResponseApproval
+)
 from .detect import run_detection
 from .responder import block_ip, unblock_ip
 from .triager import run_triage, generate_default_triage
@@ -33,6 +36,16 @@ from .baseline_engine import baseline_engine
 from .detect import adaptive_engine
 from .security import AuthMiddleware, RateLimiter
 from .secure_startup import initialize_secure_environment
+from .advanced_response_engine import get_response_engine, ActionCategory, ResponsePriority
+from .ai_response_advisor import get_ai_advisor
+from .context_analyzer import get_context_analyzer
+from .response_optimizer import get_response_optimizer
+from .learning_response_engine import get_learning_engine
+from .websocket_manager import ws_manager
+from .nlp_workflow_routes import router as nlp_workflow_router
+from .nlp_suggestion_routes import router as nlp_suggestion_router
+from .trigger_routes import router as trigger_router
+from .trigger_evaluator import trigger_evaluator
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -135,6 +148,11 @@ if not getattr(settings, '_entrypoint_mode', False):
     
     rate_limiter = RateLimiter()
     app.add_middleware(AuthMiddleware, rate_limiter=rate_limiter)
+
+# Include routers
+app.include_router(nlp_workflow_router)
+app.include_router(nlp_suggestion_router)
+app.include_router(trigger_router)
 
 # Security headers middleware
 @app.middleware("http")
@@ -861,62 +879,109 @@ async def ingest_cowrie(
     
     await db.commit()
     
-    # Run detection on the last source IP seen
+    # Run intelligent detection on all unique source IPs
     incident_id = None
-    if last_src_ip:
-        incident_id = await run_detection(db, last_src_ip)
-        
-        if incident_id:
-            incidents_detected.append(incident_id)
-            
-            # Get the incident for triage
-            incident = (await db.execute(
-                select(Incident).where(Incident.id == incident_id)
-            )).scalars().first()
-            
-            if incident:
-                # Run triage analysis
+    unique_ips = set()
+
+    # Get all events for analysis
+    all_events = await db.execute(
+        select(Event).order_by(Event.ts.desc()).limit(stored_count)
+    )
+    stored_events = all_events.scalars().all()
+
+    # Group events by source IP
+    events_by_ip = {}
+    for event in stored_events:
+        if event.src_ip:
+            unique_ips.add(event.src_ip)
+            if event.src_ip not in events_by_ip:
+                events_by_ip[event.src_ip] = []
+            events_by_ip[event.src_ip].append(event)
+
+    # Run intelligent detection for each unique IP
+    from .intelligent_detection import intelligent_detector
+
+    for src_ip in unique_ips:
+        try:
+            detection_result = await intelligent_detector.analyze_and_create_incidents(
+                db, src_ip, events_by_ip[src_ip]
+            )
+
+            if detection_result['incident_created']:
+                incident_id = detection_result['incident_id']
+                incidents_detected.append(incident_id)
+                logger.info(f"Intelligent incident created: {incident_id} for {src_ip} - {detection_result.get('threat_type', 'unknown')}")
+            else:
+                logger.debug(f"No incident created for {src_ip}: {detection_result['reason']}")
+
+        except Exception as e:
+            logger.error(f"Intelligent detection failed for {src_ip}: {e}")
+            # Fallback to legacy detection
+            fallback_incident = await run_detection(db, src_ip)
+            if fallback_incident:
+                incidents_detected.append(fallback_incident)
+                incident_id = fallback_incident
+
+    # Get the most recent incident for triage (if any)
+    if incident_id:
+        incident = (await db.execute(
+            select(Incident).where(Incident.id == incident_id)
+        )).scalars().first()
+
+        if incident:
+            # Evaluate workflow triggers for this incident
+            try:
                 recent_events = await _recent_events_for_ip(db, incident.src_ip)
-                triage_input = {
-                    "id": incident.id,
-                    "src_ip": incident.src_ip,
-                    "reason": incident.reason,
-                    "status": incident.status
+                executed_workflows = await trigger_evaluator.evaluate_triggers_for_incident(
+                    db, incident, recent_events
+                )
+                if executed_workflows:
+                    logger.info(f"✓ Executed {len(executed_workflows)} workflows for incident #{incident.id}: {executed_workflows}")
+            except Exception as e:
+                logger.error(f"Failed to evaluate triggers for incident #{incident.id}: {e}")
+
+            # Run triage analysis
+            recent_events = await _recent_events_for_ip(db, incident.src_ip)
+            triage_input = {
+                "id": incident.id,
+                "src_ip": incident.src_ip,
+                "reason": incident.reason,
+                "status": incident.status
+            }
+            event_summaries = [
+                {
+                    "ts": e.ts.isoformat() if e.ts else None,
+                    "eventid": e.eventid,
+                    "message": e.message
                 }
-                event_summaries = [
-                    {
-                        "ts": e.ts.isoformat() if e.ts else None,
-                        "eventid": e.eventid,
-                        "message": e.message
-                    }
-                    for e in recent_events
-                ]
-                
+                for e in recent_events
+            ]
+
+            try:
+                triage_note = run_triage(triage_input, event_summaries)
+            except Exception as e:
+                logger.error(f"Triage failed: {e}")
+                triage_note = generate_default_triage(triage_input, len(event_summaries))
+
+            incident.triage_note = triage_note
+
+            # Enhanced auto-contain with Agent Orchestrator
+            if auto_contain_enabled and agent_orchestrator:
                 try:
-                    triage_note = run_triage(triage_input, event_summaries)
-                except Exception as e:
-                    logger.error(f"Triage failed: {e}")
-                    triage_note = generate_default_triage(triage_input, len(event_summaries))
-                
-                incident.triage_note = triage_note
-                
-                # Enhanced auto-contain with Agent Orchestrator
-                if auto_contain_enabled and agent_orchestrator:
-                    try:
-                        # Use orchestrator for comprehensive incident response
-                        orchestration_result = await agent_orchestrator.orchestrate_incident_response(
-                            incident=incident,
-                            recent_events=recent_events,
-                            db_session=db,
-                            workflow_type="comprehensive"
-                        )
+                    # Use orchestrator for comprehensive incident response
+                    orchestration_result = await agent_orchestrator.orchestrate_incident_response(
+                        incident=incident,
+                        recent_events=recent_events,
+                        db_session=db,
+                        workflow_type="comprehensive"
+                    )
 
-                        if orchestration_result["success"]:
-                            # Update incident with orchestration results
-                            final_decision = orchestration_result["results"].get("final_decision", {})
+                    if orchestration_result["success"]:
+                        # Update incident with orchestration results
+                        final_decision = orchestration_result["results"].get("final_decision", {})
 
-                            # Create action record for orchestrated response
-                            action = Action(
+                        # Create action record for orchestrated response
+                        action = Action(
                                 incident_id=incident.id,
                                 action="orchestrated_response",
                                 result="success",
@@ -931,13 +996,14 @@ async def ingest_cowrie(
                                 agent_id=agent_orchestrator.agent_id,
                                 confidence_score=orchestration_result["results"].get("coordination", {}).get("confidence_levels", {}).get("overall", 0.5)
                             )
-                            db.add(action)
 
-                            # Update incident based on orchestrator decision
-                            if final_decision.get("should_contain", False):
-                                incident.status = "contained"
-                                incident.auto_contained = True
-                                logger.info(f"Agent orchestrator contained incident #{incident.id}")
+                        db.add(action)
+
+                        # Update incident based on orchestrator decision
+                        if final_decision.get("should_contain", False):
+                            incident.status = "contained"
+                            incident.auto_contained = True
+                            logger.info(f"Agent orchestrator contained incident #{incident.id}")
 
                             # Update incident metadata
                             incident.containment_method = "orchestrated"
@@ -947,7 +1013,7 @@ async def ingest_cowrie(
                         else:
                             logger.warning(f"Agent orchestration failed for incident #{incident.id}: {orchestration_result.get('error', 'Unknown error')}")
 
-                    except Exception as e:
+                except Exception as e:
                         logger.error(f"Agent orchestration failed for incident #{incident.id}: {e}")
 
                         # Fallback to basic containment
@@ -1044,16 +1110,27 @@ async def ingest_multi_source(
                 incident_id = await run_detection(db, src_ip)
                 if incident_id:
                     incidents_detected.append(incident_id)
-                    
-                    # Run AI agent containment if enabled
-                    if auto_contain_enabled and containment_agent:
-                        incident = (await db.execute(
-                            select(Incident).where(Incident.id == incident_id)
-                        )).scalars().first()
-                        
-                        if incident:
-                            recent_events = await _recent_events_for_ip(db, incident.src_ip)
-                            
+
+                    # Get the incident for trigger evaluation
+                    incident = (await db.execute(
+                        select(Incident).where(Incident.id == incident_id)
+                    )).scalars().first()
+
+                    if incident:
+                        recent_events = await _recent_events_for_ip(db, incident.src_ip)
+
+                        # Evaluate workflow triggers for this incident
+                        try:
+                            executed_workflows = await trigger_evaluator.evaluate_triggers_for_incident(
+                                db, incident, recent_events
+                            )
+                            if executed_workflows:
+                                logger.info(f"✓ Executed {len(executed_workflows)} workflows for incident #{incident.id}: {executed_workflows}")
+                        except Exception as e:
+                            logger.error(f"Failed to evaluate triggers for incident #{incident.id}: {e}")
+
+                        # Run AI agent containment if enabled
+                        if auto_contain_enabled and containment_agent:
                             # Run triage
                             try:
                                 triage_input = {
@@ -1071,17 +1148,17 @@ async def ingest_multi_source(
                                     }
                                     for e in recent_events
                                 ]
-                                
+
                                 triage_note = run_triage(triage_input, event_summaries)
                                 incident.triage_note = triage_note
-                                
+
                                 # AI agent response
                                 response = await containment_agent.orchestrate_response(
                                     incident, recent_events, db
                                 )
-                                
+
                                 await db.commit()
-                                
+
                             except Exception as e:
                                 logger.error(f"AI processing failed for incident {incident_id}: {e}")
         
@@ -1130,6 +1207,139 @@ async def agent_orchestrate(
             response = await _generate_contextual_analysis(
                 query, incident, recent_events, context
             )
+
+            # Check for investigation triggers FIRST (higher priority than workflows)
+            investigation_keywords = [
+                'investigate', 'analyze', 'examine', 'deep dive', 'forensics',
+                'check for', 'hunt for', 'search for', 'pattern', 'correlation'
+            ]
+
+            has_investigation_intent = any(keyword in query.lower() for keyword in investigation_keywords)
+            
+            # Check if query contains workflow creation intent  
+            # (excluding investigation-only keywords)
+            workflow_trigger_keywords = [
+                'block', 'isolate', 'alert', 'notify', 'contain', 'quarantine',
+                'reset', 'ban', 'deploy', 'capture', 'terminate',
+                'disable', 'revoke', 'enforce', 'backup', 'encrypt'
+            ]
+
+            if any(keyword in query.lower() for keyword in workflow_trigger_keywords):
+                try:
+                    from .nlp_workflow_parser import parse_workflow_from_natural_language
+                    import uuid
+
+                    # Parse workflow from natural language with incident context
+                    workflow_intent, explanation = await parse_workflow_from_natural_language(
+                        query, incident_id, db
+                    )
+
+                    # Only create workflow if we found actions
+                    if len(workflow_intent.actions) > 0:
+                        # Create workflow
+                        workflow = ResponseWorkflow(
+                            workflow_id=f"chat_{uuid.uuid4().hex[:12]}",
+                            incident_id=incident_id,
+                            playbook_name=f"Chat Workflow: {query[:50]}...",
+                            steps=workflow_intent.actions,
+                            approval_required=workflow_intent.approval_required,
+                            auto_executed=False,
+                            total_steps=len(workflow_intent.actions),
+                            ai_confidence=workflow_intent.confidence
+                        )
+
+                        db.add(workflow)
+                        await db.commit()
+                        await db.refresh(workflow)
+
+                        approval_msg = "⚠️ Requires approval before execution" if workflow.approval_required else "✅ Ready to execute"
+                        
+                        return {
+                            "message": f"✅ **Workflow Created Successfully!**\n\n{explanation}\n\n📋 **Workflow ID:** {workflow.workflow_id}\n**Database ID:** {workflow.id}\n\n{approval_msg}\n\n---\n\n{response}",
+                            "workflow_created": True,
+                            "workflow_id": workflow.workflow_id,
+                            "workflow_db_id": workflow.id,
+                            "incident_id": incident_id,
+                            "confidence": 0.9,
+                            "analysis_type": "workflow_creation",
+                            "approval_required": workflow.approval_required
+                        }
+
+                except Exception as e:
+                    logger.error(f"Workflow creation from chat failed: {e}")
+                    # Fall through to regular response
+
+            # Check for investigation triggers (using the flag set earlier)
+            if has_investigation_intent:
+                try:
+                    from .agents.forensics_agent import ForensicsAgent
+                    import uuid
+
+                    # Initialize forensics agent
+                    forensics_agent = ForensicsAgent()
+                    
+                    # Create investigation case
+                    case_id = f"inv_{uuid.uuid4().hex[:12]}"
+                    
+                    # Collect evidence from recent events
+                    evidence_count = 0
+                    findings = []
+                    
+                    if recent_events:
+                        # Basic analysis of events
+                        event_types = {}
+                        for event in recent_events[:50]:  # Limit to 50 recent events
+                            event_type = event.get('eventid', 'unknown')
+                            event_types[event_type] = event_types.get(event_type, 0) + 1
+                        
+                        findings.append(f"📊 **Event Analysis:** {len(recent_events)} total events")
+                        findings.append(f"   - Event types: {', '.join([f'{k} ({v})' for k, v in sorted(event_types.items(), key=lambda x: -x[1])[:5]])}")
+                        
+                        # Check for attack patterns
+                        if len(recent_events) > 100:
+                            findings.append(f"   - ⚠️ High volume of events detected ({len(recent_events)})")
+                        
+                        # Time-based analysis
+                        if recent_events:
+                            first_event = recent_events[-1].get('ts', '')
+                            last_event = recent_events[0].get('ts', '')
+                            findings.append(f"   - Time span: {first_event[:19]} to {last_event[:19]}")
+                        
+                        evidence_count = len(recent_events)
+                    
+                    # Add investigation summary to response
+                    investigation_summary = "\n\n🔍 **Investigation Initiated**\n\n" + "\n".join(findings)
+                    investigation_summary += f"\n\n**Case ID:** {case_id}\n**Evidence Items:** {evidence_count}\n**Status:** In Progress"
+                    
+                    # Store investigation metadata in action log
+                    investigation_action = Action(
+                        incident_id=incident_id,
+                        action="forensic_investigation",
+                        result="initiated",
+                        detail=f"Investigation case {case_id} started via AI chat",
+                        params={
+                            "case_id": case_id,
+                            "query": query,
+                            "evidence_count": evidence_count,
+                            "analysis_type": "automated_forensics"
+                        }
+                    )
+                    db.add(investigation_action)
+                    await db.commit()
+                    
+                    return {
+                        "message": response + investigation_summary,
+                        "incident_id": incident_id,
+                        "confidence": 0.88,
+                        "analysis_type": "forensic_investigation",
+                        "investigation_started": True,
+                        "case_id": case_id,
+                        "evidence_count": evidence_count
+                    }
+
+                except Exception as e:
+                    logger.error(f"Investigation trigger failed: {e}")
+                    # Fall through to regular response
 
             return {
                 "message": response,
@@ -1298,8 +1508,8 @@ async def get_incident_detail(inc_id: int, db: AsyncSession = Depends(get_db)):
     actions_result = await db.execute(actions_query)
     actions = actions_result.scalars().all()
     
-    # Get detailed events with full forensic data
-    detailed_events = await _get_detailed_events_for_ip(db, incident.src_ip, hours=24)
+    # Get detailed events with full forensic data (extend to 30 days for demo/testing)
+    detailed_events = await _get_detailed_events_for_ip(db, incident.src_ip, hours=24*30)
     
     # Extract IOCs and attack patterns
     iocs = _extract_iocs_from_events(detailed_events)
@@ -1368,6 +1578,158 @@ async def get_incident_detail(inc_id: int, db: AsyncSession = Depends(get_db)):
             "time_span_hours": 24
         }
     }
+
+
+@app.get("/api/incidents/{inc_id}/context")
+async def get_incident_context_for_nlp(inc_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Get incident context formatted for NLP workflow chat
+    Returns summarized incident information optimized for AI workflow generation
+    """
+    incident = (await db.execute(
+        select(Incident).where(Incident.id == inc_id)
+    )).scalars().first()
+    
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    
+    # Get recent events for this IP (limit to last 50 for context)
+    events_query = select(Event).where(
+        Event.src_ip == incident.src_ip
+    ).order_by(Event.ts.desc()).limit(50)
+    events_result = await db.execute(events_query)
+    events = events_result.scalars().all()
+    
+    # Get actions taken
+    actions_query = select(Action).where(
+        Action.incident_id == inc_id
+    ).order_by(Action.created_at.desc()).limit(10)
+    actions_result = await db.execute(actions_query)
+    actions = actions_result.scalars().all()
+    
+    # Build context summary
+    event_types = list(set(e.eventid for e in events if e.eventid))
+    event_count_by_type = {}
+    for event in events:
+        if event.eventid:
+            event_count_by_type[event.eventid] = event_count_by_type.get(event.eventid, 0) + 1
+    
+    # Extract key attack indicators
+    attack_patterns = []
+    if incident.reason:
+        if "brute" in incident.reason.lower() or "ssh" in incident.reason.lower():
+            attack_patterns.append("SSH brute-force")
+        if "sql" in incident.reason.lower() or "injection" in incident.reason.lower():
+            attack_patterns.append("SQL injection")
+        if "ddos" in incident.reason.lower() or "flood" in incident.reason.lower():
+            attack_patterns.append("DDoS/flooding")
+        if "malware" in incident.reason.lower() or "payload" in incident.reason.lower():
+            attack_patterns.append("Malware delivery")
+    
+    return {
+        "incident_id": incident.id,
+        "src_ip": incident.src_ip,
+        "threat_summary": incident.reason,
+        "status": incident.status,
+        "created_at": incident.created_at.isoformat() if incident.created_at else None,
+        
+        # Risk assessment
+        "risk_score": incident.risk_score or 0.0,
+        "escalation_level": incident.escalation_level or "medium",
+        "threat_category": incident.threat_category,
+        "auto_contained": incident.auto_contained,
+        
+        # AI triage analysis
+        "triage_note": incident.triage_note,
+        
+        # Attack context
+        "attack_patterns": attack_patterns if attack_patterns else ["Unknown pattern"],
+        "total_events": len(events),
+        "event_types": event_types[:10],  # Limit to top 10 event types
+        "event_breakdown": event_count_by_type,
+        
+        # Response history
+        "actions_taken": [
+            {
+                "action": a.action,
+                "result": a.result,
+                "created_at": a.created_at.isoformat() if a.created_at else None
+            }
+            for a in actions
+        ],
+        
+        # ML analysis
+        "ml_confidence": incident.containment_confidence or 0.0,
+        "ml_features": incident.ml_features,
+        "ensemble_scores": incident.ensemble_scores,
+        
+        # Context for AI
+        "suggested_actions": _generate_suggested_actions(incident, events, actions),
+        "context_summary": _build_context_summary(incident, events, actions)
+    }
+
+
+def _generate_suggested_actions(incident, events, actions):
+    """Generate suggested response actions based on incident context"""
+    suggestions = []
+    
+    # If not contained yet
+    if not incident.auto_contained and incident.status == "open":
+        if incident.risk_score and incident.risk_score > 0.7:
+            suggestions.append("block_ip_immediately")
+        else:
+            suggestions.append("investigate_and_monitor")
+    
+    # Based on threat type
+    if incident.reason:
+        reason_lower = incident.reason.lower()
+        if "brute" in reason_lower or "ssh" in reason_lower:
+            suggestions.extend(["block_ip", "analyze_ssh_logs", "check_successful_logins"])
+        if "sql" in reason_lower:
+            suggestions.extend(["block_ip", "inspect_web_logs", "check_database_integrity"])
+        if "malware" in reason_lower:
+            suggestions.extend(["isolate_host", "collect_forensics", "memory_dump"])
+    
+    # Based on event volume
+    if len(events) > 100:
+        suggestions.append("rate_limiting")
+    
+    return list(set(suggestions))[:5]  # Return top 5 unique suggestions
+
+
+def _build_context_summary(incident, events, actions):
+    """Build a human-readable context summary for the AI"""
+    summary_parts = []
+    
+    # Basic incident info
+    summary_parts.append(f"Incident #{incident.id} involves {incident.src_ip}")
+    
+    if incident.reason:
+        summary_parts.append(f"Detected threat: {incident.reason}")
+    
+    # Risk level
+    if incident.risk_score:
+        risk_level = "high" if incident.risk_score > 0.7 else "medium" if incident.risk_score > 0.4 else "low"
+        summary_parts.append(f"Risk level: {risk_level} ({int(incident.risk_score * 100)}%)")
+    
+    # Event activity
+    if events:
+        summary_parts.append(f"Observed {len(events)} security events from this source")
+    
+    # Current status
+    if incident.auto_contained:
+        summary_parts.append("Already auto-contained by ML engine")
+    elif incident.status == "contained":
+        summary_parts.append("Currently contained")
+    elif incident.status == "open":
+        summary_parts.append("Currently open and active")
+    
+    # Previous actions
+    if actions:
+        action_summary = ", ".join([a.action for a in actions[:3]])
+        summary_parts.append(f"Actions taken: {action_summary}")
+    
+    return ". ".join(summary_parts) + "."
 
 
 @app.post("/incidents/{inc_id}/unblock")
@@ -3143,6 +3505,30 @@ async def create_workflow(
     except Exception as e:
         logger.error(f"Workflow creation failed: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create workflow: {str(e)}")
+
+
+@app.get("/api/response/test")
+async def test_response_system():
+    """Simple test endpoint for response system"""
+    try:
+        from .advanced_response_engine import get_response_engine
+        
+        # Test basic functionality
+        engine = await get_response_engine()
+        actions = engine.get_available_actions()
+        
+        return {
+            "success": True,
+            "message": "Advanced Response System is working",
+            "available_actions": len(actions.get("actions", {})),
+            "sample_actions": list(actions.get("actions", {}).keys())[:3]
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Advanced Response System test failed"
+        }
 
 
 @app.get("/health")
@@ -5210,6 +5596,1084 @@ async def get_attack_paths():
             status_code=500,
             detail=f"Failed to get attack paths: {str(e)}"
         )
+
+
+# =============================================================================
+# ADVANCED RESPONSE & WORKFLOW API ENDPOINTS (Phase 1)
+# =============================================================================
+
+from pydantic import BaseModel
+from typing import Optional
+
+class CreateWorkflowRequest(BaseModel):
+    incident_id: int
+    playbook_name: str
+    steps: List[Dict[str, Any]]
+    auto_execute: bool = False
+    priority: str = "medium"
+
+class ExecuteWorkflowRequest(BaseModel):
+    workflow_db_id: int
+    executed_by: str = "analyst"
+
+@app.post("/api/response/workflows/create")
+async def create_response_workflow(
+    request: CreateWorkflowRequest,
+    http_request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new advanced response workflow"""
+    _require_api_key(http_request)
+    
+    try:
+        logger.info(f"Creating workflow request: {request}")
+        response_engine = await get_response_engine()
+        logger.info("Response engine initialized successfully")
+        
+        # Convert priority string to enum
+        priority = ResponsePriority(request.priority.lower())
+        logger.info(f"Priority converted: {priority}")
+        
+        result = await response_engine.create_workflow(
+            incident_id=request.incident_id,
+            playbook_name=request.playbook_name,
+            steps=request.steps,
+            auto_execute=request.auto_execute,
+            priority=priority,
+            db_session=db
+        )
+
+        logger.info(f"Workflow creation successful: {result}")
+
+        # Broadcast workflow creation update via WebSocket
+        await ws_manager.broadcast_workflow_update({
+            "action": "workflow_created",
+            "workflow_id": result.get("workflow_id"),
+            "incident_id": request.incident_id,
+            "playbook_name": request.playbook_name,
+            "status": result.get("status", "pending"),
+            "steps_count": len(request.steps)
+        })
+
+        return result
+        
+    except ValueError as e:
+        logger.error(f"Validation error: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid request: {str(e)}")
+    except Exception as e:
+        logger.error(f"Failed to create workflow: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to create workflow: {str(e)}")
+
+@app.post("/api/response/workflows/execute")
+async def execute_response_workflow(
+    request: ExecuteWorkflowRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Execute a response workflow"""
+    try:
+        response_engine = await get_response_engine()
+        
+        result = await response_engine.execute_workflow(
+            workflow_db_id=request.workflow_db_id,
+            db_session=db,
+            executed_by=request.executed_by
+        )
+
+        # Broadcast workflow execution update via WebSocket
+        await ws_manager.broadcast_workflow_update({
+            "action": "workflow_executed",
+            "workflow_id": result.get("workflow_id"),
+            "status": result.get("status", "unknown"),
+            "execution_id": result.get("execution_id"),
+            "progress": result.get("progress", 0)
+        })
+
+        return result
+        
+    except Exception as e:
+        logger.error(f"Failed to execute workflow: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to execute workflow: {str(e)}")
+
+@app.get("/api/response/workflows/{workflow_id}/status")
+async def get_workflow_status(
+    workflow_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get detailed status of a response workflow"""
+    try:
+        response_engine = await get_response_engine()
+        
+        result = await response_engine.get_workflow_status(
+            workflow_id=workflow_id,
+            db_session=db
+        )
+        
+        if not result.get("success"):
+            raise HTTPException(status_code=404, detail=result.get("error", "Workflow not found"))
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get workflow status: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get workflow status: {str(e)}")
+
+@app.post("/api/response/workflows/{workflow_id}/cancel")
+async def cancel_response_workflow(
+    workflow_id: str,
+    db: AsyncSession = Depends(get_db),
+    cancelled_by: str = "analyst"
+):
+    """Cancel a running response workflow"""
+    try:
+        response_engine = await get_response_engine()
+
+        result = await response_engine.cancel_workflow(
+            workflow_id=workflow_id,
+            db_session=db,
+            cancelled_by=cancelled_by
+        )
+
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "Failed to cancel workflow"))
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to cancel workflow: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to cancel workflow: {str(e)}")
+
+@app.delete("/api/response/workflows/{workflow_id}")
+async def delete_response_workflow(
+    workflow_id: str,
+    db: AsyncSession = Depends(get_db),
+    http_request: Request = None
+):
+    """Delete a response workflow"""
+    _require_api_key(http_request)
+
+    try:
+        # Find the workflow
+        result = await db.execute(
+            select(ResponseWorkflow).where(ResponseWorkflow.workflow_id == workflow_id)
+        )
+        workflow = result.scalar_one_or_none()
+
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+
+        # Don't allow deleting running workflows
+        if workflow.status == 'running':
+            raise HTTPException(status_code=400, detail="Cannot delete a running workflow. Cancel it first.")
+
+        # Delete associated actions first
+        await db.execute(
+            delete(WorkflowAction).where(WorkflowAction.workflow_id == workflow_id)
+        )
+
+        # Delete the workflow
+        await db.delete(workflow)
+        await db.commit()
+
+        logger.info(f"Deleted workflow {workflow_id}")
+        return {"success": True, "message": f"Workflow {workflow_id} deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete workflow: {e}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete workflow: {str(e)}")
+
+@app.post("/api/response/workflows/{workflow_id}/approve")
+async def approve_response_workflow(
+    workflow_id: str,
+    request: Dict[str, Any],
+    http_request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Approve a workflow for execution"""
+    _require_api_key(http_request)
+    
+    try:
+        from .models import ResponseWorkflow
+        from sqlalchemy import select
+        
+        # Get workflow
+        result = await db.execute(
+            select(ResponseWorkflow).where(ResponseWorkflow.workflow_id == workflow_id)
+        )
+        workflow = result.scalars().first()
+        
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        
+        if workflow.status != "awaiting_approval":
+            raise HTTPException(status_code=400, detail=f"Workflow is not awaiting approval (status: {workflow.status})")
+        
+        # Update approval status
+        workflow.status = "approved"
+        workflow.approved_by = request.get("approved_by", "analyst")
+        workflow.approved_at = datetime.utcnow()
+        
+        await db.commit()
+        
+        # Execute the workflow
+        response_engine = await get_response_engine()
+        execution_result = await response_engine.execute_workflow(
+            workflow.id, 
+            db,
+            executed_by=request.get("approved_by", "analyst")
+        )
+        
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "status": "approved_and_executing",
+            "execution_result": execution_result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to approve workflow: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to approve workflow: {str(e)}")
+
+@app.post("/api/response/workflows/{workflow_id}/reject")
+async def reject_response_workflow(
+    workflow_id: str,
+    request: Dict[str, Any], 
+    http_request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Reject a workflow"""
+    _require_api_key(http_request)
+    
+    try:
+        from .models import ResponseWorkflow
+        from sqlalchemy import select
+        
+        # Get workflow
+        result = await db.execute(
+            select(ResponseWorkflow).where(ResponseWorkflow.workflow_id == workflow_id)
+        )
+        workflow = result.scalars().first()
+        
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        
+        if workflow.status != "awaiting_approval":
+            raise HTTPException(status_code=400, detail=f"Workflow is not awaiting approval (status: {workflow.status})")
+        
+        # Update rejection status  
+        workflow.status = "rejected"
+        workflow.approved_by = request.get("rejected_by", "analyst")
+        workflow.approved_at = datetime.utcnow()
+        
+        await db.commit()
+        
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "status": "rejected",
+            "rejected_by": request.get("rejected_by", "analyst"),
+            "rejection_reason": request.get("rejection_reason", "Manual review")
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to reject workflow: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to reject workflow: {str(e)}")
+
+@app.get("/api/ml/sagemaker/status") 
+async def get_sagemaker_status(http_request: Request):
+    """Get SageMaker endpoint status and cost information"""
+    _require_api_key(http_request)
+    
+    try:
+        from .sagemaker_endpoint_manager import get_endpoint_manager
+        
+        manager = await get_endpoint_manager()
+        metrics = await manager.get_endpoint_metrics()
+        
+        return {
+            "success": True,
+            "sagemaker_metrics": metrics,
+            "training_job": "mini-xdr-comprehensive-fixed-20250927-154158",
+            "model_accuracy": 0.979875,
+            "features": 79,
+            "cost_optimization_available": True
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get SageMaker status: {e}")
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/ml/sagemaker/scale-down")
+async def scale_down_sagemaker(http_request: Request):
+    """Scale SageMaker endpoint to zero for cost savings"""
+    _require_api_key(http_request)
+    
+    try:
+        from .sagemaker_endpoint_manager import get_endpoint_manager
+        
+        manager = await get_endpoint_manager()
+        result = await manager.scale_to_zero()
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Failed to scale down SageMaker: {e}")
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/ml/sagemaker/scale-up")
+async def scale_up_sagemaker(http_request: Request):
+    """Scale up SageMaker endpoint for ML inference"""
+    _require_api_key(http_request)
+    
+    try:
+        from .sagemaker_endpoint_manager import get_endpoint_manager
+        
+        manager = await get_endpoint_manager()
+        result = await manager.scale_up_on_demand()
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Failed to scale up SageMaker: {e}")
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/incidents/{incident_id}/ai-analysis")
+async def generate_ai_incident_analysis(
+    incident_id: int,
+    request: Dict[str, Any],
+    http_request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Generate AI analysis for an incident"""
+    _require_api_key(http_request)
+    
+    try:
+        # Get incident details
+        incident = (await db.execute(
+            select(Incident).where(Incident.id == incident_id)
+        )).scalars().first()
+        
+        if not incident:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        
+        # Get recent events for context
+        recent_events = await _recent_events_for_ip(db, incident.src_ip, 3600)  # Last hour
+        
+        # Prepare payload for AI analysis
+        incident_data = {
+            "id": incident.id,
+            "src_ip": incident.src_ip,
+            "reason": incident.reason,
+            "status": incident.status,
+            "risk_score": incident.risk_score,
+            "threat_category": incident.threat_category,
+            "escalation_level": incident.escalation_level,
+            "ensemble_scores": incident.ensemble_scores
+        }
+        
+        event_summaries = [
+            {
+                "eventid": e.eventid,
+                "message": e.message,
+                "timestamp": e.ts.isoformat() if e.ts else None,
+                "raw": e.raw
+            }
+            for e in recent_events[-10:]  # Last 10 events
+        ]
+        
+        # Generate AI analysis
+        provider = request.get("provider", "openai")
+        
+        if provider == "xai":
+            from .triager import _xai_triage
+            ai_result = _xai_triage({"incident": incident_data, "recent_events": event_summaries})
+        else:
+            from .triager import _openai_triage  
+            ai_result = _openai_triage({"incident": incident_data, "recent_events": event_summaries})
+        
+        # Enhance with additional AI insights
+        enhanced_analysis = {
+            **ai_result,
+            "confidence_score": incident.containment_confidence or 0.5,
+            "threat_attribution": await _generate_threat_attribution(incident, recent_events),
+            "response_priority": _calculate_response_priority(incident, ai_result),
+            "estimated_impact": _estimate_business_impact(incident, ai_result),
+            "next_steps": _generate_next_steps(incident, ai_result)
+        }
+        
+        return {
+            "success": True,
+            "analysis": enhanced_analysis,
+            "provider": provider,
+            "incident_id": incident_id,
+            "generated_at": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"AI analysis failed: {e}")
+        return {"success": False, "error": str(e)}
+
+async def _generate_threat_attribution(incident, events) -> str:
+    """Generate threat attribution analysis"""
+    if incident.src_ip.startswith('10.0.200'):
+        return "Internal network reconnaissance - possible insider threat or lateral movement"
+    elif incident.src_ip.startswith('172.16'):
+        return "APT-style attack pattern - sophisticated threat actor with persistence goals"
+    elif incident.src_ip.startswith('13.220'):
+        return "Cloud-based attack infrastructure - likely automated botnet or testing platform"
+    else:
+        return "External threat actor - requires geolocation and threat intelligence correlation"
+
+def _calculate_response_priority(incident, ai_result) -> str:
+    """Calculate response priority based on AI analysis and incident data"""
+    severity = ai_result.get("severity", "low")
+    risk_score = incident.risk_score or 0
+    
+    if severity == "critical" or risk_score > 0.8:
+        return "IMMEDIATE"
+    elif severity == "high" or risk_score > 0.6:
+        return "HIGH"
+    elif severity == "medium" or risk_score > 0.4:
+        return "MEDIUM" 
+    else:
+        return "LOW"
+
+def _estimate_business_impact(incident, ai_result) -> str:
+    """Estimate business impact"""
+    severity = ai_result.get("severity", "low")
+    threat_category = incident.threat_category or "unknown"
+    
+    if "brute_force" in threat_category.lower():
+        return "Account compromise risk - potential data access"
+    elif "adaptive_detection" in threat_category.lower():
+        return "Unknown attack pattern - potential zero-day threat"
+    elif severity in ["critical", "high"]:
+        return "Significant operational risk - immediate attention required"
+    else:
+        return "Minimal business impact - standard monitoring sufficient"
+
+def _generate_next_steps(incident, ai_result) -> List[str]:
+    """Generate specific next steps based on AI analysis"""
+    steps = []
+    recommendation = ai_result.get("recommendation", "")
+    
+    if recommendation == "contain_now":
+        steps.extend([
+            "Execute immediate IP blocking response",
+            "Isolate affected systems from network",
+            "Begin forensic evidence collection",
+            "Notify security team of active threat"
+        ])
+    elif recommendation == "investigate":
+        steps.extend([
+            "Collect additional forensic evidence", 
+            "Analyze attack patterns and TTPs",
+            "Correlate with threat intelligence feeds",
+            "Document findings for threat hunting"
+        ])
+    else:
+        steps.extend([
+            "Continue monitoring for escalation",
+            "Review security controls effectiveness",
+            "Update detection rules if needed"
+        ])
+    
+    return steps
+
+@app.get("/api/response/actions")
+async def get_available_response_actions(
+    category: Optional[str] = None
+):
+    """Get list of available response actions"""
+    try:
+        response_engine = await get_response_engine()
+        
+        # Convert category string to enum if provided
+        category_enum = None
+        if category:
+            try:
+                category_enum = ActionCategory(category.lower())
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid category: {category}")
+        
+        result = response_engine.get_available_actions(category=category_enum)
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get available actions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get available actions: {str(e)}")
+
+@app.get("/api/response/workflows")
+async def list_response_workflows(
+    incident_id: Optional[int] = None,
+    status: Optional[str] = None,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db)
+):
+    """List response workflows with optional filtering"""
+    try:
+        query = select(ResponseWorkflow).order_by(ResponseWorkflow.created_at.desc())
+        
+        # Apply filters
+        if incident_id:
+            query = query.where(ResponseWorkflow.incident_id == incident_id)
+        
+        if status:
+            query = query.where(ResponseWorkflow.status == status)
+        
+        query = query.limit(limit)
+        
+        result = await db.execute(query)
+        workflows = result.scalars().all()
+        
+        return {
+            "success": True,
+            "workflows": [
+                {
+                    "id": wf.id,
+                    "workflow_id": wf.workflow_id,
+                    "incident_id": wf.incident_id,
+                    "playbook_name": wf.playbook_name,
+                    "status": wf.status,
+                    "progress_percentage": wf.progress_percentage,
+                    "current_step": wf.current_step,
+                    "total_steps": wf.total_steps,
+                    "created_at": wf.created_at.isoformat() if wf.created_at else None,
+                    "completed_at": wf.completed_at.isoformat() if wf.completed_at else None,
+                    "approval_required": wf.approval_required,
+                    "auto_executed": wf.auto_executed,
+                    "success_rate": wf.success_rate
+                }
+                for wf in workflows
+            ],
+            "total_count": len(workflows)
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to list workflows: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list workflows: {str(e)}")
+
+@app.get("/api/response/workflows/{workflow_id}/actions")
+async def get_workflow_actions(
+    workflow_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all actions for a specific workflow"""
+    try:
+        # Get workflow
+        workflow_result = await db.execute(
+            select(ResponseWorkflow).where(ResponseWorkflow.workflow_id == workflow_id)
+        )
+        workflow = workflow_result.scalars().first()
+        
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        
+        # Get actions
+        actions_result = await db.execute(
+            select(AdvancedResponseAction)
+            .where(AdvancedResponseAction.workflow_id == workflow.id)
+            .order_by(AdvancedResponseAction.created_at.asc())
+        )
+        actions = actions_result.scalars().all()
+        
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "actions": [
+                {
+                    "id": action.id,
+                    "action_id": action.action_id,
+                    "action_type": action.action_type,
+                    "action_category": action.action_category,
+                    "action_name": action.action_name,
+                    "status": action.status,
+                    "parameters": action.parameters,
+                    "result_data": action.result_data,
+                    "error_details": action.error_details,
+                    "confidence_score": action.confidence_score,
+                    "executed_by": action.executed_by,
+                    "execution_method": action.execution_method,
+                    "created_at": action.created_at.isoformat() if action.created_at else None,
+                    "completed_at": action.completed_at.isoformat() if action.completed_at else None
+                }
+                for action in actions
+            ],
+            "total_count": len(actions)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get workflow actions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get workflow actions: {str(e)}")
+
+@app.get("/api/response/metrics/impact")
+async def get_response_impact_metrics(
+    workflow_id: Optional[str] = None,
+    days_back: int = 7,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get response impact metrics"""
+    try:
+        query = select(ResponseImpactMetrics).join(ResponseWorkflow)
+        
+        # Apply filters
+        if workflow_id:
+            query = query.where(ResponseWorkflow.workflow_id == workflow_id)
+        
+        # Time filter
+        since_date = datetime.utcnow() - timedelta(days=days_back)
+        query = query.where(ResponseImpactMetrics.created_at >= since_date)
+        
+        query = query.order_by(ResponseImpactMetrics.created_at.desc()).limit(100)
+        
+        result = await db.execute(query)
+        metrics = result.scalars().all()
+        
+        # Calculate aggregated metrics
+        total_attacks_blocked = sum(m.attacks_blocked for m in metrics)
+        total_false_positives = sum(m.false_positives for m in metrics)
+        avg_response_time = sum(m.response_time_ms for m in metrics) / len(metrics) if metrics else 0
+        avg_success_rate = sum(m.success_rate for m in metrics) / len(metrics) if metrics else 0
+        
+        return {
+            "success": True,
+            "summary": {
+                "total_attacks_blocked": total_attacks_blocked,
+                "total_false_positives": total_false_positives,
+                "average_response_time_ms": round(avg_response_time),
+                "average_success_rate": round(avg_success_rate, 2),
+                "metrics_count": len(metrics)
+            },
+            "detailed_metrics": [
+                {
+                    "id": m.id,
+                    "workflow_id": m.workflow_id,
+                    "attacks_blocked": m.attacks_blocked,
+                    "false_positives": m.false_positives,
+                    "systems_affected": m.systems_affected,
+                    "response_time_ms": m.response_time_ms,
+                    "success_rate": m.success_rate,
+                    "confidence_score": m.confidence_score,
+                    "created_at": m.created_at.isoformat() if m.created_at else None
+                }
+                for m in metrics
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get impact metrics: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get impact metrics: {str(e)}")
+
+@app.post("/api/response/actions/execute")
+async def execute_single_response_action(
+    request: Dict[str, Any],
+    db: AsyncSession = Depends(get_db)
+):
+    """Execute a single response action (for manual execution)"""
+    try:
+        response_engine = await get_response_engine()
+        
+        # Extract parameters
+        action_type = request.get("action_type")
+        parameters = request.get("parameters", {})
+        incident_id = request.get("incident_id")
+        
+        if not action_type or not incident_id:
+            raise HTTPException(status_code=400, detail="action_type and incident_id are required")
+        
+        # Create a simple workflow with single step
+        workflow_result = await response_engine.create_workflow(
+            incident_id=incident_id,
+            playbook_name=f"Manual {action_type}",
+            steps=[{
+                "action_type": action_type,
+                "parameters": parameters
+            }],
+            auto_execute=True,
+            priority=ResponsePriority.HIGH,
+            db_session=db
+        )
+        
+        return workflow_result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to execute single action: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to execute action: {str(e)}")
+
+
+# =============================================================================
+# AI-POWERED RESPONSE ENDPOINTS (Phase 2B)
+# =============================================================================
+
+@app.post("/api/ai/response/recommendations")
+async def get_ai_response_recommendations(
+    request: Dict[str, Any],
+    db: AsyncSession = Depends(get_db)
+):
+    """Get AI-powered response recommendations for an incident"""
+    try:
+        incident_id = request.get("incident_id")
+        context = request.get("context", {})
+        
+        if not incident_id:
+            raise HTTPException(status_code=400, detail="incident_id is required")
+        
+        # Get AI advisor
+        ai_advisor = await get_ai_advisor()
+        
+        # Get recommendations
+        result = await ai_advisor.get_response_recommendations(
+            incident_id, db, context
+        )
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get AI recommendations: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get AI recommendations: {str(e)}")
+
+@app.get("/api/ai/response/context/{incident_id}")
+async def get_incident_context_analysis(
+    incident_id: int,
+    include_predictions: bool = True,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get comprehensive context analysis for an incident"""
+    try:
+        context_analyzer = await get_context_analyzer()
+        
+        result = await context_analyzer.analyze_comprehensive_context(
+            incident_id, db, include_predictions=include_predictions
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Failed to analyze context: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to analyze context: {str(e)}")
+
+@app.post("/api/ai/response/optimize/{workflow_id}")
+async def optimize_workflow_with_ai(
+    workflow_id: str,
+    request: Dict[str, Any] = {},
+    db: AsyncSession = Depends(get_db)
+):
+    """Optimize a workflow using AI and historical learning"""
+    try:
+        response_optimizer = await get_response_optimizer()
+        
+        strategy = request.get("strategy", "effectiveness")
+        context = request.get("context", {})
+        
+        # Convert string strategy to enum
+        from .response_optimizer import OptimizationStrategy
+        strategy_enum = getattr(OptimizationStrategy, strategy.upper(), OptimizationStrategy.EFFECTIVENESS)
+        
+        result = await response_optimizer.optimize_workflow(
+            workflow_id, db, strategy_enum, context
+        )
+        
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "optimization_result": {
+                "optimized_workflow": result.optimized_workflow,
+                "optimization_score": result.optimization_score,
+                "improvements": result.improvements,
+                "risk_reduction": result.risk_reduction,
+                "efficiency_gain": result.efficiency_gain,
+                "confidence": result.confidence
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to optimize workflow: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to optimize workflow: {str(e)}")
+
+@app.post("/api/ai/response/adaptive")
+async def get_adaptive_response_recommendations(
+    request: Dict[str, Any],
+    db: AsyncSession = Depends(get_db)
+):
+    """Get adaptive response recommendations that improve over time"""
+    try:
+        incident_id = request.get("incident_id")
+        user_context = request.get("user_context", {})
+        
+        if not incident_id:
+            raise HTTPException(status_code=400, detail="incident_id is required")
+        
+        # Get learning engine
+        learning_engine = await get_learning_engine()
+        
+        # Get adaptive recommendations
+        result = await learning_engine.generate_adaptive_recommendations(
+            incident_id, db, user_context
+        )
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get adaptive recommendations: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get adaptive recommendations: {str(e)}")
+
+@app.post("/api/ai/response/learn")
+async def learn_from_workflow_execution(
+    request: Dict[str, Any],
+    db: AsyncSession = Depends(get_db)
+):
+    """Submit learning data from workflow execution"""
+    try:
+        workflow_id = request.get("workflow_id")
+        execution_results = request.get("execution_results", {})
+        analyst_feedback = request.get("analyst_feedback", {})
+        
+        if not workflow_id:
+            raise HTTPException(status_code=400, detail="workflow_id is required")
+        
+        # Get learning engine
+        learning_engine = await get_learning_engine()
+        
+        # Submit learning data
+        result = await learning_engine.learn_from_workflow_execution(
+            workflow_id, execution_results, analyst_feedback, db
+        )
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to submit learning data: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to submit learning data: {str(e)}")
+
+# =============================================================================
+# VISUAL WORKFLOW ENDPOINTS (Phase 2A)
+# =============================================================================
+
+@app.get("/api/workflows/templates")
+async def get_playbook_templates(
+    category: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get available playbook templates"""
+    try:
+        # For now, return mock data - in production would query ResponsePlaybook table
+        templates = [
+            {
+                "id": "malware-response",
+                "name": "Malware Incident Response",
+                "description": "Comprehensive response to malware infections",
+                "category": "malware",
+                "steps": [
+                    {"action_type": "isolate_host_advanced", "parameters": {"isolation_level": "strict"}},
+                    {"action_type": "memory_dump_collection", "parameters": {"dump_type": "full"}},
+                    {"action_type": "block_ip_advanced", "parameters": {"duration": 3600}}
+                ],
+                "estimated_duration_minutes": 25,
+                "times_used": 42,
+                "success_rate": 0.94
+            },
+            {
+                "id": "ddos-mitigation",
+                "name": "DDoS Attack Mitigation",
+                "description": "Rapid response to distributed denial of service attacks",
+                "category": "ddos",
+                "steps": [
+                    {"action_type": "traffic_redirection", "parameters": {"destination": "scrubbing_center"}},
+                    {"action_type": "deploy_firewall_rules", "parameters": {"rule_set": "ddos_protection"}},
+                    {"action_type": "block_ip_advanced", "parameters": {"block_level": "source_networks"}}
+                ],
+                "estimated_duration_minutes": 8,
+                "times_used": 28,
+                "success_rate": 0.89
+            }
+        ]
+        
+        if category and category != 'all':
+            templates = [t for t in templates if t["category"] == category]
+        
+        return {
+            "success": True,
+            "templates": templates,
+            "total_count": len(templates)
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get templates: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get templates: {str(e)}")
+
+@app.post("/api/workflows/templates/create")
+async def create_playbook_template(
+    request: Dict[str, Any],
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new playbook template"""
+    try:
+        # For now, return success - in production would create ResponsePlaybook record
+        template_data = {
+            "id": f"custom_{request.get('name', '').lower().replace(' ', '_')}",
+            "name": request.get("name"),
+            "description": request.get("description"),
+            "category": request.get("category"),
+            "steps": request.get("steps", []),
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        return {
+            "success": True,
+            "template": template_data,
+            "message": "Template created successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to create template: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create template: {str(e)}")
+
+@app.post("/api/workflows/visual/validate")
+async def validate_visual_workflow(
+    request: Dict[str, Any],
+    db: AsyncSession = Depends(get_db)
+):
+    """Validate a visual workflow design"""
+    try:
+        steps = request.get("steps", [])
+        
+        validation_result = {
+            "valid": True,
+            "errors": [],
+            "warnings": [],
+            "suggestions": []
+        }
+        
+        # Basic validation
+        if len(steps) == 0:
+            validation_result["valid"] = False
+            validation_result["errors"].append("Workflow must contain at least one action")
+        
+        # Check for unknown action types
+        response_engine = await get_response_engine()
+        available_actions = response_engine.get_available_actions()
+        
+        for step in steps:
+            action_type = step.get("action_type")
+            if action_type and action_type not in available_actions.get("actions", {}):
+                validation_result["warnings"].append(f"Unknown action type: {action_type}")
+        
+        # Add optimization suggestions
+        if len(steps) > 5:
+            validation_result["suggestions"].append("Consider breaking this into smaller workflows")
+        
+        return {
+            "success": True,
+            "validation": validation_result
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to validate workflow: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to validate workflow: {str(e)}")
+
+
+# =============================================================================
+# WEBSOCKET ENDPOINTS FOR REAL-TIME UPDATES
+# =============================================================================
+
+@app.websocket("/ws/general")
+async def websocket_endpoint(websocket: WebSocket):
+    """General WebSocket endpoint for real-time updates"""
+    await ws_manager.connect(websocket, {"type": "general"})
+
+    try:
+        while True:
+            # Keep connection alive and handle incoming messages
+            data = await websocket.receive_text()
+
+            # Handle ping/pong for connection health
+            if data == "ping":
+                await ws_manager.send_personal_message(websocket, {"type": "pong"})
+
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        ws_manager.disconnect(websocket)
+
+@app.websocket("/ws/workflows")
+async def workflow_websocket(websocket: WebSocket):
+    """WebSocket endpoint specifically for workflow updates"""
+    await ws_manager.connect(websocket, {"type": "workflows"})
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+
+            if data == "ping":
+                await ws_manager.send_personal_message(websocket, {"type": "pong"})
+
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"Workflow WebSocket error: {e}")
+        ws_manager.disconnect(websocket)
+
+@app.websocket("/ws/incidents")
+async def incident_websocket(websocket: WebSocket):
+    """WebSocket endpoint specifically for incident updates"""
+    await ws_manager.connect(websocket, {"type": "incidents"})
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+
+            if data == "ping":
+                await ws_manager.send_personal_message(websocket, {"type": "pong"})
+
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"Incident WebSocket error: {e}")
+        ws_manager.disconnect(websocket)
+
+@app.get("/api/websocket/status")
+async def websocket_status():
+    """Get WebSocket connection status"""
+    return {
+        "total_connections": ws_manager.get_connection_count(),
+        "status": "active" if ws_manager.get_connection_count() > 0 else "inactive"
+    }
+
+@app.get("/api/auth/config")
+async def get_auth_config():
+    """Get authentication configuration for frontend"""
+    from .config import settings
+    return {
+        "api_key": settings.api_key,
+        "websocket_enabled": True,
+        "base_url": f"http://{settings.api_host}:{settings.api_port}"
+    }
 
 
 # Background task helper

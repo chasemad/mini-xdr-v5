@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from collections import defaultdict, Counter
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from .models import Event, Incident
 from .config import settings
@@ -225,6 +225,16 @@ class WebAttackDetector:
     def __init__(self, window_seconds: int = 300, threshold: int = 3):
         self.window_seconds = window_seconds  # 5 minutes
         self.threshold = threshold  # 3 attack indicators
+        # Precompile pattern groups so we can enrich raw events even when
+        # upstream components fail to add attack_indicators.
+        self.sql_patterns = [
+            "' or 1=1", '" or 1=1', 'union select', 'sleep(', 'benchmark(',
+            'load_file(', 'into outfile', '--', ';--', ' or ', ' and '
+        ]
+        self.xss_patterns = ['<script', 'javascript:', 'onerror=', 'onload=', 'document.cookie']
+        self.traversal_patterns = ['../', '..\\', '%2e%2e/', '%252e%252e', '/etc/passwd']
+        self.command_patterns = ['; ls', '; cat', '; wget', '; curl', '| nc', '; bash', '| bash', '$(', '`', 'chmod +x']
+        self.admin_keywords = ['/admin', '/wp-admin', '/config', '/.git', '/phpmyadmin']
     
     async def evaluate(self, db: AsyncSession, src_ip: str) -> Optional[Dict[str, Any]]:
         """
@@ -259,17 +269,23 @@ class WebAttackDetector:
         for event in events:
             try:
                 raw_data = event.raw if isinstance(event.raw, dict) else json.loads(event.raw) if event.raw else {}
-                indicators = raw_data.get('attack_indicators', [])
-                
-                for indicator in indicators:
-                    attack_indicators.append(indicator)
-                    if 'sql' in indicator.lower() or 'injection' in indicator.lower():
-                        sql_injection_count += 1
-                    elif 'admin' in indicator.lower() or 'scan' in indicator.lower():
-                        admin_scan_count += 1
-                        
-            except (json.JSONDecodeError, AttributeError, TypeError):
-                continue
+            except (json.JSONDecodeError, TypeError):
+                raw_data = {}
+
+            # Use existing indicators if present.
+            existing_indicators = raw_data.get('attack_indicators', [])
+            normalized_existing = [str(ind) for ind in existing_indicators]
+
+            inferred_indicators = self._infer_attack_indicators(event, raw_data)
+            combined_indicators = normalized_existing + inferred_indicators
+
+            for indicator in combined_indicators:
+                attack_indicators.append(indicator)
+                lower_indicator = indicator.lower()
+                if 'sql' in lower_indicator or 'injection' in lower_indicator:
+                    sql_injection_count += 1
+                elif 'admin' in lower_indicator or 'scan' in lower_indicator:
+                    admin_scan_count += 1
         
         total_indicators = len(attack_indicators)
         
@@ -323,11 +339,65 @@ class WebAttackDetector:
         result = await db.execute(query)
         return result.scalars().first()
 
+    def _infer_attack_indicators(self, event: Event, raw_data: Dict[str, Any]) -> List[str]:
+        """Infer web attack indicators directly from raw payload/message"""
+        indicators: List[str] = []
+
+        # Extract candidate strings to inspect
+        candidates: List[str] = []
+        if event.message:
+            candidates.append(event.message)
+
+        path = raw_data.get('path')
+        if isinstance(path, str):
+            candidates.append(path)
+
+        params = raw_data.get('parameters')
+        if isinstance(params, list):
+            candidates.extend(str(p) for p in params)
+        elif isinstance(params, dict):
+            for key, value in params.items():
+                candidates.append(f"{key}={value}")
+
+        body = raw_data.get('body')
+        if isinstance(body, str):
+            candidates.append(body)
+
+        query_string = raw_data.get('query_string')
+        if isinstance(query_string, str):
+            candidates.append(query_string)
+
+        lower_candidates = [c.lower() for c in candidates if isinstance(c, str)]
+
+        # Pattern matching
+        if any(pattern in text for text in lower_candidates for pattern in self.sql_patterns):
+            indicators.append('sql_injection_detected')
+        if any(pattern in text for text in lower_candidates for pattern in self.xss_patterns):
+            indicators.append('xss_attempt_detected')
+        if any(pattern in text for text in lower_candidates for pattern in self.traversal_patterns):
+            indicators.append('directory_traversal_detected')
+        if any(pattern in text for text in lower_candidates for pattern in self.command_patterns):
+            indicators.append('command_injection_detected')
+        if any(keyword in text for text in lower_candidates for keyword in self.admin_keywords):
+            indicators.append('admin_panel_scanning_detected')
+
+        # HTTP method anomaly (e.g., raw_data has method)
+        method = raw_data.get('method', '').upper()
+        if method not in {'GET', 'POST', 'HEAD', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', ''}:
+            indicators.append('suspicious_http_method')
+
+        # Upload attempts of executable files
+        if raw_data.get('filename') and str(raw_data.get('filename')).lower().endswith(('.php', '.jsp', '.asp', '.exe', '.sh')):
+            indicators.append('malicious_file_upload_attempt')
+
+        return indicators
+
 
 # Import adaptive detection components
 from .adaptive_detection import behavioral_analyzer
 from .baseline_engine import baseline_engine
 from .ml_engine import ml_detector
+from .threat_detectors import specialized_detector, SpecializedDetectionResult
 
 # Global detector instances
 ssh_bruteforce_detector = SlidingWindowDetector()
@@ -348,6 +418,7 @@ class AdaptiveDetectionEngine:
         self.behavior_analyzer = behavioral_analyzer
         self.ml_detector = ml_detector
         self.baseline_engine = baseline_engine
+        self.specialized_detector = specialized_detector
         
         # Scoring weights (tunable)
         self.weights = {
@@ -361,11 +432,11 @@ class AdaptiveDetectionEngine:
         """Run comprehensive analysis using all detection methods"""
         
         detection_results = {}
-        
+
         # Layer 1: Traditional rule-based detection (fast)
         ssh_result = await self.ssh_detector.evaluate(db, src_ip)
         web_result = await self.web_detector.evaluate(db, src_ip)
-        
+
         if ssh_result or web_result:
             detection_results['rule_based'] = {
                 'score': 1.0,
@@ -383,9 +454,27 @@ class AdaptiveDetectionEngine:
                 'confidence': behavior_result.confidence,
                 'description': behavior_result.description
             }
-        
-        # Layer 3: ML anomaly detection  
+
+        # Collect recent events for specialized detectors and ML layers
         recent_events = await self._get_recent_events(db, src_ip, 60)
+
+        # DDoS heuristic detection with mitigation recommendations
+        ddos_detection = self._detect_ddos(recent_events)
+        if ddos_detection:
+            ddos_detection.indicators['mitigation_actions'] = self.specialized_detector.get_ddos_actions(recent_events)
+            return await self._create_special_incident(db, src_ip, [ddos_detection])
+
+        # Specialized threat detectors (cryptomining, exfiltration, ransomware, IoT botnets)
+        specialized_results = await self.specialized_detector.evaluate(recent_events)
+        if specialized_results:
+            return await self._create_special_incident(db, src_ip, specialized_results)
+
+        # Suricata alert correlation
+        suricata_incident = await self._correlate_suricata_alerts(db, src_ip, recent_events)
+        if suricata_incident:
+            return suricata_incident
+
+        # Layer 3: ML anomaly detection  
         if len(recent_events) >= 5:
             ml_score = await self.ml_detector.calculate_anomaly_score(src_ip, recent_events)
             if ml_score > 0.3:  # Only include significant ML scores
@@ -427,7 +516,7 @@ class AdaptiveDetectionEngine:
     
     async def _create_composite_incident(self, db: AsyncSession, src_ip: str, detection_results: Dict) -> Dict:
         """Create composite incident from multiple detection layers"""
-        
+
         # Calculate composite score
         composite_score = 0.0
         total_weight = 0.0
@@ -504,9 +593,9 @@ class AdaptiveDetectionEngine:
         incident = Incident(**incident_data)
         db.add(incident)
         await db.flush()  # Get the ID without committing
-        
+
         logger.warning(f"NEW ADAPTIVE INCIDENT #{incident.id}: {reason}")
-        
+
         return {
             "incident_id": incident.id,
             "src_ip": src_ip,
@@ -514,6 +603,195 @@ class AdaptiveDetectionEngine:
             "detection_layers": list(detection_results.keys()),
             "severity": severity
         }
+
+    async def _create_special_incident(
+        self,
+        db: AsyncSession,
+        src_ip: str,
+        detections: List[SpecializedDetectionResult]
+    ) -> Dict[str, Any]:
+        """Create an incident based on specialized threat detector findings."""
+
+        if not detections:
+            return {}
+
+        # Reuse existing open incident where possible
+        existing_incident = await self.ssh_detector._get_open_incident(db, src_ip)
+        if existing_incident:
+            logger.debug("Special detection skipped: incident already open for %s", src_ip)
+            return {"incident_id": existing_incident.id}
+
+        severity_order = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+        primary_detection = max(
+            detections,
+            key=lambda d: (severity_order.get(d.severity, 0), d.confidence)
+        )
+
+        additional_findings = [
+            {
+                "category": d.category,
+                "severity": d.severity,
+                "confidence": round(d.confidence, 2),
+                "indicators": d.indicators,
+            }
+            for d in detections
+        ]
+
+        triage_note = {
+            "summary": f"{primary_detection.category.replace('_', ' ').title()} activity detected",
+            "severity": primary_detection.severity,
+            "confidence": primary_detection.confidence,
+            "description": primary_detection.description,
+            "indicators": primary_detection.indicators,
+            "additional_findings": additional_findings,
+            "recommendation": "Review mitigation plan and contain host",
+        }
+
+        incident = Incident(
+            src_ip=src_ip,
+            reason=f"{primary_detection.category.replace('_', ' ').title()} detection (confidence {primary_detection.confidence:.2f})",
+            status="open",
+            escalation_level=primary_detection.severity,
+            risk_score=min(primary_detection.confidence, 1.0),
+            threat_category=primary_detection.category,
+            containment_confidence=primary_detection.confidence,
+            containment_method="specialized_detector",
+            triage_note=triage_note,
+        )
+
+        db.add(incident)
+        await db.flush()
+
+        logger.warning(
+            "NEW SPECIAL INCIDENT #%s: %s detected for %s",
+            incident.id,
+            primary_detection.category,
+            src_ip,
+        )
+
+        return {
+            "incident_id": incident.id,
+            "src_ip": src_ip,
+            "severity": primary_detection.severity,
+            "threat_category": primary_detection.category,
+            "confidence": primary_detection.confidence,
+        }
+
+    def _detect_ddos(self, events: List[Event]) -> Optional[SpecializedDetectionResult]:
+        if not events or len(events) < 120:
+            return None
+
+        sorted_events = sorted([e for e in events if e.ts], key=lambda e: e.ts)
+        if len(sorted_events) < 2:
+            return None
+
+        time_span = (sorted_events[-1].ts - sorted_events[0].ts).total_seconds()
+        if time_span <= 0:
+            time_span = 1
+
+        event_rate = len(sorted_events) / time_span  # events per second
+
+        target_counter = Counter((e.dst_ip, e.dst_port) for e in sorted_events)
+        most_common_target, most_common_count = (None, 0)
+        if target_counter:
+            most_common_target, most_common_count = target_counter.most_common(1)[0]
+
+        concentration_ratio = most_common_count / len(sorted_events) if sorted_events else 0.0
+
+        if event_rate >= 2.5 and concentration_ratio >= 0.6:
+            indicators: Dict[str, Any] = {
+                "event_rate_per_second": round(event_rate, 2),
+                "event_count": len(sorted_events),
+                "most_targeted_service": most_common_target,
+                "target_concentration": round(concentration_ratio, 2),
+            }
+
+            severity = "critical" if event_rate >= 5 else "high"
+            confidence = min(1.0, 0.5 + concentration_ratio + (event_rate / 10))
+
+            return SpecializedDetectionResult(
+                category="ddos",
+                severity=severity,
+                confidence=confidence,
+                description="High-volume traffic flood detected targeting a single service",
+                indicators=indicators,
+            )
+
+        return None
+
+    async def _correlate_suricata_alerts(
+        self,
+        db: AsyncSession,
+        src_ip: str,
+        recent_events: List[Event]
+    ) -> Optional[Dict[str, Any]]:
+        """Correlate Suricata IDS alerts with honeypot activity for the same IP."""
+
+        window_start = datetime.now(timezone.utc) - timedelta(minutes=15)
+
+        query = select(Event).where(
+            and_(
+                Event.source_type == 'suricata',
+                Event.ts >= window_start,
+                or_(Event.src_ip == src_ip, Event.dst_ip == src_ip)
+            )
+        ).order_by(Event.ts.desc())
+
+        result = await db.execute(query)
+        suricata_events = result.scalars().all()
+
+        if not suricata_events:
+            return None
+
+        local_activity = [e for e in recent_events if e.source_type != 'suricata']
+        if not local_activity:
+            return None
+
+        signatures = []
+        severities = []
+        categories = []
+
+        for alert in suricata_events:
+            raw = {}
+            if isinstance(alert.raw, dict):
+                raw = alert.raw
+            elif isinstance(alert.raw, str):
+                try:
+                    raw = json.loads(alert.raw)
+                except json.JSONDecodeError:
+                    raw = {}
+
+            signature = raw.get('alert', {}).get('signature') or alert.message or 'Suricata Alert'
+            severity = raw.get('alert', {}).get('severity')
+            category = raw.get('alert', {}).get('category')
+
+            signatures.append(signature)
+            if severity is not None:
+                severities.append(int(severity))
+            if category:
+                categories.append(category)
+
+        if not signatures:
+            return None
+
+        avg_severity = sum(severities) / len(severities) if severities else 3
+        severity_label = 'high' if avg_severity <= 2 else 'medium'
+        confidence = min(1.0, 0.6 + 0.1 * len(signatures))
+
+        detection = SpecializedDetectionResult(
+            category='suricata_alert',
+            severity=severity_label,
+            confidence=confidence,
+            description='Correlated Suricata IDS alerts with honeypot activity',
+            indicators={
+                'suricata_signatures': signatures[:10],
+                'suricata_categories': categories[:10],
+                'average_alert_severity': avg_severity,
+                'honeypot_events': len(local_activity),
+            }
+        )
+
+        return await self._create_special_incident(db, src_ip, [detection])
 
 
 # Global adaptive engine instance  

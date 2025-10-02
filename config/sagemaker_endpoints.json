@@ -1,0 +1,21 @@
+{
+  "endpoint_name": "mini-xdr-production-endpoint",
+  "model_name": "mini-xdr-enhanced-20250929-172332",
+  "training_job": "enhanced-xdr-real-data-20250929-070000",
+  "model_accuracy": 0.9798,
+  "features": 79,
+  "region": "us-east-1",
+  "updated_at": "2025-09-29T17:27:06.187748",
+  "model_type": "EnhancedXDRThreatDetector",
+  "capabilities": [
+    "attention",
+    "uncertainty_quantification",
+    "skip_connections"
+  ],
+  "cost_optimization": {
+    "development_mode": true,
+    "auto_scale_enabled": false,
+    "scale_to_zero_when_idle": true,
+    "max_hourly_cost": 5.0
+  }
+}

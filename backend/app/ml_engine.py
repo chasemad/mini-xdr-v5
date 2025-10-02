@@ -91,7 +91,8 @@ class BaseMLDetector:
             'command_diversity', 'download_attempts', 'upload_attempts'
         ]
         self.scaler = StandardScaler()
-        self.model_dir = Path("models")
+        # Fix path to models directory (relative to project root, not backend dir)
+        self.model_dir = Path(__file__).parent.parent.parent / "models"
         self.model_dir.mkdir(exist_ok=True)
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
     
@@ -102,10 +103,11 @@ class BaseMLDetector:
         
         features = {}
         
-        # Time-based features
-        now = datetime.utcnow()
-        events_1h = [e for e in events if (now - e.ts).total_seconds() <= 3600]
-        events_24h = [e for e in events if (now - e.ts).total_seconds() <= 86400]
+        # Time-based features (timezone-aware)
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        events_1h = [e for e in events if (now - (e.ts.replace(tzinfo=timezone.utc) if e.ts.tzinfo is None else e.ts)).total_seconds() <= 3600]
+        events_24h = [e for e in events if (now - (e.ts.replace(tzinfo=timezone.utc) if e.ts.tzinfo is None else e.ts)).total_seconds() <= 86400]
         
         features['event_count_1h'] = len(events_1h)
         features['event_count_24h'] = len(events_24h)
@@ -872,24 +874,73 @@ class EnhancedFederatedDetector:
                 self.logger.warning(f"Failed to load deep learning models: {e}")
 
     async def calculate_anomaly_score(self, src_ip: str, events: List[Event]) -> float:
-        """Enhanced anomaly scoring with deep learning integration"""
+        """Enhanced anomaly scoring with local ML models and deep learning integration"""
         try:
             # Get traditional ML score
             traditional_score = await self.federated_detector.calculate_anomaly_score(src_ip, events)
 
-            # Get deep learning score if available
+            # Try local ML models first (trained PyTorch models)
+            local_ml_score = 0.0
+            predicted_class = "Unknown"
+            confidence = 0.0
+            
+            try:
+                # Import local ML client
+                import sys
+                from pathlib import Path
+                ml_path = Path(__file__).parent.parent.parent / "aws"
+                if str(ml_path) not in sys.path:
+                    sys.path.insert(0, str(ml_path))
+                
+                from local_inference import local_ml_client
+                
+                if await local_ml_client.health_check():
+                    # Use comprehensive feature extraction (79 features)
+                    from .ml_feature_extractor import ml_feature_extractor
+                    feature_vector = ml_feature_extractor.extract_features(src_ip, events)
+                    
+                    # Prepare event for local ML (using extracted features)
+                    ml_events = [{
+                        'id': events[0].id if hasattr(events[0], 'id') else 0,
+                        'src_ip': src_ip,
+                        'dst_port': events[0].dst_port if events else 0,
+                        'eventid': events[0].eventid if events else '',
+                        'message': events[0].message if events else '',
+                        'timestamp': events[0].ts.isoformat() if events and events[0].ts else None,
+                        'raw': events[0].raw if events and hasattr(events[0], 'raw') else {},
+                        'features': feature_vector  # Pass extracted features
+                    }]
+                    
+                    results = await local_ml_client.detect_threats(ml_events)
+                    if results:
+                        local_ml_score = results[0].get('anomaly_score', 0.0)
+                        predicted_class = results[0].get('predicted_class', 'Unknown')
+                        confidence = results[0].get('confidence', 0.0)
+                        
+                        self.logger.info(f"Local ML: {predicted_class} (conf: {confidence:.3f}, score: {local_ml_score:.3f})")
+            except Exception as e:
+                self.logger.warning(f"Local ML inference failed: {e}")
+
+            # Get local deep learning score if available
             deep_score = 0.0
             if self.deep_learning_enabled and self.deep_learning_manager:
-                deep_result = await self.deep_learning_manager.calculate_threat_score(src_ip, events)
-                deep_score = deep_result.get('ensemble_score', 0.0)
+                try:
+                    deep_result = await self.deep_learning_manager.calculate_threat_score(src_ip, events)
+                    deep_score = deep_result.get('ensemble_score', 0.0)
+                except Exception as e:
+                    self.logger.debug(f"Deep learning scoring failed: {e}")
 
-            # Combine scores
-            if self.deep_learning_enabled and deep_score > 0:
-                # Weight: 60% deep learning, 40% traditional (deep learning is more accurate)
+            # Combine scores with preference for local ML models
+            if local_ml_score > 0:
+                # Prefer local ML (trained on real data): 70% local ML, 30% traditional
+                combined_score = 0.7 * local_ml_score + 0.3 * traditional_score
+                self.logger.info(f"Local ML scoring - ML: {local_ml_score:.3f}, "
+                               f"Traditional: {traditional_score:.3f}, Combined: {combined_score:.3f}")
+            elif self.deep_learning_enabled and deep_score > 0:
+                # Local deep learning: 60% deep learning, 40% traditional  
                 combined_score = 0.6 * deep_score + 0.4 * traditional_score
-
-                self.logger.debug(f"Combined scoring - Traditional: {traditional_score:.3f}, "
-                                f"Deep: {deep_score:.3f}, Combined: {combined_score:.3f}")
+                self.logger.debug(f"Deep learning - Deep: {deep_score:.3f}, "
+                                f"Traditional: {traditional_score:.3f}, Combined: {combined_score:.3f}")
             else:
                 combined_score = traditional_score
                 self.logger.debug(f"Traditional scoring only: {combined_score:.3f}")

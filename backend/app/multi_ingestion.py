@@ -15,6 +15,7 @@ from sqlalchemy import select
 from .models import Event, LogSource
 from .ml_engine import EnsembleMLDetector
 from .external_intel import ThreatIntelligence
+from .malware_analyzer import malware_analyzer
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -120,7 +121,14 @@ class MultiSourceIngestor:
                     signature=event_data.get('signature'),
                     agent_timestamp=event_data.get('agent_timestamp')
                 )
-                
+
+                # Trigger malware analysis for downloaded files
+                if event_obj.eventid == "cowrie.session.file_download":
+                    try:
+                        await malware_analyzer.analyze_event(event_obj)
+                    except Exception as e:
+                        self.logger.error("Malware analysis failed: %s", e)
+
                 # 5. Calculate ML anomaly score (async)
                 if self.calculate_ml_scores and event_obj.src_ip:
                     try:
