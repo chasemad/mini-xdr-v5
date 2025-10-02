@@ -1,0 +1,47 @@
+# AWS Production Requirements for Mini-XDR Phase 1
+# Simplified dependencies for stable AWS deployment
+
+# Core API Framework
+fastapi==0.116.1
+uvicorn[standard]==0.32.1
+
+# Database
+sqlalchemy==2.0.36
+alembic==1.14.0
+aiosqlite==0.20.0
+pydantic-settings==2.6.1
+
+# Security & Authentication
+paramiko==3.5.0
+cryptography==45.0.7
+
+# Scheduling & Background Tasks
+apscheduler==3.11.0
+
+# AWS & Cloud Services
+boto3==1.40.40
+requests==2.32.5
+python-multipart==0.0.6
+
+# Core ML (compatible versions)
+numpy>=1.22.4,<2.0.0  # Base requirement first
+scikit-learn>=1.3.0,<1.6.0  # Compatible with numpy <2.0
+pandas>=2.0.0,<2.3.0  # Compatible with numpy <2.0
+
+# AI Agents (basic)
+openai==1.58.1
+
+# Async & Networking
+aiohttp==3.9.5
+aiofiles==23.2.1
+websockets==12.0
+
+# Configuration
+pyyaml==6.0.2
+
+# Monitoring
+prometheus-client==0.20.0
+
+# Essential utilities
+joblib==1.4.2
+greenlet

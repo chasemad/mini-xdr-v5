@@ -1,0 +1,483 @@
+{
+  "timestamp": "2025-09-30T23:01:55.984801",
+  "total_scenarios": 12,
+  "passed_scenarios": 12,
+  "total_workflows": 17,
+  "total_investigations": 24,
+  "coverage_percentage": 100.0,
+  "agent_coverage": 0.0,
+  "results": [
+    {
+      "scenario": "ssh_brute_force",
+      "attack_type": "SSH Brute Force",
+      "commands_tested": [
+        {
+          "command": "Block this SSH brute force attack",
+          "workflow_created": false,
+          "investigation_started": false,
+          "analysis_type": "contextual_chat"
+        },
+        {
+          "command": "Investigate the brute force pattern",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        },
+        {
+          "command": "Hunt for similar brute force attacks",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        },
+        {
+          "command": "Analyze the attacker's behavior",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        }
+      ],
+      "workflows_created": [],
+      "investigations_started": [
+        "inv_33ed26c28aae",
+        "inv_2f58e132a203",
+        "inv_a141f1e297f8"
+      ],
+      "agents_triggered": [],
+      "success": true
+    },
+    {
+      "scenario": "ddos_attack",
+      "attack_type": "DDoS/DoS",
+      "commands_tested": [
+        {
+          "command": "Deploy firewall rules to mitigate this DDoS",
+          "workflow_created": true,
+          "investigation_started": false,
+          "analysis_type": "workflow_creation"
+        },
+        {
+          "command": "Capture network traffic during this attack",
+          "workflow_created": true,
+          "investigation_started": false,
+          "analysis_type": "workflow_creation"
+        },
+        {
+          "command": "Investigate the DDoS attack pattern",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        },
+        {
+          "command": "Block all attacking IPs",
+          "workflow_created": false,
+          "investigation_started": false,
+          "analysis_type": "contextual_chat"
+        }
+      ],
+      "workflows_created": [
+        "chat_c34a34d9cce7",
+        "chat_4dc9ff395aa6"
+      ],
+      "investigations_started": [
+        "inv_ea9322660f9a"
+      ],
+      "agents_triggered": [],
+      "success": true
+    },
+    {
+      "scenario": "malware_botnet",
+      "attack_type": "Malware/Botnet",
+      "commands_tested": [
+        {
+          "command": "Isolate infected systems and quarantine the malware",
+          "workflow_created": true,
+          "investigation_started": false,
+          "analysis_type": "workflow_creation"
+        },
+        {
+          "command": "Investigate the malware behavior and analyze the payload",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        },
+        {
+          "command": "Hunt for similar malware across the network",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        },
+        {
+          "command": "Capture forensic evidence and analyze the binary",
+          "workflow_created": true,
+          "investigation_started": false,
+          "analysis_type": "workflow_creation"
+        }
+      ],
+      "workflows_created": [
+        "chat_5ebcabaf8bfa",
+        "chat_302ae4a56ccf"
+      ],
+      "investigations_started": [
+        "inv_15c17c61c9cc",
+        "inv_b34d4d22aeb5"
+      ],
+      "agents_triggered": [],
+      "success": true
+    },
+    {
+      "scenario": "web_attacks",
+      "attack_type": "Web Attack (SQL Injection/XSS)",
+      "commands_tested": [
+        {
+          "command": "Deploy WAF rules to block this SQL injection",
+          "workflow_created": true,
+          "investigation_started": false,
+          "analysis_type": "workflow_creation"
+        },
+        {
+          "command": "Investigate the web attack pattern",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        },
+        {
+          "command": "Block the attacking IP and analyze the payload",
+          "workflow_created": true,
+          "investigation_started": false,
+          "analysis_type": "workflow_creation"
+        },
+        {
+          "command": "Check database integrity after this attack",
+          "workflow_created": false,
+          "investigation_started": false,
+          "analysis_type": "contextual_chat"
+        }
+      ],
+      "workflows_created": [
+        "chat_1e02ac9c7515",
+        "chat_75f1849479b9"
+      ],
+      "investigations_started": [
+        "inv_c8f2f96f1950"
+      ],
+      "agents_triggered": [],
+      "success": true
+    },
+    {
+      "scenario": "apt_attack",
+      "attack_type": "Advanced Persistent Threat",
+      "commands_tested": [
+        {
+          "command": "Investigate this APT activity and track the threat actor",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        },
+        {
+          "command": "Hunt for lateral movement indicators",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        },
+        {
+          "command": "Isolate affected systems and analyze the attack chain",
+          "workflow_created": true,
+          "investigation_started": false,
+          "analysis_type": "workflow_creation"
+        },
+        {
+          "command": "Capture all evidence and perform deep forensics",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        }
+      ],
+      "workflows_created": [
+        "chat_b85937ae5e7f"
+      ],
+      "investigations_started": [
+        "inv_b493f7c8617b",
+        "inv_dc4106e1a9bc",
+        "inv_e50545bdaf23"
+      ],
+      "agents_triggered": [],
+      "success": true
+    },
+    {
+      "scenario": "credential_stuffing",
+      "attack_type": "Credential Stuffing",
+      "commands_tested": [
+        {
+          "command": "Reset passwords for compromised accounts",
+          "workflow_created": true,
+          "investigation_started": false,
+          "analysis_type": "workflow_creation"
+        },
+        {
+          "command": "Block the credential stuffing attack",
+          "workflow_created": false,
+          "investigation_started": false,
+          "analysis_type": "contextual_chat"
+        },
+        {
+          "command": "Investigate the credential list source",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        },
+        {
+          "command": "Enable MFA for affected accounts",
+          "workflow_created": false,
+          "investigation_started": false,
+          "analysis_type": "contextual_chat"
+        }
+      ],
+      "workflows_created": [
+        "chat_c8042df9480e"
+      ],
+      "investigations_started": [
+        "inv_f01670323f6e"
+      ],
+      "agents_triggered": [],
+      "success": true
+    },
+    {
+      "scenario": "lateral_movement",
+      "attack_type": "Lateral Movement",
+      "commands_tested": [
+        {
+          "command": "Investigate lateral movement across the network",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        },
+        {
+          "command": "Isolate compromised hosts to prevent spread",
+          "workflow_created": true,
+          "investigation_started": false,
+          "analysis_type": "workflow_creation"
+        },
+        {
+          "command": "Hunt for similar movement patterns",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        },
+        {
+          "command": "Analyze the attacker's pivot strategy",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        }
+      ],
+      "workflows_created": [
+        "chat_b6c9db5b2088"
+      ],
+      "investigations_started": [
+        "inv_21805a30eb4a",
+        "inv_a607d60dc13b",
+        "inv_90d18ab8e4e3"
+      ],
+      "agents_triggered": [],
+      "success": true
+    },
+    {
+      "scenario": "data_exfiltration",
+      "attack_type": "Data Exfiltration",
+      "commands_tested": [
+        {
+          "command": "Block IP and encrypt sensitive data immediately",
+          "workflow_created": true,
+          "investigation_started": false,
+          "analysis_type": "workflow_creation"
+        },
+        {
+          "command": "Investigate data exfiltration patterns",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        },
+        {
+          "command": "Capture network traffic and analyze data flow",
+          "workflow_created": true,
+          "investigation_started": false,
+          "analysis_type": "workflow_creation"
+        },
+        {
+          "command": "Enable DLP and backup critical data",
+          "workflow_created": true,
+          "investigation_started": false,
+          "analysis_type": "workflow_creation"
+        }
+      ],
+      "workflows_created": [
+        "chat_2c2657cf2e51",
+        "chat_858296554c05",
+        "chat_6d2e7c5ac00a"
+      ],
+      "investigations_started": [
+        "inv_0b6e678ab5ac"
+      ],
+      "agents_triggered": [],
+      "success": true
+    },
+    {
+      "scenario": "reconnaissance",
+      "attack_type": "Network Reconnaissance",
+      "commands_tested": [
+        {
+          "command": "Investigate this reconnaissance activity",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        },
+        {
+          "command": "Deploy deception services to track the attacker",
+          "workflow_created": true,
+          "investigation_started": false,
+          "analysis_type": "workflow_creation"
+        },
+        {
+          "command": "Block scanning IPs and analyze the pattern",
+          "workflow_created": true,
+          "investigation_started": false,
+          "analysis_type": "workflow_creation"
+        },
+        {
+          "command": "Hunt for similar reconnaissance across the network",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        }
+      ],
+      "workflows_created": [
+        "chat_c314c3261005",
+        "chat_63ec555dfaad"
+      ],
+      "investigations_started": [
+        "inv_f43f37002ed9",
+        "inv_328af4179bc2"
+      ],
+      "agents_triggered": [],
+      "success": true
+    },
+    {
+      "scenario": "command_control",
+      "attack_type": "Command & Control",
+      "commands_tested": [
+        {
+          "command": "Investigate C2 communication and identify the server",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        },
+        {
+          "command": "Block C2 traffic and isolate infected hosts",
+          "workflow_created": true,
+          "investigation_started": false,
+          "analysis_type": "workflow_creation"
+        },
+        {
+          "command": "Analyze the C2 protocol and track the campaign",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        },
+        {
+          "command": "Hunt for other systems communicating with this C2",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        }
+      ],
+      "workflows_created": [
+        "chat_302900cb3ce4"
+      ],
+      "investigations_started": [
+        "inv_83862d8e4f02",
+        "inv_c4706899aaec",
+        "inv_5e2d43d02ea3"
+      ],
+      "agents_triggered": [],
+      "success": true
+    },
+    {
+      "scenario": "password_spray",
+      "attack_type": "Password Spray Attack",
+      "commands_tested": [
+        {
+          "command": "Block this password spray attack",
+          "workflow_created": false,
+          "investigation_started": false,
+          "analysis_type": "contextual_chat"
+        },
+        {
+          "command": "Reset passwords and enforce MFA",
+          "workflow_created": true,
+          "investigation_started": false,
+          "analysis_type": "workflow_creation"
+        },
+        {
+          "command": "Investigate the spray pattern and target accounts",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        },
+        {
+          "command": "Hunt for distributed attack sources",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        }
+      ],
+      "workflows_created": [
+        "chat_9c5139085aa8"
+      ],
+      "investigations_started": [
+        "inv_67559c71e4df",
+        "inv_66213e7cd56a"
+      ],
+      "agents_triggered": [],
+      "success": true
+    },
+    {
+      "scenario": "insider_threat",
+      "attack_type": "Insider Threat",
+      "commands_tested": [
+        {
+          "command": "Investigate this insider threat activity",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        },
+        {
+          "command": "Revoke user sessions and disable the account",
+          "workflow_created": true,
+          "investigation_started": false,
+          "analysis_type": "workflow_creation"
+        },
+        {
+          "command": "Analyze access patterns and data accessed",
+          "workflow_created": false,
+          "investigation_started": true,
+          "analysis_type": "forensic_investigation"
+        },
+        {
+          "command": "Track user behavior and identify anomalies",
+          "workflow_created": false,
+          "investigation_started": false,
+          "analysis_type": "contextual_chat"
+        }
+      ],
+      "workflows_created": [
+        "chat_517c64583dea"
+      ],
+      "investigations_started": [
+        "inv_c3061041ad76",
+        "inv_ac9c370c5f89"
+      ],
+      "agents_triggered": [],
+      "success": true
+    }
+  ]
+}

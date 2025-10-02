@@ -6,12 +6,12 @@ import {
   socBlockIP, socIsolateHost, socResetPasswords, socThreatIntelLookup, socHuntSimilarAttacks
 } from "./lib/api";
 import Link from "next/link";
-import { 
-  Shield, AlertTriangle, Bot, Zap, 
+import {
+  Shield, AlertTriangle, Bot, Zap,
   Search, Filter, RefreshCw, Settings, Bell, User,
   ChevronDown, ChevronRight, Eye, MessageSquare,
   BarChart3, Activity, Target, Globe,
-  ArrowUpRight, ArrowDownRight, Minus, Ban, Key, Loader2
+  ArrowUpRight, ArrowDownRight, Minus, Ban, Key, Loader2, Workflow
 } from "lucide-react";
 
 interface Incident {
@@ -236,7 +236,7 @@ export default function SOCAnalystDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
+      <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-gray-400">Initializing SOC Command Center...</p>
@@ -246,7 +246,7 @@ export default function SOCAnalystDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white flex">
+    <div className="min-h-screen bg-gray-950 text-white flex">
       {/* Toast Notifications */}
       <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
         {toasts.map(toast => (
@@ -259,9 +259,9 @@ export default function SOCAnalystDashboard() {
         ))}
       </div>
       {/* Sidebar */}
-      <div className={`${sidebarCollapsed ? 'w-16' : 'w-80'} bg-gray-800/50 border-r border-gray-700/50 transition-all duration-300 flex flex-col`}>
+      <div className={`${sidebarCollapsed ? 'w-16' : 'w-80'} bg-gray-900 border-r border-gray-800 transition-all duration-300 flex flex-col`}>
         {/* Header */}
-        <div className="p-4 border-b border-gray-700/50">
+        <div className="p-4 border-b border-gray-800">
           <div className="flex items-center justify-between">
             {!sidebarCollapsed && (
               <div>
@@ -290,6 +290,7 @@ export default function SOCAnalystDashboard() {
                   { id: 'hunting', label: 'Threat Hunting', icon: Target, isTab: true },
                   { id: 'forensics', label: 'Forensics', icon: Search, isTab: true },
                   { id: 'response', label: 'Response Actions', icon: Shield, isTab: true },
+                  { id: 'workflows', label: 'Workflow Automation', icon: Workflow, href: '/workflows' },
                   { id: 'visualizations', label: '3D Visualization', icon: Activity, href: '/visualizations' }
                 ].map(({ id, label, icon: Icon, isTab, href }) => {
                   if (href) {
@@ -322,7 +323,7 @@ export default function SOCAnalystDashboard() {
             </div>
 
             {/* Quick Stats */}
-            <div className="p-4 border-t border-gray-700/50">
+            <div className="p-4 border-t border-gray-800">
               <h3 className="text-sm font-semibold text-gray-300 mb-3">System Status</h3>
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -343,6 +344,54 @@ export default function SOCAnalystDashboard() {
                 </div>
               </div>
             </div>
+
+            {/* AI Agents & MCP Status */}
+            <div className="p-4 border-t border-gray-800">
+              <div className="flex items-center gap-2 mb-3">
+                <Bot className="w-4 h-4 text-purple-400" />
+                <h3 className="text-sm font-semibold text-gray-300">AI Agent Orchestra</h3>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between p-2 bg-gray-700/30 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-xs text-gray-300">Attribution</span>
+                  </div>
+                  <span className="text-xs text-green-400 font-medium">Active</span>
+                </div>
+                <div className="flex items-center justify-between p-2 bg-gray-700/30 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-xs text-gray-300">Containment</span>
+                  </div>
+                  <span className="text-xs text-green-400 font-medium">Active</span>
+                </div>
+                <div className="flex items-center justify-between p-2 bg-gray-700/30 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-xs text-gray-300">Forensics</span>
+                  </div>
+                  <span className="text-xs text-green-400 font-medium">Active</span>
+                </div>
+                <div className="flex items-center justify-between p-2 bg-gray-700/30 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-xs text-gray-300">Deception</span>
+                  </div>
+                  <span className="text-xs text-green-400 font-medium">Active</span>
+                </div>
+
+                <div className="mt-3 pt-3 border-t border-gray-800">
+                  <div className="flex items-center justify-between p-2 bg-blue-600/20 border border-blue-500/30 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <Zap className="w-3 h-3 text-blue-400" />
+                      <span className="text-xs text-blue-300 font-medium">MCP Server</span>
+                    </div>
+                    <span className="text-xs text-green-400 font-medium">Online</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </>
         )}
       </div>
@@ -350,7 +399,7 @@ export default function SOCAnalystDashboard() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
         {/* Top Bar */}
-        <div className="bg-gray-800/30 border-b border-gray-700/50 p-4">
+        <div className="bg-gray-900/50 border-b border-gray-800 p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <h2 className="text-2xl font-bold text-white">
@@ -402,7 +451,7 @@ export default function SOCAnalystDashboard() {
               <div className="space-y-6">
                 {/* Metrics Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  <div className="bg-gradient-to-br from-red-500/10 to-red-600/20 border border-red-500/30 rounded-xl p-6">
+                  <div className="bg-gray-900 border border-red-500/30 rounded-xl p-6">
                     <div className="flex items-center justify-between mb-4">
                       <div className="p-3 bg-red-500/20 rounded-lg">
                         <AlertTriangle className="w-6 h-6 text-red-400" />
@@ -418,7 +467,7 @@ export default function SOCAnalystDashboard() {
                     </div>
                   </div>
 
-                  <div className="bg-gradient-to-br from-orange-500/10 to-orange-600/20 border border-orange-500/30 rounded-xl p-6">
+                  <div className="bg-gray-900 border border-orange-500/30 rounded-xl p-6">
                     <div className="flex items-center justify-between mb-4">
                       <div className="p-3 bg-orange-500/20 rounded-lg">
                         <Zap className="w-6 h-6 text-orange-400" />
@@ -434,7 +483,7 @@ export default function SOCAnalystDashboard() {
                     </div>
                   </div>
 
-                  <div className="bg-gradient-to-br from-green-500/10 to-green-600/20 border border-green-500/30 rounded-xl p-6">
+                  <div className="bg-gray-900 border border-green-500/30 rounded-xl p-6">
                     <div className="flex items-center justify-between mb-4">
                       <div className="p-3 bg-green-500/20 rounded-lg">
                         <Shield className="w-6 h-6 text-green-400" />
@@ -450,7 +499,7 @@ export default function SOCAnalystDashboard() {
                     </div>
                   </div>
 
-                  <div className="bg-gradient-to-br from-blue-500/10 to-blue-600/20 border border-blue-500/30 rounded-xl p-6">
+                  <div className="bg-gray-900 border border-blue-500/30 rounded-xl p-6">
                     <div className="flex items-center justify-between mb-4">
                       <div className="p-3 bg-blue-500/20 rounded-lg">
                         <Bot className="w-6 h-6 text-blue-400" />
@@ -468,7 +517,7 @@ export default function SOCAnalystDashboard() {
                 </div>
 
                 {/* Recent Activity */}
-                <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
                   <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                     <Activity className="w-5 h-5 text-green-400" />
                     Recent Activity

@@ -58,7 +58,6 @@ pycryptodome==3.19.0  # Enhanced cryptography for secure aggregation
 shap==0.46.0  # SHAP explanations for model interpretability (requires NumPy <2.2)
 lime>=0.2.0.1  # LIME explanations for local interpretability
 optuna==3.6.1  # Hyperparameter optimization for ensemble models
-scipy>=1.14.0  # Statistical functions for drift detection
 
 # Phase 3: Distributed MCP Architecture Dependencies
 kafka-python==2.0.2  # Apache Kafka integration for distributed messaging

@@ -90,8 +90,41 @@ def _openai_triage(payload: Dict[str, Any]) -> Dict[str, Any]:
         content = content.strip()
         if not content:
             raise ValueError("Empty response content from OpenAI")
+        
+        # Handle potential JSON parsing issues
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError as e:
+            logger.warning(f"OpenAI returned invalid JSON: {e}")
+            logger.warning(f"Content: {content[:200]}...")
             
-        return json.loads(content)
+            # Fallback: extract key information from malformed JSON
+            summary_match = content.find('"summary"')
+            if summary_match != -1:
+                # Try to extract at least the summary
+                try:
+                    # Simple extraction fallback
+                    import re
+                    summary = re.search(r'"summary":\s*"([^"]+)"', content)
+                    severity = re.search(r'"severity":\s*"([^"]+)"', content)
+                    recommendation = re.search(r'"recommendation":\s*"([^"]+)"', content)
+                    
+                    return {
+                        "summary": summary.group(1) if summary else "AI analysis completed",
+                        "severity": severity.group(1) if severity else "medium", 
+                        "recommendation": recommendation.group(1) if recommendation else "investigate",
+                        "rationale": ["AI analysis completed with partial parsing", "Manual review recommended"]
+                    }
+                except Exception:
+                    pass
+            
+            # Final fallback
+            return {
+                "summary": "AI analysis completed but response format error occurred",
+                "severity": "medium",
+                "recommendation": "investigate", 
+                "rationale": ["OpenAI response parsing failed", "Manual analysis recommended"]
+            }
         
     except Exception as e:
         logger.error(f"OpenAI triage error: {e}")
