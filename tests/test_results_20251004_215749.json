@@ -1,0 +1,171 @@
+{
+  "timestamp": "2025-10-04T21:57:49.975026",
+  "summary": {
+    "total": 12,
+    "passed": 10,
+    "failed": 2,
+    "warnings": 20
+  },
+  "details": [
+    {
+      "test": "Backend Health",
+      "status": "PASS",
+      "details": "Database: None"
+    },
+    {
+      "test": "ML Model Status",
+      "status": "PASS",
+      "details": "12 models trained"
+    },
+    {
+      "test": "Agent Credentials",
+      "status": "WARNING",
+      "details": "Only 0 agents configured (expected 6)"
+    },
+    {
+      "test": "SageMaker Endpoint",
+      "status": "WARNING",
+      "details": "Status: unknown"
+    },
+    {
+      "test": "SSH Brute Force",
+      "status": "PASS",
+      "details": "10 events ingested"
+    },
+    {
+      "test": "Port Scan",
+      "status": "PASS",
+      "details": "10 events ingested"
+    },
+    {
+      "test": "Malware Execution",
+      "status": "PASS",
+      "details": "5 events ingested"
+    },
+    {
+      "test": "APT Download",
+      "status": "PASS",
+      "details": "2 events ingested"
+    },
+    {
+      "test": "Incident Detection",
+      "status": "PASS",
+      "details": "13 incidents detected"
+    },
+    {
+      "test": "ML Confidence",
+      "status": "WARNING",
+      "details": "No high-confidence predictions"
+    },
+    {
+      "test": "Threat Classification",
+      "status": "WARNING",
+      "details": "Only 0 threat type detected"
+    },
+    {
+      "test": "ML Details (Inc 13)",
+      "status": "WARNING",
+      "details": "No ML analysis found"
+    },
+    {
+      "test": "ML Details (Inc 12)",
+      "status": "WARNING",
+      "details": "No ML analysis found"
+    },
+    {
+      "test": "ML Details (Inc 11)",
+      "status": "WARNING",
+      "details": "No ML analysis found"
+    },
+    {
+      "test": "Containment Agent",
+      "status": "WARNING",
+      "details": "Action created but no confirmation"
+    },
+    {
+      "test": "Forensics Agent",
+      "status": "WARNING",
+      "details": "Action created but no confirmation"
+    },
+    {
+      "test": "Attribution Agent",
+      "status": "WARNING",
+      "details": "Action created but no confirmation"
+    },
+    {
+      "test": "Deception Agent",
+      "status": "WARNING",
+      "details": "Action created but no confirmation"
+    },
+    {
+      "test": "Threat Hunting Agent",
+      "status": "WARNING",
+      "details": "Action created but no confirmation"
+    },
+    {
+      "test": "NLP Workflow: 'Block this attacker's IP and i...'",
+      "status": "WARNING",
+      "details": "Workflow not created"
+    },
+    {
+      "test": "NLP Workflow: 'Isolate affected systems and c...'",
+      "status": "WARNING",
+      "details": "Workflow not created"
+    },
+    {
+      "test": "NLP Workflow: 'Hunt for similar attacks acros...'",
+      "status": "WARNING",
+      "details": "Workflow not created"
+    },
+    {
+      "test": "Workflow Listing",
+      "status": "WARNING",
+      "details": "No workflows found"
+    },
+    {
+      "test": "Response Actions",
+      "status": "WARNING",
+      "details": "Only 0 actions available"
+    },
+    {
+      "test": "Investigation Creation",
+      "status": "WARNING",
+      "details": "Investigation created but no ID returned"
+    },
+    {
+      "test": "Chat Interface",
+      "status": "FAIL",
+      "details": "No response from chat"
+    },
+    {
+      "test": "Alert System",
+      "status": "PASS",
+      "details": "0 alerts generated"
+    },
+    {
+      "test": "Dashboard Metrics",
+      "status": "FAIL",
+      "details": "Metrics not available"
+    },
+    {
+      "test": "Event Statistics",
+      "status": "WARNING",
+      "details": "No events found"
+    },
+    {
+      "test": "Multi-Stage Attack",
+      "status": "PASS",
+      "details": "Detected 13 events across 3 stages"
+    },
+    {
+      "test": "Coordinated Response",
+      "status": "WARNING",
+      "details": "Workflow created but no confirmation"
+    },
+    {
+      "test": "Honeypot Connectivity",
+      "status": "PASS",
+      "details": "Successfully connected to 74.235.242.205"
+    }
+  ]
+}

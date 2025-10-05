@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parents[1]
+BASE_DIR = Path(__file__).resolve().parents[2]  # Go up to mini-xdr root
 BACKEND_PATH = BASE_DIR / 'backend'
 if str(BACKEND_PATH) not in sys.path:
     sys.path.insert(0, str(BACKEND_PATH))

@@ -208,9 +208,19 @@ class DeepLearningModelManager:
             # Load preprocessing
             scaler_path = model_dir / "scaler.pkl"
             if scaler_path.exists():
-                self.scaler = joblib.load(scaler_path)
-                results['scaler'] = True
-                logger.info("Scaler loaded successfully")
+                loaded_scaler = joblib.load(scaler_path)
+                # Validate scaler is not None and has required attributes
+                if loaded_scaler is not None and hasattr(loaded_scaler, 'transform'):
+                    self.scaler = loaded_scaler
+                    results['scaler'] = True
+                    logger.info("Scaler loaded successfully")
+                else:
+                    logger.warning("Scaler file is corrupted or invalid - assuming pre-normalized data")
+                    self.scaler = None
+                    results['scaler'] = False
+            else:
+                logger.info("No scaler found - assuming pre-normalized data")
+                self.scaler = None
 
             label_encoder_path = model_dir / "label_encoder.pkl"
             if label_encoder_path.exists():

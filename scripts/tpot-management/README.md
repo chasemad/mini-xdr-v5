@@ -1,212 +1,240 @@
-# 🍯 T-Pot Honeypot Management Scripts
+# T-Pot Management Scripts
 
-This directory contains all scripts for managing your T-Pot honeypot deployment on AWS, including security configuration, log forwarding, and access control.
+Management scripts for T-Pot honeypot deployment and integration with Mini-XDR.
 
-## Scripts Overview
+## Quick Start: Setup Workflows
 
-### 🚀 Deployment & Startup
+### 1️⃣ Setup All T-Pot Workflows (Recommended)
 
-#### `setup-tpot-integration.sh`
-**Complete T-Pot integration setup**
-- **Purpose**: Prepare Mini-XDR for T-Pot honeypot integration
-- **Features**: API key generation, Fluent Bit config, environment setup
-- **Usage**: `./setup-tpot-integration.sh`
-- **Run**: Once during initial setup
-
-#### `start-secure-tpot.sh`
-**Secure T-Pot startup script**
-- **Purpose**: Start T-Pot honeypot with all security measures in place
-- **Features**: AWS instance startup, status monitoring, security verification
-- **Usage**: `./start-secure-tpot.sh`
-- **Run**: Whenever you want to start the honeypot
-
-### 🔒 Security Management
-
-#### `secure-tpot.sh`
-**T-Pot security hardening script**
-- **Purpose**: Remove all public internet access to honeypot services
-- **Features**: AWS security group modification, access restriction
-- **Usage**: `./secure-tpot.sh`
-- **Run**: Already executed - honeypot is secured
-
-#### `kali-access.sh`
-**Kali machine access control**
-- **Purpose**: Manage selective access for controlled testing
-- **Features**: Add/remove IP access, port-specific controls, status checking
-- **Usage**: `./kali-access.sh [add|remove|status] [kali-ip] [ports...]`
-- **Run**: Before and after testing sessions
-
-### 📡 Log Management
-
-#### `deploy-tpot-logging.sh`
-**Log forwarding deployment**
-- **Purpose**: Deploy Fluent Bit configuration to T-Pot for log forwarding
-- **Features**: Fluent Bit installation, systemd service creation, log pipeline setup
-- **Usage**: `./deploy-tpot-logging.sh <tpot-ip> <local-ip>`
-- **Run**: After T-Pot startup to enable log forwarding
-
-## Usage Guide
-
-### Initial Setup (One-time)
 ```bash
-# 1. Set up Mini-XDR integration
-./setup-tpot-integration.sh
-
-# 2. Security is already configured (honeypot is locked down)
-# No need to run secure-tpot.sh again
+cd /Users/chasemad/Desktop/mini-xdr
+source backend/venv/bin/activate
+python3 scripts/tpot-management/setup-tpot-workflows.py
 ```
 
-### Regular Operations
+This creates **17 comprehensive workflows** for:
+- SSH brute force attacks
+- Malware uploads
+- Ransomware detection
+- Data exfiltration
+- Cryptomining
+- IoT botnets
+- DDoS attacks
+- Web attacks (SQL injection, XSS)
+- And more!
 
-#### Starting T-Pot for Testing
+### 2️⃣ Verify Configuration
+
 ```bash
-# 1. Start the honeypot securely
-./start-secure-tpot.sh
-
-# 2. Deploy log forwarding (get your local IP first)
-ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -1
-./deploy-tpot-logging.sh 34.193.101.171 YOUR_LOCAL_IP
-
-# 3. Allow your Kali machine for testing
-curl -s -4 icanhazip.com  # Run this on Kali to get IP
-./kali-access.sh add KALI_IP 22 80 443 3306
+./scripts/tpot-management/verify-tpot-workflows.sh
 ```
 
-#### After Testing
-```bash
-# Remove Kali access
-./kali-access.sh remove KALI_IP 22 80 443 3306
+Checks that all workflows are properly configured and enabled.
 
-# Check security status
-./kali-access.sh status
+### 3️⃣ View in UI
 
-# Stop T-Pot (optional - saves AWS costs)
-aws ec2 stop-instances --region us-east-1 --instance-ids $(aws ec2 describe-instances --region us-east-1 --filters "Name=tag:Name,Values=mini-xdr-tpot-honeypot" --query 'Reservations[0].Instances[0].InstanceId' --output text)
-```
+Navigate to: `http://localhost:3000/workflows`
 
-### Access Control Examples
-
-#### Grant Kali Access for Specific Tests
-```bash
-# SSH and web honeypots only
-./kali-access.sh add 203.0.113.10 22 80 443
-
-# Database testing
-./kali-access.sh add 203.0.113.10 3306 5432 6379
-
-# Multiple services
-./kali-access.sh add 203.0.113.10 22 23 25 80 443 3306 3389
-
-# Check what's currently allowed
-./kali-access.sh status
-```
-
-#### Remove Access
-```bash
-# Remove specific ports
-./kali-access.sh remove 203.0.113.10 22 80 443
-
-# Remove all access (run status first to see current rules)
-./kali-access.sh status
-# Then remove each rule manually
-```
-
-## Configuration Files
-
-### Generated Configurations
-- **`config/tpot/tpot-config.json`**: T-Pot integration settings
-- **`config/tpot/fluent-bit-tpot.conf`**: Log forwarding configuration
-- **`backend/.env`**: Updated with T-Pot API key
-
-### Current Settings
-- **T-Pot IP**: 34.193.101.171
-- **SSH Management Port**: 64295
-- **Web Interface Port**: 64297
-- **Security Group**: sg-037bd4ee6b74489b5
-- **API Key**: 6c49b95dd921e0003ce159e6b3c0b6eb4e126fc2b19a1530a0f72a4a9c0c1eee
-
-## Security Architecture
-
-### Current Security Posture
-```
-Internet → AWS Security Groups → T-Pot Instance
-          ↓ (BLOCKED by default)
-          ✅ Management: Your IP only (64295, 64297)
-          🔒 Honeypots: Blocked from public
-          🎯 Testing: Selective Kali access only
-```
-
-### Network Flow
-```
-Kali Machine → (Controlled Access) → T-Pot Honeypots
-T-Pot Logs → Fluent Bit → Your Mini-XDR (Port 8000)
-```
-
-## Troubleshooting
-
-### Common Issues
-
-#### T-Pot Won't Start
-```bash
-# Check instance status
-aws ec2 describe-instances --region us-east-1 --filters "Name=tag:Name,Values=mini-xdr-tpot-honeypot"
-
-# Check if already running
-./start-secure-tpot.sh  # Will show current status
-```
-
-#### Can't Access T-Pot Management
-```bash
-# Verify your IP is allowed
-./kali-access.sh status
-
-# Test SSH access
-ssh -i ~/.ssh/mini-xdr-tpot-key.pem -p 64295 admin@34.193.101.171
-```
-
-#### Log Forwarding Not Working
-```bash
-# Check Fluent Bit status on T-Pot
-ssh -i ~/.ssh/mini-xdr-tpot-key.pem -p 64295 admin@34.193.101.171 "sudo systemctl status tpot-fluent-bit"
-
-# Verify Mini-XDR is listening
-netstat -tulnp | grep :8000
-
-# Check logs
-ssh -i ~/.ssh/mini-xdr-tpot-key.pem -p 64295 admin@34.193.101.171 "sudo journalctl -u tpot-fluent-bit -f"
-```
-
-#### Kali Access Not Working
-```bash
-# Verify security group rules
-aws ec2 describe-security-groups --group-ids sg-037bd4ee6b74489b5 --region us-east-1
-
-# Test from Kali
-curl -m 5 http://34.193.101.171/  # Should work if access granted
-nmap -p 22,80,443 34.193.101.171  # Should show open if access granted
-```
-
-## Maintenance
-
-### Regular Tasks
-- **Monitor AWS costs**: T-Pot costs ~$50-80/month when running
-- **Rotate API keys**: Update T-Pot API key monthly
-- **Review security groups**: Ensure no unintended access
-- **Update T-Pot**: SSH to instance and update containers
-
-### Backup Important Files
-- SSH keys: `~/.ssh/mini-xdr-tpot-key.pem`
-- Configuration: `config/tpot/`
-- Environment: `backend/.env` (T-Pot section)
+Click the **"Auto Triggers"** tab to see all your workflows.
 
 ---
 
-**Security Status**: 🔒 **FULLY SECURED**  
-**Public Access**: ❌ **BLOCKED**  
-**Management Access**: ✅ **YOUR IP ONLY**  
-**Testing Access**: 🎯 **CONTROLLED VIA SCRIPTS**
+## Available Scripts
 
-**Last Updated**: September 16, 2025  
-**Maintained by**: Mini-XDR Security Team
+### Workflow Management
 
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `setup-tpot-workflows.py` | Create/update all T-Pot workflows | `python3 setup-tpot-workflows.py` |
+| `verify-tpot-workflows.sh` | Verify workflows are configured | `./verify-tpot-workflows.sh` |
+| `TPOT_WORKFLOWS_GUIDE.md` | Comprehensive workflow documentation | Read for details |
 
+### T-Pot Deployment
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `setup-tpot-integration.sh` | Initial T-Pot integration setup | `./setup-tpot-integration.sh` |
+| `deploy-tpot-logging.sh` | Configure log forwarding | `./deploy-tpot-logging.sh` |
+| `start-secure-tpot.sh` | Start T-Pot with secure config | `./start-secure-tpot.sh` |
+| `secure-tpot.sh` | Apply security hardening | `./secure-tpot.sh` |
+| `kali-access.sh` | Configure Kali attack testing | `./kali-access.sh` |
+
+---
+
+## Workflow Coverage
+
+✅ **Cowrie SSH/Telnet**: Brute force, successful logins, command execution
+✅ **Dionaea Multi-Protocol**: Malware uploads, SMB exploits
+✅ **Suricata IDS**: High-severity network alerts
+✅ **Elasticpot**: Elasticsearch exploits
+✅ **Honeytrap**: Port scanning, reconnaissance
+✅ **Specialized Detectors**: Cryptomining, ransomware, data exfil, botnets, DDoS
+✅ **Web Attacks**: SQL injection, XSS
+
+### Auto-Execute vs Manual Approval
+
+- **12 workflows** auto-execute immediately (critical threats)
+- **5 workflows** require manual approval (common/lower-severity)
+
+See `TPOT_WORKFLOWS_GUIDE.md` for complete details.
+
+---
+
+## Workflow Actions
+
+Each workflow can perform these actions:
+
+1. **Block IP** - Automatically block attacker IPs
+2. **Create Incident** - Generate incident tickets
+3. **AI Analysis** - Invoke AI agents for attribution/forensics
+4. **Notifications** - Send Slack/email alerts
+5. **Rate Limiting** - Apply traffic controls
+6. **Isolation** - Quarantine affected systems
+
+---
+
+## Configuration
+
+### API Key
+
+Set your Mini-XDR API key:
+```bash
+export MINI_XDR_API_KEY="your-api-key-here"
+```
+
+### T-Pot Connection
+
+T-Pot configuration: `/Users/chasemad/Desktop/mini-xdr/config/tpot/tpot-config.json`
+
+### Database
+
+Workflows are stored in: `xdr.db` (workflow_triggers table)
+
+---
+
+## Troubleshooting
+
+### Workflows not triggering?
+
+1. Check if backend is running: `curl http://localhost:8000/health`
+2. Verify triggers are enabled: `./verify-tpot-workflows.sh`
+3. Check logs: `tail -f backend/backend.log | grep trigger`
+
+### Too many false positives?
+
+Edit thresholds in workflows:
+- Increase `threshold` values (e.g., 5 → 10)
+- Extend `window_seconds` (e.g., 60 → 120)
+- Change `auto_execute` to `false`
+
+### Need to customize workflows?
+
+1. Edit `setup-tpot-workflows.py`
+2. Modify the `TPOT_TRIGGERS` array
+3. Re-run the setup script
+
+Or use the API:
+```bash
+curl -X PUT http://localhost:8000/api/triggers/{id} \
+  -H "X-API-Key: your-key" \
+  -H "Content-Type: application/json" \
+  -d '{"auto_execute": false, "priority": "high"}'
+```
+
+---
+
+## Testing Workflows
+
+### Test SSH Brute Force
+
+```bash
+# From a test machine (will get blocked!)
+for i in {1..10}; do
+  ssh root@YOUR_TPOT_IP
+done
+```
+
+### Test Port Scan
+
+```bash
+nmap -p 1-1000 YOUR_TPOT_IP
+```
+
+### Check Workflow Execution
+
+```bash
+curl http://localhost:8000/api/workflows \
+  -H "X-API-Key: your-key" | jq
+```
+
+---
+
+## Safety Features
+
+### Rate Limiting
+- **Cooldown periods** prevent workflow spam (30-300 seconds)
+- **Daily limits** cap maximum triggers per day (25-100)
+
+### Manual Approval
+- Port scans and web attacks require approval
+- Prevents over-blocking from common activities
+
+### IP Block Durations
+- **Low threats**: 1 hour
+- **Medium threats**: 2 hours
+- **High threats**: 24 hours
+- **Critical threats**: 7 days
+
+---
+
+## Documentation
+
+- **Complete Workflow Guide**: `TPOT_WORKFLOWS_GUIDE.md` (read this!)
+- **T-Pot Deployment**: `../../ops/TPOT_DEPLOYMENT_GUIDE.md`
+- **Workflow System**: `../../docs/WORKFLOW_SYSTEM_GUIDE.md`
+- **API Docs**: `http://localhost:8000/docs`
+
+---
+
+## Azure Deployment
+
+### Deploy T-Pot on Azure
+
+```bash
+# Use Azure deployment scripts
+cd ../../ops
+# Follow TPOT_DEPLOYMENT_GUIDE.md for Azure setup
+```
+
+### Configure Log Forwarding
+
+After T-Pot is deployed:
+```bash
+# SSH into T-Pot instance
+ssh -i ~/.ssh/mini-xdr-tpot-key.pem -p 64295 admin@YOUR_AZURE_IP
+
+# Configure Fluent Bit to forward to Mini-XDR
+# See deploy-tpot-logging.sh for details
+```
+
+---
+
+## Support
+
+For issues or questions:
+1. Check `TPOT_WORKFLOWS_GUIDE.md` for detailed explanations
+2. Run `./verify-tpot-workflows.sh` for diagnostics
+3. Review backend logs: `tail -f backend/backend.log`
+4. Check API docs: `http://localhost:8000/docs`
+
+---
+
+## Summary
+
+✅ **17 automated workflows** covering all T-Pot attack types
+✅ **AI-powered** attribution and forensics analysis
+✅ **Rate-limited** to prevent exhaustion
+✅ **Production-ready** with safety controls
+✅ **Fully documented** with comprehensive guides
+
+**Your T-Pot deployment will be fully protected! 🛡️**

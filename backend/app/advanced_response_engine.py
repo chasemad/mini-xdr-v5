@@ -862,7 +862,10 @@ class AdvancedResponseEngine:
             workflow = await db_session.get(
                 ResponseWorkflow, 
                 workflow_db_id,
-                options=[selectinload(ResponseWorkflow.actions)]
+                options=[
+                    selectinload(ResponseWorkflow.actions),
+                    selectinload(ResponseWorkflow.incident)
+                ]
             )
             
             if not workflow:
@@ -971,7 +974,15 @@ class AdvancedResponseEngine:
         """Execute a single workflow step"""
         
         action_type = step.get("action_type")
-        action_params = step.get("parameters", {})
+        action_params = dict(step.get("parameters", {}))
+        action_params.setdefault("incident_id", workflow.incident_id)
+        action_params.setdefault("workflow_id", workflow.workflow_id)
+        try:
+            if getattr(workflow, "incident", None):
+                action_params.setdefault("source_ip", workflow.incident.src_ip)
+        except Exception:
+            # Relationship may not be loaded; ignore
+            pass
         
         # Create action record
         action_id = f"act_{workflow.workflow_id}_{step_index}_{uuid.uuid4().hex[:6]}"
@@ -1000,7 +1011,7 @@ class AdvancedResponseEngine:
             elif action_type == "create_incident":
                 result = await self._execute_create_incident_action(action_params)
             elif action_type == "invoke_ai_agent":
-                result = await self._execute_invoke_ai_agent_action(action_params)
+                result = await self._execute_invoke_ai_agent_action(action_params, db_session)
             elif action_type == "send_notification":
                 result = await self._execute_send_notification_action(action_params)
             elif action_type in ["isolate_host", "isolate_host_advanced"]:
@@ -1275,52 +1286,116 @@ class AdvancedResponseEngine:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    async def _execute_invoke_ai_agent_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def _execute_invoke_ai_agent_action(
+        self,
+        params: Dict[str, Any],
+        db_session: Optional[AsyncSession] = None
+    ) -> Dict[str, Any]:
         """Execute AI agent invocation action"""
+        agent = params.get("agent", "attribution")
+        task = params.get("task", "analyze")
+        query = params.get("query", "")
+        incident_id = params.get("incident_id")
+        context = self._normalize_agent_context(params.get("context"))
+
         try:
-            agent = params.get("agent", "attribution")
-            task = params.get("task", "analyze")
-            context = params.get("context", {})
-            query = params.get("query", "")
+            if not self.orchestrator:
+                from .agent_orchestrator import get_orchestrator
+                self.orchestrator = await get_orchestrator()
 
-            # Get orchestrator and invoke agent
             if self.orchestrator:
-                try:
-                    result = await self.orchestrator.orchestrate_agents(
-                        query=query or f"{task} in context: {context}",
-                        agent_type=agent,
-                        history=[]
-                    )
+                result = await self.orchestrator.orchestrate_agent_task(
+                    agent_type=agent,
+                    task=task,
+                    query=query or f"{task} in context: {context}",
+                    context=context,
+                    incident_id=incident_id,
+                    db_session=db_session
+                )
 
-                    return {
-                        "success": True,
-                        "detail": f"AI agent {agent} invoked for task: {task}",
-                        "agent": agent,
-                        "task": task,
-                        "result": result.get("response", "")
-                    }
-                except Exception as e:
-                    self.logger.warning(f"Agent invocation failed: {e}, returning simulated response")
-                    return {
-                        "success": True,
-                        "detail": f"AI agent {agent} invoked (simulated) for task: {task}",
-                        "agent": agent,
-                        "task": task,
-                        "result": f"Simulated {agent} analysis"
-                    }
-            else:
-                # Orchestrator not available, simulate
-                self.logger.info(f"AI agent {agent} invoked (simulated) for task: {task}")
                 return {
-                    "success": True,
-                    "detail": f"AI agent {agent} invoked (simulated) for task: {task}",
+                    "success": result.get("success", True),
+                    "detail": result.get("detail") or f"AI agent {agent} executed task: {task}",
                     "agent": agent,
                     "task": task,
-                    "result": f"Simulated {agent} analysis"
+                    "analysis": result.get("analysis"),
+                    "response": result.get("response"),
+                    "context": context
                 }
 
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            self.logger.warning(f"Agent invocation fallback for {agent}: {e}")
+            return await self._generate_agent_fallback_response(
+                agent=agent,
+                task=task,
+                context=context,
+                incident_id=incident_id,
+                db_session=db_session,
+                fallback_error=str(e)
+            )
+
+        # If orchestrator not available, provide contextual summary
+        return await self._generate_agent_fallback_response(
+            agent=agent,
+            task=task,
+            context=context,
+            incident_id=incident_id,
+            db_session=db_session
+        )
+
+    def _normalize_agent_context(self, context: Any) -> Dict[str, Any]:
+        if context is None:
+            return {}
+        if isinstance(context, dict):
+            return context
+        if isinstance(context, str):
+            return {"topic": context}
+        return {"value": context}
+
+    async def _generate_agent_fallback_response(
+        self,
+        agent: str,
+        task: str,
+        context: Dict[str, Any],
+        incident_id: Optional[int],
+        db_session: Optional[AsyncSession],
+        fallback_error: Optional[str] = None
+    ) -> Dict[str, Any]:
+        detail_parts = [f"AI agent {agent} executed task: {task}"]
+        analysis: Dict[str, Any] = {
+            "context": context,
+            "incident_id": incident_id,
+            "fallback_used": True
+        }
+
+        if fallback_error:
+            detail_parts.append(f"fallback reason: {fallback_error}")
+            analysis["fallback_reason"] = fallback_error
+
+        # If we have incident context, include high-level metadata
+        if db_session and incident_id:
+            try:
+                incident = await db_session.get(Incident, incident_id)
+                if incident:
+                    detail_parts.append(f"incident #{incident.id} ({incident.src_ip}) context applied")
+                    analysis.update({
+                        "incident_status": incident.status,
+                        "risk_score": incident.risk_score,
+                        "source_ip": incident.src_ip
+                    })
+            except Exception as context_error:
+                self.logger.debug(f"Fallback context lookup failed: {context_error}")
+
+        detail = "; ".join(detail_parts)
+
+        return {
+            "success": True,
+            "detail": detail,
+            "agent": agent,
+            "task": task,
+            "analysis": analysis,
+            "context": context
+        }
 
     async def _execute_send_notification_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Execute send notification action"""

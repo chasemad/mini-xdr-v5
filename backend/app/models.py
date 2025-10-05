@@ -56,6 +56,11 @@ class Incident(Base):
     correlation_id = Column(String(64), nullable=True)  # Links related incidents
     ml_features = Column(JSON, nullable=True)  # Extracted features for ML analysis
     ensemble_scores = Column(JSON, nullable=True)  # Individual model scores
+    
+    # AI Analysis Caching
+    ai_analysis = Column(JSON, nullable=True)  # Cached AI analysis results
+    ai_analysis_timestamp = Column(DateTime(timezone=True), nullable=True)  # When analysis was done
+    last_event_count = Column(Integer, default=0)  # Track new events to trigger re-analysis
 
 
 class Action(Base):
@@ -74,6 +79,11 @@ class Action(Base):
     agent_id = Column(String(64), nullable=True)  # Agent that executed this action
     confidence_score = Column(Float, nullable=True)  # Agent confidence in action
     rollback_action_id = Column(Integer, nullable=True)  # Link to rollback action if any
+    
+    # T-Pot Verification
+    verified_on_tpot = Column(Boolean, default=False)  # Verification status
+    tpot_verification_timestamp = Column(DateTime(timezone=True), nullable=True)
+    tpot_verification_details = Column(JSON, nullable=True)  # Verification results
 
 
 class LogSource(Base):
