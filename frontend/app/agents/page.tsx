@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,34 +24,115 @@ interface AgentStatus {
   description: string;
 }
 
+interface MLModelStatus {
+  enhanced_detector?: {
+    loaded: boolean;
+    status: string;
+    model_type: string;
+    device?: string;
+  };
+  federated_detector?: any;
+}
+
 export default function AgentsPage() {
   const [conversation, setConversation] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [selectedAgent, setSelectedAgent] = useState("containment");
   const [loading, setLoading] = useState(false);
-  const [agentStatuses] = useState<AgentStatus[]>([
+  const [agentStatuses, setAgentStatuses] = useState<AgentStatus[]>([
     {
       id: "containment",
       name: "Containment Orchestrator",
-      status: "online",
+      status: "offline",
       lastActivity: new Date(),
       description: "AI agent for autonomous threat containment decisions"
     },
     {
-      id: "hunter",
-      name: "Threat Hunter",
-      status: "online",
+      id: "attribution",
+      name: "Attribution Agent",
+      status: "offline",
       lastActivity: new Date(),
-      description: "Proactive threat hunting and investigation"
+      description: "Threat actor identification and attribution analysis"
     },
     {
-      id: "rollback",
-      name: "Rollback Agent",
-      status: "online", 
+      id: "forensics",
+      name: "Forensics Agent",
+      status: "offline", 
       lastActivity: new Date(),
-      description: "Evaluates and reverses false positive actions"
+      description: "Digital forensics and evidence collection"
+    },
+    {
+      id: "deception",
+      name: "Deception Agent",
+      status: "offline",
+      lastActivity: new Date(),
+      description: "Honeypot management and attacker deception"
     }
   ]);
+  const [mlStatus, setMlStatus] = useState<MLModelStatus>({});
+  const [systemStatus, setSystemStatus] = useState<string>("checking");
+
+  // Fetch agent and ML model status on mount and periodically
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const response = await fetch('/api/orchestrator/status');
+        if (response.ok) {
+          const data = await response.json();
+          
+          // Update system status
+          setSystemStatus(data.status);
+          
+          // Update ML model status
+          if (data.ml_models) {
+            setMlStatus(data.ml_models);
+          }
+          
+          // Update agent statuses from orchestrator
+          if (data.orchestrator?.agents) {
+            const agentMap: { [key: string]: {name: string, description: string} } = {
+              'containment': {
+                name: 'Containment Orchestrator',
+                description: 'AI agent for autonomous threat containment decisions'
+              },
+              'attribution': {
+                name: 'Attribution Agent',
+                description: 'Threat actor identification and attribution analysis'
+              },
+              'forensics': {
+                name: 'Forensics Agent',
+                description: 'Digital forensics and evidence collection'
+              },
+              'deception': {
+                name: 'Deception Agent',
+                description: 'Honeypot management and attacker deception'
+              }
+            };
+            
+            const updatedStatuses: AgentStatus[] = Object.entries(data.orchestrator.agents).map(([id, agentData]: [string, any]) => ({
+              id,
+              name: agentMap[id]?.name || id,
+              status: agentData.status === 'active' ? 'online' : 'offline',
+              lastActivity: agentData.last_activity ? new Date(agentData.last_activity) : new Date(),
+              description: agentMap[id]?.description || 'Agent description'
+            }));
+            
+            setAgentStatuses(updatedStatuses);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch agent status:', error);
+        setSystemStatus("error");
+      }
+    };
+
+    // Fetch immediately
+    fetchStatus();
+
+    // Poll every 10 seconds
+    const interval = setInterval(fetchStatus, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
@@ -138,6 +219,16 @@ export default function AgentsPage() {
         <div>
           <h1 className="text-3xl font-bold">AI Agents Control Panel</h1>
           <p className="text-gray-600">Interact with autonomous security agents</p>
+          {systemStatus === "healthy" && mlStatus.enhanced_detector?.loaded && (
+            <p className="text-sm text-green-600 mt-1">
+              ✅ Local ML Models Active (No AWS) • {mlStatus.enhanced_detector.model_type}
+            </p>
+          )}
+          {systemStatus === "healthy" && !mlStatus.enhanced_detector?.loaded && (
+            <p className="text-sm text-yellow-600 mt-1">
+              ⚠️ ML Models Loading...
+            </p>
+          )}
         </div>
         <Button onClick={clearConversation} variant="outline">
           Clear Chat
@@ -180,8 +271,9 @@ export default function AgentsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="containment">Containment Orchestrator</SelectItem>
-                  <SelectItem value="hunter">Threat Hunter</SelectItem>
-                  <SelectItem value="rollback">Rollback Agent</SelectItem>
+                  <SelectItem value="attribution">Attribution Agent</SelectItem>
+                  <SelectItem value="forensics">Forensics Agent</SelectItem>
+                  <SelectItem value="deception">Deception Agent</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -308,7 +400,7 @@ export default function AgentsPage() {
           <CardTitle>Agent Capabilities</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <h4 className="font-semibold mb-2">Containment Orchestrator</h4>
               <ul className="text-sm text-gray-600 space-y-1">
@@ -319,21 +411,30 @@ export default function AgentsPage() {
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold mb-2">Threat Hunter</h4>
+              <h4 className="font-semibold mb-2">Attribution Agent</h4>
               <ul className="text-sm text-gray-600 space-y-1">
-                <li>• Proactive threat discovery</li>
-                <li>• Behavioral analysis</li>
-                <li>• IOC correlation</li>
-                <li>• Attack pattern detection</li>
+                <li>• Threat actor identification</li>
+                <li>• Campaign correlation</li>
+                <li>• TTP analysis</li>
+                <li>• Attribution confidence scoring</li>
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold mb-2">Rollback Agent</h4>
+              <h4 className="font-semibold mb-2">Forensics Agent</h4>
               <ul className="text-sm text-gray-600 space-y-1">
-                <li>• False positive detection</li>
-                <li>• Action reversal</li>
-                <li>• Impact assessment</li>
-                <li>• Learning from mistakes</li>
+                <li>• Evidence collection</li>
+                <li>• Chain of custody</li>
+                <li>• Artifact analysis</li>
+                <li>• Timeline reconstruction</li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="font-semibold mb-2">Deception Agent</h4>
+              <ul className="text-sm text-gray-600 space-y-1">
+                <li>• Honeypot management</li>
+                <li>• Attacker profiling</li>
+                <li>• Deception deployment</li>
+                <li>• Intelligence gathering</li>
               </ul>
             </div>
           </div>

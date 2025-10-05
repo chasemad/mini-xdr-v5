@@ -24,7 +24,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import Event, Incident
 from .config import settings
-from .sagemaker_client import sagemaker_client
 from .secrets_manager import secrets_manager
 
 logger = logging.getLogger(__name__)
@@ -232,71 +231,21 @@ class IntelligentDetectionEngine:
         src_ip: str,
         events: List[Event]
     ) -> Optional[ThreatClassification]:
-        """Get threat classification from Enhanced Model or SageMaker"""
+        """Get threat classification from Enhanced Local Model ONLY (No AWS)"""
         try:
-            # Try Enhanced Local Model First (Higher Priority)
+            # Use Enhanced Local Model Only - NO AWS/SageMaker
+            self.logger.info("Using local enhanced model for threat classification")
             enhanced_result = await self._get_enhanced_model_classification(src_ip, events)
+            
             if enhanced_result:
                 return enhanced_result
-
-            # Fallback to SageMaker
-            self.logger.info("Enhanced model unavailable, falling back to SageMaker")
-
-            # Check SageMaker health
-            if not await sagemaker_client.health_check():
-                self.logger.warning("SageMaker endpoint not healthy")
-                return None
-
-            # Prepare events for SageMaker
-            sagemaker_events = []
-            for event in events:
-                sagemaker_events.append({
-                    'src_ip': event.src_ip,
-                    'dst_port': event.dst_port or 0,
-                    'eventid': event.eventid,
-                    'message': event.message or '',
-                    'timestamp': event.ts.isoformat() if event.ts else None,
-                    'raw': event.raw or {}
-                })
-
-            # Get SageMaker prediction
-            sagemaker_result = await sagemaker_client.detect_threats(sagemaker_events)
-
-            if not sagemaker_result.get('threats'):
-                return None
-
-            # Extract the first (primary) threat classification
-            primary_threat = sagemaker_result['threats'][0]
-
-            # Map threat class to severity
-            severity_mapping = {
-                0: ThreatSeverity.INFO,      # Normal
-                1: ThreatSeverity.HIGH,      # DDoS/DoS
-                2: ThreatSeverity.MEDIUM,    # Reconnaissance
-                3: ThreatSeverity.HIGH,      # Brute Force
-                4: ThreatSeverity.MEDIUM,    # Web Attack
-                5: ThreatSeverity.CRITICAL,  # Malware/Botnet
-                6: ThreatSeverity.CRITICAL   # APT
-            }
-
-            threat_class = primary_threat.get('predicted_class', 0)
-
-            return ThreatClassification(
-                threat_type=primary_threat.get('threat_type', 'unknown'),
-                threat_class=threat_class,
-                confidence=primary_threat.get('confidence', 0.0),
-                anomaly_score=primary_threat.get('anomaly_score', 0.0),
-                severity=severity_mapping.get(threat_class, ThreatSeverity.LOW),
-                indicators={
-                    'sagemaker_prediction': primary_threat,
-                    'event_count': len(events),
-                    'time_span': self.config.analysis_window
-                },
-                sagemaker_used=True
-            )
+            
+            # If enhanced model is not available, use fallback local detection
+            self.logger.warning("Enhanced model unavailable, using basic local detection")
+            return await self._get_fallback_local_classification(src_ip, events)
 
         except Exception as e:
-            self.logger.error(f"SageMaker classification failed: {e}")
+            self.logger.error(f"Local model classification failed: {e}")
             return None
 
     async def _get_enhanced_model_classification(
@@ -310,6 +259,7 @@ class IntelligentDetectionEngine:
 
             # Check if enhanced detector is loaded
             if not enhanced_detector.model:
+                self.logger.warning("Enhanced detector model not loaded yet")
                 return None
 
             # Use enhanced detector for analysis
@@ -329,6 +279,8 @@ class IntelligentDetectionEngine:
                 6: ThreatSeverity.CRITICAL   # APT
             }
 
+            self.logger.info(f"Enhanced model prediction: {prediction_result.threat_type} ({prediction_result.confidence:.2%} confidence)")
+
             return ThreatClassification(
                 threat_type=prediction_result.threat_type,
                 threat_class=prediction_result.predicted_class,
@@ -346,11 +298,72 @@ class IntelligentDetectionEngine:
                     'event_count': len(events),
                     'time_span': self.config.analysis_window
                 },
-                sagemaker_used=False  # Enhanced local model used instead
+                sagemaker_used=False  # Local model used - NO AWS
             )
 
         except Exception as e:
-            self.logger.error(f"Enhanced model classification failed: {e}")
+            self.logger.error(f"Enhanced model classification failed: {e}", exc_info=True)
+            return None
+    
+    async def _get_fallback_local_classification(
+        self,
+        src_ip: str,
+        events: List[Event]
+    ) -> Optional[ThreatClassification]:
+        """Fallback classification using basic heuristics when ML models unavailable"""
+        try:
+            # Simple heuristic-based classification
+            event_count = len(events)
+            unique_ports = len(set(e.dst_port for e in events if e.dst_port))
+            failed_logins = sum(1 for e in events if 'failed' in (e.message or '').lower())
+            
+            # Determine threat type based on patterns
+            threat_class = 0  # Normal by default
+            confidence = 0.5
+            threat_type = "Suspicious Activity"
+            
+            if failed_logins > 10:
+                threat_class = 3  # Brute Force
+                threat_type = "Brute Force Attack"
+                confidence = min(0.7 + (failed_logins / 100), 0.95)
+            elif unique_ports > 20:
+                threat_class = 2  # Reconnaissance
+                threat_type = "Network Reconnaissance"
+                confidence = min(0.6 + (unique_ports / 100), 0.9)
+            elif event_count > 100:
+                threat_class = 1  # DDoS
+                threat_type = "DDoS/DoS Attack"
+                confidence = min(0.6 + (event_count / 500), 0.9)
+            
+            severity_mapping = {
+                0: ThreatSeverity.INFO,
+                1: ThreatSeverity.HIGH,
+                2: ThreatSeverity.MEDIUM,
+                3: ThreatSeverity.HIGH,
+            }
+            
+            self.logger.info(f"Fallback classification: {threat_type} ({confidence:.2%} confidence)")
+            
+            return ThreatClassification(
+                threat_type=threat_type,
+                threat_class=threat_class,
+                confidence=confidence,
+                anomaly_score=min(confidence, 0.8),
+                severity=severity_mapping.get(threat_class, ThreatSeverity.LOW),
+                indicators={
+                    'fallback_heuristics': {
+                        'event_count': event_count,
+                        'unique_ports': unique_ports,
+                        'failed_logins': failed_logins
+                    },
+                    'note': 'ML models unavailable - using heuristic detection',
+                    'event_count': event_count,
+                    'time_span': self.config.analysis_window
+                },
+                sagemaker_used=False
+            )
+        except Exception as e:
+            self.logger.error(f"Fallback classification failed: {e}")
             return None
 
     async def _should_create_incident(
@@ -542,7 +555,7 @@ class IntelligentDetectionEngine:
             "rationale": f"ML model classified with {classification.confidence:.1%} confidence as {classification.threat_type}"
         }
 
-        # Create incident
+        # Create incident with ML confidence
         incident = Incident(
             src_ip=src_ip,
             reason=f"{classification.threat_type} (ML Confidence: {classification.confidence:.1%})",
@@ -552,6 +565,7 @@ class IntelligentDetectionEngine:
             threat_category=classification.threat_type.lower().replace(" ", "_"),
             containment_confidence=classification.confidence,
             containment_method="ml_driven",
+            ml_confidence=classification.confidence,  # Set ML confidence explicitly
             triage_note=triage_note
         )
 

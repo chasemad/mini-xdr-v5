@@ -43,6 +43,7 @@ export default function AIIncidentAnalysis({ incident, onRecommendationAction }:
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [aiProvider, setAiProvider] = useState<'openai' | 'xai'>('openai')
+  const [cacheStatus, setCacheStatus] = useState<{cached: boolean; age?: number} | null>(null)
 
   useEffect(() => {
     if (incident?.id) {
@@ -77,6 +78,10 @@ export default function AIIncidentAnalysis({ incident, onRecommendationAction }:
       const data = await response.json()
       if (data.success) {
         setAnalysis(data.analysis)
+        setCacheStatus({
+          cached: data.cached || false,
+          age: data.cache_age_seconds
+        })
       } else {
         throw new Error(data.error || 'AI analysis failed')
       }

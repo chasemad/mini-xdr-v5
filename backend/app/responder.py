@@ -69,12 +69,29 @@ class ResponderAgent:
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             
-            # Load the private key with better error handling
-            try:
-                private_key = paramiko.Ed25519Key.from_private_key_file(self.key_path)
-            except Exception as key_error:
-                logger.error(f"Failed to load SSH key from {self.key_path}: {key_error}")
-                return "failed", "", f"SSH key error: {key_error}"
+            # Load the private key with better error handling - try multiple key types
+            private_key = None
+            key_errors = []
+            
+            # Try different key types
+            key_types = [
+                ('Ed25519', paramiko.Ed25519Key),
+                ('RSA', paramiko.RSAKey),
+                ('ECDSA', paramiko.ECDSAKey),
+            ]
+            
+            for key_name, key_class in key_types:
+                try:
+                    private_key = key_class.from_private_key_file(self.key_path)
+                    logger.info(f"Successfully loaded {key_name} key from {self.key_path}")
+                    break
+                except Exception as e:
+                    key_errors.append(f"{key_name}: {str(e)}")
+            
+            if not private_key:
+                error_msg = f"Failed to load SSH key with any format. Errors: {'; '.join(key_errors)}"
+                logger.error(error_msg)
+                return "failed", "", error_msg
             
             # Connect to the honeypot with enhanced parameters for subprocess environment
             connect_params = {
