@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, and_, func, desc, asc, or_, text, delete
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -59,6 +60,15 @@ containment_agent = None
 agent_orchestrator = None
 
 
+# Mapping of advanced response actions to their rollback counterparts for UI hints
+ADVANCED_ACTION_ROLLBACK_MAP = {
+    "block_ip": {"action_type": "unblock_ip", "label": "Unblock IP"},
+    "block_ip_advanced": {"action_type": "unblock_ip", "label": "Unblock IP"},
+    "isolate_host": {"action_type": "un_isolate_host", "label": "Release Host Isolation"},
+    "isolate_host_advanced": {"action_type": "un_isolate_host", "label": "Release Host Isolation"},
+}
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
@@ -88,6 +98,29 @@ async def lifespan(app: FastAPI):
         logger.info("ML models loaded")
     except Exception as e:
         logger.warning(f"Failed to load ML models: {e}")
+    
+    # Initialize Enhanced Threat Detector (Local Models Only - NO AWS)
+    try:
+        from .enhanced_threat_detector import enhanced_detector
+        from pathlib import Path
+        
+        # Try multiple model paths in order of preference
+        model_paths = [
+            Path(__file__).parent.parent.parent / "models",  # Project root models
+            Path(__file__).parent.parent / "models",  # Backend models
+            Path("/Users/chasemad/Desktop/mini-xdr/models"),  # Absolute path as fallback
+        ]
+        
+        for model_path in model_paths:
+            if model_path.exists():
+                logger.info(f"Attempting to load enhanced detector from: {model_path}")
+                if enhanced_detector.load_model(str(model_path)):
+                    logger.info("✅ Enhanced Local Threat Detector loaded successfully (NO AWS)")
+                    break
+        else:
+            logger.warning("Enhanced detector models not found - will use fallback detection")
+    except Exception as e:
+        logger.warning(f"Failed to initialize enhanced detector: {e}")
     
     # Start continuous learning pipeline
     try:
@@ -1508,6 +1541,69 @@ async def get_incident_detail(inc_id: int, db: AsyncSession = Depends(get_db)):
     actions_result = await db.execute(actions_query)
     actions = actions_result.scalars().all()
     
+    # Get advanced response actions executed for this incident
+    advanced_actions_query = (
+        select(AdvancedResponseAction, ResponseWorkflow)
+        .join(
+            ResponseWorkflow,
+            AdvancedResponseAction.workflow_id == ResponseWorkflow.id,
+            isouter=True
+        )
+        .where(AdvancedResponseAction.incident_id == inc_id)
+        .order_by(AdvancedResponseAction.created_at.desc())
+    )
+    advanced_actions_result = await db.execute(advanced_actions_query)
+    advanced_actions = advanced_actions_result.all()
+
+    workflow_actions = []
+    workflow_success_count = 0
+    workflow_failure_count = 0
+
+    for action, workflow in advanced_actions:
+        rollback_meta = ADVANCED_ACTION_ROLLBACK_MAP.get(action.action_type)
+
+        is_success = (action.status or "").lower() in {"completed", "success"}
+        if is_success:
+            workflow_success_count += 1
+        elif (action.status or "").lower() in {"failed", "error"}:
+            workflow_failure_count += 1
+
+        workflow_actions.append({
+            "id": action.id,
+            "action_id": action.action_id,
+            "workflow_db_id": action.workflow_id,
+            "workflow_id": workflow.workflow_id if workflow else None,
+            "workflow_name": workflow.playbook_name if workflow else None,
+            "action_type": action.action_type,
+            "action_name": action.action_name,
+            "status": action.status,
+            "executed_by": action.executed_by,
+            "execution_method": action.execution_method,
+            "parameters": action.parameters,
+            "result_data": action.result_data,
+            "error_details": action.error_details,
+            "created_at": action.created_at.isoformat() if action.created_at else None,
+            "completed_at": action.completed_at.isoformat() if action.completed_at else None,
+            "rollback": rollback_meta,
+        })
+
+    # Track manual action success/failure counts for summary
+    manual_success_count = sum(
+        1 for a in actions
+        if (a.result or "").lower() in {"success", "completed"}
+    )
+    manual_failure_count = sum(
+        1 for a in actions
+        if (a.result or "").lower() in {"failed", "error"}
+    )
+
+    total_actions = len(actions) + len(workflow_actions)
+    combined_success = manual_success_count + workflow_success_count
+    combined_failure = manual_failure_count + workflow_failure_count
+    combined_success_rate = (
+        combined_success / total_actions if total_actions else 0.0
+    )
+
     # Get detailed events with full forensic data (extend to 30 days for demo/testing)
     detailed_events = await _get_detailed_events_for_ip(db, incident.src_ip, hours=24*30)
     
@@ -1538,7 +1634,7 @@ async def get_incident_detail(inc_id: int, db: AsyncSession = Depends(get_db)):
         "agent_confidence": incident.agent_confidence,
         "ml_features": incident.ml_features,
         "ensemble_scores": incident.ensemble_scores,
-        
+
         "actions": [
             {
                 "id": a.id,
@@ -1551,7 +1647,16 @@ async def get_incident_detail(inc_id: int, db: AsyncSession = Depends(get_db)):
             }
             for a in actions
         ],
-        
+        "advanced_actions": workflow_actions,
+        "response_summary": {
+            "total_actions": total_actions,
+            "manual_actions": len(actions),
+            "workflow_actions": len(workflow_actions),
+            "success_count": combined_success,
+            "failure_count": combined_failure,
+            "success_rate": round(combined_success_rate, 3) if total_actions else 0.0
+        },
+
         # Detailed forensic data
         "detailed_events": [
             {
@@ -3388,18 +3493,44 @@ async def process_scheduled_unblocks():
 
 @app.get("/api/orchestrator/status")
 async def get_orchestrator_status():
-    """Get comprehensive orchestrator status"""
+    """Get comprehensive orchestrator status including agents and ML models"""
     try:
-        if not agent_orchestrator:
-            return {
-                "status": "not_initialized",
-                "message": "Agent orchestrator not available"
+        orchestrator_status = "not_initialized"
+        orchestrator_data = {}
+        
+        if agent_orchestrator:
+            try:
+                orchestrator_data = await agent_orchestrator.get_orchestrator_status()
+                orchestrator_status = "healthy"
+            except Exception as e:
+                logger.error(f"Failed to get orchestrator data: {e}")
+                orchestrator_status = "error"
+                orchestrator_data = {"error": str(e)}
+        
+        # Get ML model status
+        ml_status = {}
+        try:
+            from .enhanced_threat_detector import enhanced_detector
+            ml_status["enhanced_detector"] = {
+                "loaded": enhanced_detector.model is not None,
+                "device": str(enhanced_detector.device) if hasattr(enhanced_detector, 'device') else "unknown",
+                "model_type": "Enhanced XDR Threat Detector (Local)",
+                "status": "active" if enhanced_detector.model else "not_loaded"
             }
-
-        status = await agent_orchestrator.get_orchestrator_status()
+        except Exception as e:
+            ml_status["enhanced_detector"] = {"status": "error", "error": str(e)}
+        
+        try:
+            ml_status["federated_detector"] = ml_detector.get_model_status()
+        except Exception as e:
+            ml_status["federated_detector"] = {"status": "error", "error": str(e)}
+        
         return {
-            "status": "healthy",
-            "orchestrator": status,
+            "status": orchestrator_status,
+            "orchestrator": orchestrator_data,
+            "ml_models": ml_status,
+            "using_aws": False,  # We are NOT using AWS anymore
+            "using_local_models": True,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
@@ -5956,7 +6087,7 @@ async def generate_ai_incident_analysis(
     http_request: Request,
     db: AsyncSession = Depends(get_db)
 ):
-    """Generate AI analysis for an incident"""
+    """Generate AI analysis for an incident (with caching)"""
     _require_api_key(http_request)
     
     try:
@@ -5967,6 +6098,37 @@ async def generate_ai_incident_analysis(
         
         if not incident:
             raise HTTPException(status_code=404, detail="Incident not found")
+        
+        # Get current event count for this IP
+        current_event_count = (await db.execute(
+            select(func.count(Event.id)).where(Event.src_ip == incident.src_ip)
+        )).scalar()
+        
+        force_regenerate = request.get("force_regenerate", False)
+        
+        # Check if we have cached analysis and no new events
+        if (not force_regenerate and 
+            incident.ai_analysis and 
+            incident.last_event_count == current_event_count and
+            incident.ai_analysis_timestamp):
+            
+            # Return cached analysis
+            cache_age_seconds = (datetime.utcnow() - incident.ai_analysis_timestamp).total_seconds()
+            logger.info(f"Returning cached AI analysis (age: {cache_age_seconds:.0f}s)")
+            
+            return {
+                "success": True,
+                "analysis": incident.ai_analysis,
+                "provider": incident.ai_analysis.get("provider", "openai"),
+                "incident_id": incident_id,
+                "generated_at": incident.ai_analysis_timestamp.isoformat(),
+                "cached": True,
+                "cache_age_seconds": int(cache_age_seconds),
+                "event_count": current_event_count
+            }
+        
+        # Need to generate new analysis
+        logger.info(f"Generating new AI analysis (events: {current_event_count}, cached: {incident.last_event_count})")
         
         # Get recent events for context
         recent_events = await _recent_events_for_ip(db, incident.src_ip, 3600)  # Last hour
@@ -6010,15 +6172,26 @@ async def generate_ai_incident_analysis(
             "threat_attribution": await _generate_threat_attribution(incident, recent_events),
             "response_priority": _calculate_response_priority(incident, ai_result),
             "estimated_impact": _estimate_business_impact(incident, ai_result),
-            "next_steps": _generate_next_steps(incident, ai_result)
+            "next_steps": _generate_next_steps(incident, ai_result),
+            "provider": provider
         }
+        
+        # Cache the analysis in the database
+        incident.ai_analysis = enhanced_analysis
+        incident.ai_analysis_timestamp = datetime.utcnow()
+        incident.last_event_count = current_event_count
+        await db.commit()
+        
+        logger.info(f"AI analysis cached for incident {incident_id}")
         
         return {
             "success": True,
             "analysis": enhanced_analysis,
             "provider": provider,
             "incident_id": incident_id,
-            "generated_at": datetime.utcnow().isoformat()
+            "generated_at": datetime.utcnow().isoformat(),
+            "cached": False,
+            "event_count": current_event_count
         }
         
     except Exception as e:
@@ -6226,16 +6399,24 @@ async def get_workflow_actions(
 @app.get("/api/response/metrics/impact")
 async def get_response_impact_metrics(
     workflow_id: Optional[str] = None,
+    incident_id: Optional[int] = None,
     days_back: int = 7,
     db: AsyncSession = Depends(get_db)
 ):
     """Get response impact metrics"""
     try:
-        query = select(ResponseImpactMetrics).join(ResponseWorkflow)
+        query = (
+            select(ResponseImpactMetrics)
+            .join(ResponseWorkflow)
+            .options(selectinload(ResponseImpactMetrics.workflow))
+        )
         
         # Apply filters
         if workflow_id:
             query = query.where(ResponseWorkflow.workflow_id == workflow_id)
+
+        if incident_id:
+            query = query.where(ResponseWorkflow.incident_id == incident_id)
         
         # Time filter
         since_date = datetime.utcnow() - timedelta(days=days_back)
@@ -6265,6 +6446,8 @@ async def get_response_impact_metrics(
                 {
                     "id": m.id,
                     "workflow_id": m.workflow_id,
+                    "workflow_name": m.workflow.playbook_name if getattr(m, "workflow", None) else None,
+                    "incident_id": m.workflow.incident_id if getattr(m, "workflow", None) else None,
                     "attacks_blocked": m.attacks_blocked,
                     "false_positives": m.false_positives,
                     "systems_affected": m.systems_affected,
@@ -6720,3 +6903,39 @@ if __name__ == "__main__":
         port=settings.api_port,
         reload=True
     )
+
+# T-Pot Action Verification Endpoints
+@app.post("/api/incidents/{incident_id}/verify-actions")
+async def verify_incident_actions_endpoint(
+    incident_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Verify all actions for an incident were executed on T-Pot"""
+    _require_api_key(request)
+    
+    from .verification_endpoints import verify_incident_actions
+    return await verify_incident_actions(incident_id, db)
+
+
+@app.post("/api/actions/{action_id}/verify")
+async def verify_single_action_endpoint(
+    action_id: int,
+    action_type: str = "basic",
+    request: Request = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Verify a single action was executed on T-Pot"""
+    _require_api_key(request)
+    
+    from .verification_endpoints import verify_single_action
+    return await verify_single_action(action_id, action_type, db)
+
+
+@app.get("/api/tpot/status")
+async def get_tpot_status_endpoint(request: Request):
+    """Get current T-Pot firewall status and active blocks"""
+    _require_api_key(request)
+    
+    from .verification_endpoints import get_tpot_status
+    return await get_tpot_status()

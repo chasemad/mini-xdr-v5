@@ -5,6 +5,8 @@ Coordinates communication and decision fusion between AI agents
 import asyncio
 import json
 import logging
+import ipaddress
+from collections import Counter
 from typing import Dict, List, Any, Optional, Union
 from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict
@@ -20,6 +22,7 @@ from .agents.coordination_hub import (
     CoordinationStrategy, ConflictResolutionStrategy
 )
 from .models import Incident, Event, Action
+from sqlalchemy import select
 from .config import settings
 
 
@@ -281,6 +284,314 @@ class AgentOrchestrator:
         for role, capabilities in agent_capabilities.items():
             self.coordination_hub.register_agent(role.value, capabilities)
             self.logger.info(f"Registered {role.value} with coordination hub")
+
+    def _normalize_agent_role(self, agent_type: str) -> AgentRole:
+        if not agent_type:
+            return AgentRole.ATTRIBUTION
+        agent_lower = agent_type.lower()
+        for role in AgentRole:
+            if role.value == agent_lower:
+                return role
+        alias_map = {
+            "threat_intel": AgentRole.ATTRIBUTION,
+            "intel": AgentRole.ATTRIBUTION,
+            "investigation": AgentRole.FORENSICS,
+            "response": AgentRole.CONTAINMENT,
+            "deceive": AgentRole.DECEPTION
+        }
+        if agent_lower in alias_map:
+            return alias_map[agent_lower]
+        raise ValueError(f"Unknown agent type: {agent_type}")
+
+    def _normalize_context_input(self, context: Optional[Any]) -> Dict[str, Any]:
+        if context is None:
+            return {}
+        if isinstance(context, dict):
+            return context
+        if isinstance(context, str):
+            return {"topic": context}
+        return {"value": context}
+
+    def _looks_like_ip(self, value: Optional[str]) -> bool:
+        if not value:
+            return False
+        try:
+            ipaddress.ip_address(value)
+            return True
+        except ValueError:
+            return False
+
+    async def _gather_incident_snapshot(
+        self,
+        incident_id: Optional[int],
+        db_session
+    ) -> Dict[str, Any]:
+        if not incident_id or not db_session:
+            return {}
+
+        try:
+            incident = await db_session.get(Incident, incident_id)
+            if not incident:
+                return {}
+
+            events_result = await db_session.execute(
+                select(Event)
+                .where(Event.src_ip == incident.src_ip)
+                .order_by(Event.ts.desc())
+                .limit(50)
+            )
+            events = events_result.scalars().all()
+
+            actions_result = await db_session.execute(
+                select(Action)
+                .where(Action.incident_id == incident_id)
+                .order_by(Action.created_at.desc())
+                .limit(20)
+            )
+            actions = actions_result.scalars().all()
+
+            return {
+                "incident": incident,
+                "events": events,
+                "actions": actions
+            }
+        except Exception as snapshot_error:
+            self.logger.debug(f"Failed to gather incident snapshot: {snapshot_error}")
+            return {}
+
+    def _build_attribution_summary(
+        self,
+        snapshot: Dict[str, Any],
+        task: str,
+        context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        incident: Optional[Incident] = snapshot.get("incident")
+        events: List[Event] = snapshot.get("events", [])
+        ip = None
+        if incident:
+            ip = incident.src_ip
+        ip = ip or context.get("ip") or context.get("source_ip")
+
+        event_counts = Counter(e.eventid for e in events if getattr(e, "eventid", None))
+        username_counts = Counter()
+        password_counts = Counter()
+
+        for event in events:
+            raw = event.raw
+            if not isinstance(raw, dict):
+                try:
+                    raw = json.loads(raw) if raw else {}
+                except Exception:
+                    raw = {}
+
+            username = raw.get("username") or raw.get("user") or raw.get("login")
+            if username:
+                username_counts[username] += 1
+
+            password = raw.get("password") or raw.get("pass")
+            if password:
+                password_counts[password] += 1
+
+        summary_fragments = []
+        if ip:
+            summary_fragments.append(f"IP {ip}")
+        summary_fragments.append(f"{len(events)} events analyzed")
+        if event_counts:
+            top_event, top_count = event_counts.most_common(1)[0]
+            summary_fragments.append(f"dominant event {top_event} ({top_count})")
+
+        detail_body = "; ".join(summary_fragments)
+        analysis = {
+            "task": task,
+            "source_ip": ip,
+            "event_counts": dict(event_counts),
+            "top_usernames": username_counts.most_common(5),
+            "top_passwords": password_counts.most_common(5),
+            "context": context
+        }
+
+        return {
+            "detail": f"Threat attribution analysis completed: {detail_body}",
+            "response": detail_body,
+            "analysis": analysis
+        }
+
+    def _build_containment_summary(
+        self,
+        snapshot: Dict[str, Any],
+        task: str,
+        context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        incident: Optional[Incident] = snapshot.get("incident")
+        actions: List[Action] = snapshot.get("actions", [])
+        ip = None
+        if incident:
+            ip = incident.src_ip
+        ip = ip or context.get("ip") or context.get("source_ip")
+
+        containment_actions = [
+            action for action in actions
+            if action.action and any(keyword in action.action for keyword in ["block", "isolate", "waf", "contain"])
+        ]
+        success_actions = [
+            action for action in containment_actions
+            if (action.result or "").lower() in {"success", "completed"}
+        ]
+        failure_actions = [
+            action for action in containment_actions
+            if (action.result or "").lower() in {"failed", "error"}
+        ]
+
+        last_detail = containment_actions[0].detail if containment_actions else None
+        detail = f"Containment summary for {ip or 'target'}: {len(success_actions)} successful, {len(failure_actions)} failed actions"
+        if last_detail:
+            detail += f"; last action detail: {last_detail[:120]}"
+
+        analysis = {
+            "task": task,
+            "source_ip": ip,
+            "actions_reviewed": len(containment_actions),
+            "recent_actions": [
+                {
+                    "action": action.action,
+                    "result": action.result,
+                    "detail": action.detail,
+                    "created_at": action.created_at.isoformat() if action.created_at else None
+                }
+                for action in containment_actions[:5]
+            ],
+            "context": context
+        }
+
+        return {
+            "detail": detail,
+            "response": detail,
+            "analysis": analysis
+        }
+
+    def _build_forensics_summary(
+        self,
+        snapshot: Dict[str, Any],
+        task: str,
+        context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        incident: Optional[Incident] = snapshot.get("incident")
+        events: List[Event] = snapshot.get("events", [])
+        ip = None
+        if incident:
+            ip = incident.src_ip
+        ip = ip or context.get("ip") or context.get("source_ip")
+
+        command_events = [
+            event for event in events
+            if event.eventid and "command" in event.eventid.lower()
+        ]
+        file_events = [
+            event for event in events
+            if event.eventid and any(token in event.eventid.lower() for token in ["file", "download", "upload"])
+        ]
+
+        detail = (
+            f"Forensic review for {ip or 'target'}: {len(events)} events, "
+            f"{len(command_events)} command interactions, {len(file_events)} file activities"
+        )
+
+        latest_commands = []
+        for event in command_events[:5]:
+            raw = event.raw
+            if not isinstance(raw, dict):
+                try:
+                    raw = json.loads(raw) if raw else {}
+                except Exception:
+                    raw = {}
+            latest_commands.append(raw.get("input") or raw.get("command") or event.message)
+
+        analysis = {
+            "task": task,
+            "source_ip": ip,
+            "events_analyzed": len(events),
+            "command_events": len(command_events),
+            "file_events": len(file_events),
+            "sample_commands": [cmd for cmd in latest_commands if cmd],
+            "context": context
+        }
+
+        return {
+            "detail": detail,
+            "response": detail,
+            "analysis": analysis
+        }
+
+    def _build_deception_summary(
+        self,
+        snapshot: Dict[str, Any],
+        task: str,
+        context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        events: List[Event] = snapshot.get("events", [])
+        unique_sources = {event.src_ip for event in events if event.src_ip}
+        detail = (
+            f"Deception telemetry: {len(unique_sources)} unique sources interacting with honeypot "
+            f"across {len(events)} recent events"
+        )
+
+        analysis = {
+            "task": task,
+            "unique_sources": sorted(unique_sources),
+            "events_analyzed": len(events),
+            "context": context
+        }
+
+        return {
+            "detail": detail,
+            "response": detail,
+            "analysis": analysis
+        }
+
+    async def orchestrate_agent_task(
+        self,
+        agent_type: str,
+        task: str,
+        query: Optional[str] = None,
+        context: Optional[Any] = None,
+        incident_id: Optional[int] = None,
+        db_session=None
+    ) -> Dict[str, Any]:
+        role = self._normalize_agent_role(agent_type)
+        context_data = self._normalize_context_input(context)
+
+        # Provide IP context from query if possible
+        if not context_data.get("ip") and query and self._looks_like_ip(query.strip()):
+            context_data["ip"] = query.strip()
+
+        snapshot = await self._gather_incident_snapshot(incident_id, db_session)
+
+        builders = {
+            AgentRole.ATTRIBUTION: self._build_attribution_summary,
+            AgentRole.CONTAINMENT: self._build_containment_summary,
+            AgentRole.FORENSICS: self._build_forensics_summary,
+            AgentRole.DECEPTION: self._build_deception_summary
+        }
+
+        builder = builders.get(role)
+        if not builder:
+            raise ValueError(f"Agent role {role.value} not supported for direct invocation")
+
+        summary = builder(snapshot, task, context_data)
+        analysis = summary.get("analysis", {})
+        if snapshot.get("incident") and "incident_id" not in analysis:
+            analysis["incident_id"] = snapshot["incident"].id
+            summary["analysis"] = analysis
+
+        return {
+            "success": True,
+            "detail": summary.get("detail"),
+            "response": summary.get("response"),
+            "analysis": summary.get("analysis"),
+            "agent": role.value,
+            "task": task,
+            "context": context_data
+        }
 
     async def orchestrate_incident_response(
         self,

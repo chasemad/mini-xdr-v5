@@ -1071,3 +1071,5 @@ async def get_ai_advisor() -> AIResponseAdvisor:
 
 
 
+
+

@@ -63,12 +63,14 @@ interface PerformanceTrend {
 
 interface ResponseImpactMonitorProps {
   workflowId?: string
+  incidentId?: number
   refreshInterval?: number
   className?: string
 }
 
 const ResponseImpactMonitor: React.FC<ResponseImpactMonitorProps> = ({
   workflowId,
+  incidentId,
   refreshInterval = 30000, // 30 seconds
   className = ""
 }) => {
@@ -86,6 +88,7 @@ const ResponseImpactMonitor: React.FC<ResponseImpactMonitorProps> = ({
       // Get real analytics data from API
       const data = await getResponseImpactMetrics({
         workflow_id: workflowId,
+        incident_id: incidentId,
         days_back: 7
       })
 
@@ -115,7 +118,7 @@ const ResponseImpactMonitor: React.FC<ResponseImpactMonitorProps> = ({
       setAnalytics(null)
       setTrends([])
     }
-  }, [workflowId])
+  }, [workflowId, incidentId])
 
   // Initialize and set up refresh interval
   useEffect(() => {

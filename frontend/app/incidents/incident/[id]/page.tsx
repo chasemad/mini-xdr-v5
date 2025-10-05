@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { 
   getIncident, agentOrchestrate,
@@ -20,6 +20,7 @@ import AdvancedResponsePanel from "@/app/components/AdvancedResponsePanel";
 import ResponseImpactMonitor from "@/app/components/ResponseImpactMonitor";
 import WorkflowApprovalPanel from "@/app/components/WorkflowApprovalPanel";
 import AIIncidentAnalysis from "@/app/components/AIIncidentAnalysis";
+import ActionHistoryPanel from "@/app/components/ActionHistoryPanel";
 
 interface IncidentDetail {
   id: number;
@@ -53,6 +54,35 @@ interface IncidentDetail {
     params: Record<string, unknown>;
     due_at?: string;
   }>;
+  advanced_actions?: Array<{
+    id: number;
+    action_id: string;
+    workflow_db_id?: number;
+    workflow_id?: string;
+    workflow_name?: string;
+    action_type: string;
+    action_name: string;
+    status: string;
+    executed_by?: string;
+    execution_method?: string;
+    parameters?: Record<string, unknown>;
+    result_data?: Record<string, unknown>;
+    error_details?: Record<string, unknown>;
+    created_at: string;
+    completed_at?: string;
+    rollback?: {
+      action_type: string;
+      label: string;
+    } | null;
+  }>;
+  response_summary?: {
+    total_actions: number;
+    manual_actions: number;
+    workflow_actions: number;
+    success_count: number;
+    failure_count: number;
+    success_rate: number;
+  };
   detailed_events: Array<{
     id: number;
     ts: string;
@@ -249,6 +279,10 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
     setShowDurationModal(true);
   };
 
+  const handleRollbackRequest = async ({ actionType, label }: { actionType: string; label: string }) => {
+    await executeSOCAction(actionType, label);
+  };
+
   const handleUnblockIP = async () => {
     await executeSOCAction('unblock_ip', 'Unblock IP');
   };
@@ -346,6 +380,27 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
     return `${diffDays}d ago`;
   };
 
+  const manualActionCount = incident?.response_summary?.manual_actions ?? incident?.actions?.length ?? 0;
+  const workflowActionCount = incident?.response_summary?.workflow_actions ?? incident?.advanced_actions?.length ?? 0;
+  const totalActionCount = incident?.response_summary?.total_actions ?? manualActionCount + workflowActionCount;
+
+  const manualSuccessCount = incident?.actions
+    ? incident.actions.filter(a => {
+        const status = (a.result || '').toLowerCase();
+        return status === 'success' || status === 'completed';
+      }).length
+    : 0;
+
+  const workflowSuccessCount = incident?.advanced_actions
+    ? incident.advanced_actions.filter(a => (a.status || '').toLowerCase() === 'completed').length
+    : 0;
+
+  const combinedSuccessRate = incident?.response_summary
+    ? Math.round(((incident.response_summary.success_rate || 0) * 100))
+    : totalActionCount
+      ? Math.round(((manualSuccessCount + workflowSuccessCount) / totalActionCount) * 100)
+      : 0;
+
   const getRiskColor = (score?: number) => {
     if (!score) return 'text-gray-400';
     if (score >= 0.8) return 'text-red-400';
@@ -393,7 +448,8 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
   const compromiseStatus = getCompromiseStatus(incident);
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <>
+      <div className="min-h-screen bg-gray-900 text-white">
       {/* Toast Notifications */}
       <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
         {toasts.map(toast => (
@@ -518,9 +574,7 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
                         <div className="text-right">
                           <div className="text-2xl font-bold text-blue-300">
                             {(() => {
-                              const mlConfidence = incident.containment_confidence ||
-                                incident.ensemble_scores?.ml_anomaly?.confidence ||
-                                incident.agent_confidence;
+                              const mlConfidence = incident.containment_confidence || incident.agent_confidence || 0;
                               return mlConfidence ? `${Math.round(mlConfidence * 100)}%` : 'N/A';
                             })()}
                           </div>
@@ -531,9 +585,7 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
                         <div
                           className="bg-gradient-to-r from-blue-500 to-blue-600 h-1.5 rounded-full transition-all duration-1000"
                           style={{
-                            width: `${((incident.containment_confidence ||
-                              incident.ensemble_scores?.ml_anomaly?.confidence ||
-                              incident.agent_confidence) || 0) * 100}%`
+                            width: `${((incident.containment_confidence || incident.agent_confidence) || 0) * 100}%`
                           }}
                         />
                       </div>
@@ -745,6 +797,7 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
                       ))}
                     </div>
                   </div>
+
                 </div>
               )}
 
@@ -1326,7 +1379,7 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
                 <div className="space-y-6">
                   {/* Response Impact Monitor */}
                   <ResponseImpactMonitor 
-                    workflowId={undefined} // Will show all workflows for this incident
+                    incidentId={incident.id}
                     refreshInterval={30000}
                   />
                   
@@ -1340,14 +1393,14 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-gray-400">Actions Taken</span>
-                          <span className="text-lg font-bold text-blue-300">{incident.actions?.length || 0}</span>
+                          <div className="text-right">
+                            <div className="text-lg font-bold text-blue-300">{totalActionCount}</div>
+                            <div className="text-[11px] text-gray-500">{manualActionCount} manual · {workflowActionCount} automated</div>
+                          </div>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-gray-400">Success Rate</span>
-                          <span className="text-lg font-bold text-green-300">
-                            {incident.actions?.length ? 
-                              Math.round((incident.actions.filter(a => a.result === 'success').length / incident.actions.length) * 100) : 0}%
-                          </span>
+                          <span className="text-lg font-bold text-green-300">{combinedSuccessRate}%</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-gray-400">Avg Response Time</span>
@@ -1461,6 +1514,7 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
               </button>
             </div>
           </div>
+
         </div>
       </div>
 
@@ -1597,6 +1651,17 @@ export default function AnalystIncidentDetail({ params }: { params: Promise<{ id
           </div>
         </div>
       )}
-    </div>
+      </div>
+
+      <div className="mt-6">
+        <ActionHistoryPanel
+          incidentId={incident.id}
+          actions={incident.actions || []}
+          automatedActions={incident.advanced_actions || []}
+          onRefresh={fetchIncident}
+          onRollback={handleRollbackRequest}
+        />
+      </div>
+    </>
   );
 }
