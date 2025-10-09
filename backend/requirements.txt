@@ -67,4 +67,5 @@ aioredis==2.0.1  # Async Redis client for caching and sessions
 python-consul==1.1.0  # Consul integration for service discovery
 # pydantic-settings==2.4.0  # Enhanced configuration management (duplicate removed - using 2.6.1 above)
 python-jose[cryptography]==3.3.0  # JWT authentication and encryption
-dnspython==2.4.2
+dnspython==2.4.2  # DNS resolution for attribution agent
+docker==7.1.0  # Docker SDK for deception agent
