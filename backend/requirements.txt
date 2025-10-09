@@ -19,7 +19,7 @@ torchvision==0.23.0
 scikit-learn==1.6.0
 xgboost==2.1.4
 pandas==2.3.0
-numpy>=2.1.0,<2.2.0  # Pin to 2.1.x for SHAP compatibility
+numpy>=1.23.2,<2.0.0  # Compatible with langchain and other ML libraries
 
 # AI Agents and LangChain
 langchain==0.3.11
@@ -67,3 +67,4 @@ aioredis==2.0.1  # Async Redis client for caching and sessions
 python-consul==1.1.0  # Consul integration for service discovery
 # pydantic-settings==2.4.0  # Enhanced configuration management (duplicate removed - using 2.6.1 above)
 python-jose[cryptography]==3.3.0  # JWT authentication and encryption
+dnspython==2.4.2
