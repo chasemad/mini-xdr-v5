@@ -17,6 +17,7 @@ from ..secrets_manager import secrets_manager
 from .aws import AWSIntegration
 from .azure import AzureIntegration
 from .gcp import GCPIntegration
+from .base import CloudIntegration
 
 logger = logging.getLogger(__name__)
 
