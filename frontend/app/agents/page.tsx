@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { DashboardLayout } from "@/components/DashboardLayout";
 
 interface Message {
   role: "user" | "agent";
@@ -57,7 +58,7 @@ export default function AgentsPage() {
     {
       id: "forensics",
       name: "Forensics Agent",
-      status: "offline", 
+      status: "offline",
       lastActivity: new Date(),
       description: "Digital forensics and evidence collection"
     },
@@ -79,15 +80,15 @@ export default function AgentsPage() {
         const response = await fetch('/api/orchestrator/status');
         if (response.ok) {
           const data = await response.json();
-          
+
           // Update system status
           setSystemStatus(data.status);
-          
+
           // Update ML model status
           if (data.ml_models) {
             setMlStatus(data.ml_models);
           }
-          
+
           // Update agent statuses from orchestrator
           if (data.orchestrator?.agents) {
             const agentMap: { [key: string]: {name: string, description: string} } = {
@@ -108,7 +109,7 @@ export default function AgentsPage() {
                 description: 'Honeypot management and attacker deception'
               }
             };
-            
+
             const updatedStatuses: AgentStatus[] = Object.entries(data.orchestrator.agents).map(([id, agentData]: [string, any]) => ({
               id,
               name: agentMap[id]?.name || id,
@@ -116,7 +117,7 @@ export default function AgentsPage() {
               lastActivity: agentData.last_activity ? new Date(agentData.last_activity) : new Date(),
               description: agentMap[id]?.description || 'Agent description'
             }));
-            
+
             setAgentStatuses(updatedStatuses);
           }
         }
@@ -165,7 +166,7 @@ export default function AgentsPage() {
       }
 
       const data = await response.json();
-      
+
       const agentMessage: Message = {
         role: "agent",
         content: data.message || "No response",
@@ -214,26 +215,26 @@ export default function AgentsPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">AI Agents Control Panel</h1>
-          <p className="text-gray-600">Interact with autonomous security agents</p>
-          {systemStatus === "healthy" && mlStatus.enhanced_detector?.loaded && (
-            <p className="text-sm text-green-600 mt-1">
-              ✅ Local ML Models Active (No AWS) • {mlStatus.enhanced_detector.model_type}
-            </p>
-          )}
-          {systemStatus === "healthy" && !mlStatus.enhanced_detector?.loaded && (
-            <p className="text-sm text-yellow-600 mt-1">
-              ⚠️ ML Models Loading...
-            </p>
-          )}
+    <DashboardLayout breadcrumbs={[{ label: "AI Agents" }]}>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-gray-400">Interact with autonomous security agents</p>
+            {systemStatus === "healthy" && mlStatus.enhanced_detector?.loaded && (
+              <p className="text-sm text-green-600 mt-1">
+                ✅ Local ML Models Active (No AWS) • {mlStatus.enhanced_detector.model_type}
+              </p>
+            )}
+            {systemStatus === "healthy" && !mlStatus.enhanced_detector?.loaded && (
+              <p className="text-sm text-yellow-600 mt-1">
+                ⚠️ ML Models Loading...
+              </p>
+            )}
+          </div>
+          <Button onClick={clearConversation} variant="outline">
+            Clear Chat
+          </Button>
         </div>
-        <Button onClick={clearConversation} variant="outline">
-          Clear Chat
-        </Button>
-      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Agent Status Panel */}
@@ -291,8 +292,8 @@ export default function AgentsPage() {
                   {conversation.map((message, idx) => (
                     <div key={idx} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                       <div className={`max-w-[70%] p-3 rounded-lg ${
-                        message.role === 'user' 
-                          ? 'bg-blue-600 text-white' 
+                        message.role === 'user'
+                          ? 'bg-blue-600 text-white'
                           : 'bg-gray-100 text-gray-900'
                       }`}>
                         <div className="flex items-center gap-2 mb-2">
@@ -309,7 +310,7 @@ export default function AgentsPage() {
                           )}
                         </div>
                         <p className="whitespace-pre-wrap">{message.content}</p>
-                        
+
                         {/* Display actions if present */}
                         {message.actions && message.actions.length > 0 && (
                           <div className="mt-3 pt-3 border-t border-opacity-20">
@@ -350,7 +351,7 @@ export default function AgentsPage() {
                 className="flex-1"
                 disabled={loading}
               />
-              <Button 
+              <Button
                 onClick={sendMessage}
                 disabled={!input.trim() || loading}
                 className="px-6"
@@ -440,6 +441,7 @@ export default function AgentsPage() {
           </div>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </DashboardLayout>
   );
 }

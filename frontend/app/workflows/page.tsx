@@ -55,6 +55,7 @@ import AutomationsPanel from '../components/AutomationsPanel'
 import { useAppContext, appActions } from '../contexts/AppContext'
 import { createDataService } from '../services/DataService'
 import { listWorkflowTriggers, disableWorkflowTrigger, enableWorkflowTrigger } from '../lib/api'
+import { DashboardLayout } from '@/components/DashboardLayout'
 
 interface Incident {
   id: number
@@ -106,7 +107,6 @@ const WorkflowsPage: React.FC = () => {
   const { state, dispatch } = useAppContext()
   const [activeTab, setActiveTab] = useState('natural')
   const [dataService, setDataService] = useState<any>(null)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [triggers, setTriggers] = useState<WorkflowTrigger[]>([])
   const [triggersLoading, setTriggersLoading] = useState(false)
 
@@ -335,129 +335,8 @@ const WorkflowsPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white flex">
-      {/* Sidebar */}
-      <div className={`${sidebarCollapsed ? 'w-16' : 'w-80'} bg-gray-900 border-r border-gray-800 transition-all duration-300 flex flex-col`}>
-        {/* Header */}
-        <div className="p-4 border-b border-gray-800">
-          <div className="flex items-center justify-between">
-            {!sidebarCollapsed && (
-              <div>
-                <h1 className="text-xl font-bold text-white">SOC Command</h1>
-                <p className="text-xs text-gray-400">Enterprise Security Center</p>
-              </div>
-            )}
-            <button
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
-            >
-              {sidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
-          </div>
-        </div>
-
-        {!sidebarCollapsed && (
-          <>
-            {/* Navigation */}
-            <div className="p-4">
-              <nav className="space-y-2">
-                {[
-                  { id: 'overview', label: 'Threat Overview', icon: BarChart3, href: '/' },
-                  { id: 'incidents', label: 'Active Incidents', icon: AlertTriangle, href: '/incidents' },
-                  { id: 'intelligence', label: 'Threat Intel', icon: Globe, href: '/' },
-                  { id: 'hunting', label: 'Threat Hunting', icon: Target, href: '/' },
-                  { id: 'forensics', label: 'Forensics', icon: Search, href: '/' },
-                  { id: 'response', label: 'Response Actions', icon: Shield, href: '/' },
-                  { id: 'workflows', label: 'Workflow Automation', icon: Workflow, href: '/workflows', active: true },
-                  { id: 'visualizations', label: '3D Visualization', icon: Activity, href: '/visualizations' }
-                ].map(({ id, label, icon: Icon, href, active }) => (
-                  <Link
-                    key={id}
-                    href={href}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
-                      active ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30' : 'hover:bg-gray-700/50 text-gray-300 hover:text-white'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                    <span className="text-sm font-medium">{label}</span>
-                  </Link>
-                ))}
-              </nav>
-            </div>
-
-            {/* Quick Stats */}
-            <div className="p-4 border-t border-gray-800">
-              <h3 className="text-sm font-semibold text-gray-300 mb-3">Workflow Status</h3>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">Total Workflows</span>
-                  <span className="text-sm font-bold text-blue-400">{workflowStats.total}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">Active</span>
-                  <span className="text-sm font-bold text-green-400">{workflowStats.active}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">Completed</span>
-                  <span className="text-sm font-bold text-purple-400">{workflowStats.completed}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* AI Agents & MCP Status */}
-            <div className="p-4 border-t border-gray-800">
-              <div className="flex items-center gap-2 mb-3">
-                <Bot className="w-4 h-4 text-purple-400" />
-                <h3 className="text-sm font-semibold text-gray-300">AI Agent Orchestra</h3>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between p-2 bg-gray-700/30 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span className="text-xs text-gray-300">Attribution</span>
-                  </div>
-                  <span className="text-xs text-green-400 font-medium">Active</span>
-                </div>
-                <div className="flex items-center justify-between p-2 bg-gray-700/30 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span className="text-xs text-gray-300">Containment</span>
-                  </div>
-                  <span className="text-xs text-green-400 font-medium">Active</span>
-                </div>
-                <div className="flex items-center justify-between p-2 bg-gray-700/30 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span className="text-xs text-gray-300">Forensics</span>
-                  </div>
-                  <span className="text-xs text-green-400 font-medium">Active</span>
-                </div>
-                <div className="flex items-center justify-between p-2 bg-gray-700/30 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span className="text-xs text-gray-300">Deception</span>
-                  </div>
-                  <span className="text-xs text-green-400 font-medium">Active</span>
-                </div>
-
-                <div className="mt-3 pt-3 border-t border-gray-800">
-                  <div className="flex items-center justify-between p-2 bg-blue-600/20 border border-blue-500/30 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <Zap className="w-3 h-3 text-blue-400" />
-                      <span className="text-xs text-blue-300 font-medium">MCP Server</span>
-                    </div>
-                    <span className="text-xs text-green-400 font-medium">Online</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+    <DashboardLayout breadcrumbs={[{ label: "Workflows" }]}>
+      <div className="space-y-6">
           {/* Header Section */}
         <Card className="bg-gray-900 border-gray-800">
           <CardContent className="p-6">
@@ -804,12 +683,9 @@ const WorkflowsPage: React.FC = () => {
             </Card>
           </TabsContent>
         </Tabs>
-        </div>
       </div>
-    </div>
+    </DashboardLayout>
   )
 }
 
 export default WorkflowsPage
-
-

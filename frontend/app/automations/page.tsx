@@ -7,6 +7,7 @@ import {
   FileText, TrendingUp, Activity, Target, Workflow, Plus, RefreshCw
 } from "lucide-react";
 import Link from "next/link";
+import { DashboardLayout } from "@/components/DashboardLayout";
 
 interface WorkflowTrigger {
   id: number;
@@ -179,25 +180,17 @@ export default function AutomationsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white p-6">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-3xl font-bold flex items-center gap-3">
-              <Workflow className="w-8 h-8 text-blue-400" />
-              Automation & Triggers
-            </h1>
-            <p className="text-gray-400 mt-1">
-              Manage automated workflows, NLP suggestions, and trigger policies
-            </p>
+    <DashboardLayout breadcrumbs={[{ label: "Automations" }]}>
+      <div className="space-y-6">
+        {/* Header */}
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-gray-400 mt-1">
+                Manage automated workflows, NLP suggestions, and trigger policies
+              </p>
+            </div>
           </div>
-          <Link href="/">
-            <button className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors">
-              Back to Dashboard
-            </button>
-          </Link>
-        </div>
 
         {/* Tab Navigation */}
         <div className="flex items-center gap-2 border-b border-gray-800">
@@ -609,6 +602,7 @@ export default function AutomationsPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </DashboardLayout>
   );
 }

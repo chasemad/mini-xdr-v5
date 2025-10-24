@@ -2,15 +2,15 @@ import React from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import MLMonitoringDashboard from './ml-monitoring'
 import ExplainableAIDashboard from './explainable-ai'
-import { Brain, BarChart3, Target } from 'lucide-react'
+import { Brain, BarChart3 } from 'lucide-react'
+import { DashboardLayout } from '@/components/DashboardLayout'
 
 export default function AnalyticsPage() {
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto p-6">
-        <div className="mb-6">
-          <h1 className="text-4xl font-bold mb-2">Advanced Analytics</h1>
-          <p className="text-lg text-muted-foreground">
+    <DashboardLayout breadcrumbs={[{ label: "Analytics" }]}>
+      <div className="space-y-6">
+        <div>
+          <p className="text-lg text-gray-400">
             Comprehensive monitoring and analysis of ML models, explainable AI insights, and system performance
           </p>
         </div>
@@ -36,6 +36,6 @@ export default function AnalyticsPage() {
           </TabsContent>
         </Tabs>
       </div>
-    </div>
+    </DashboardLayout>
   )
 }
