@@ -85,6 +85,12 @@ def upgrade() -> None:
         "cloud_assets",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("organization_id", sa.Integer(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=True,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("provider", sa.String(length=50), nullable=False),
         sa.Column("asset_type", sa.String(length=100), nullable=False),
         sa.Column("asset_id", sa.String(length=255), nullable=False),
@@ -157,3 +163,5 @@ def downgrade() -> None:
     op.drop_column("organizations", "integration_settings")
     op.drop_column("organizations", "auto_discovery_enabled")
     op.drop_column("organizations", "onboarding_flow_version")
+
+    # Note: created_at column will be dropped automatically when table is dropped
