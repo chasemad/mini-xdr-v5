@@ -462,8 +462,10 @@ def train_model_enhanced(
     train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
     val_dataset = TensorDataset(X_val_tensor, y_val_tensor)
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=2)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size*2, shuffle=False, num_workers=2)
+    # NOTE: The local sandbox disallows shared memory managers, so we fall back to
+    # single-process data loading to avoid torch_shm_manager permission errors.
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size*2, shuffle=False, num_workers=0)
     
     # Initialize model
     model = ThreatDetector(
@@ -851,5 +853,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 

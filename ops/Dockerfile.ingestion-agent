@@ -1,39 +1,47 @@
-FROM python:3.12-slim
+# ============================================================================
+# Mini-XDR Ingestion Agent Dockerfile
+# ============================================================================
+FROM python:3.11-slim AS base
+
+# Build arguments
+ARG BUILD_DATE
+ARG VCS_REF
+LABEL org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.title="mini-xdr-agent" \
+      org.opencontainers.image.description="Mini-XDR Data Ingestion Agent"
 
 # Set working directory
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies for the agent
-RUN pip install --no-cache-dir \
-    aiohttp==3.9.5 \
-    aiofiles==23.2.1 \
-    cryptography==42.0.8
+# Copy requirements
+COPY backend/requirements.txt .
 
-# Copy the ingestion agent
-COPY backend/app/agents/ingestion_agent.py .
+# Install only necessary dependencies for the agent
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+    fastapi==0.116.1 \
+    uvicorn[standard]==0.32.1 \
+    requests==2.32.5 \
+    pydantic-settings==2.6.1 \
+    apscheduler==3.11.0 \
+    psutil
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash agent && chown -R agent:agent /app
-USER agent
+# Copy agent code
+COPY backend/app/agents/ingestion_agent.py /app/
+COPY backend/app/config.py /app/ 2>/dev/null || echo "config.py not found"
 
-# Health check
-HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
-    CMD pgrep -f ingestion_agent.py || exit 1
+# Create necessary directories
+RUN mkdir -p /app/logs && chmod -R 755 /app
 
-# Default configuration (override with environment variables)
-ENV BACKEND_URL="http://mini-xdr-backend:8000"
-ENV SOURCE_TYPE="cowrie"
-ENV HOSTNAME="agent"
-ENV BATCH_SIZE="50"
-ENV FLUSH_INTERVAL="30"
+# Expose port
+EXPOSE 8001
 
-# Start command
-CMD ["python", "ingestion_agent.py", "--config", "/tmp/agent-config.json"]
-
-# Create default config on startup
-RUN echo '{"backend_url": "$BACKEND_URL", "source_type": "$SOURCE_TYPE", "hostname": "$HOSTNAME", "api_key": "$API_KEY", "log_paths": {"cowrie": "/var/log/cowrie/cowrie.json", "suricata": "/var/log/suricata/eve.json"}, "batch_size": 50, "flush_interval": 30}' > /tmp/agent-config.json
+# Run the agent
+CMD ["python", "-u", "ingestion_agent.py"]

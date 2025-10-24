@@ -46,6 +46,7 @@ class ContainmentAgent:
         self.engine = EnhancedContainmentEngine(self.threat_intel, self.ml_detector)
         
         self.agent_id = "containment_orchestrator_v1"
+        self.default_honeypot_host = getattr(settings, "honeypot_host", None) or "tpot-honeypot"
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         
         # Initialize LangChain agent if available
@@ -173,7 +174,7 @@ class ContainmentAgent:
             else:
                 # Use basic decision logic
                 response = await self._basic_orchestrate(
-                    incident, decision, ml_score, intel_result
+                    incident, decision, ml_score, intel_result, db_session
                 )
             
             # Step 5: Update incident with agent data
@@ -296,18 +297,57 @@ class ContainmentAgent:
         incident: Incident,
         decision: ContainmentDecision, 
         ml_score: float,
-        intel_result: Any
+        intel_result: Any,
+        db_session=None
     ) -> Dict[str, Any]:
         """Basic orchestration without LangChain"""
         
         actions = []
         reasoning = []
-        
+
+        threat_category = (incident.threat_category or decision.threat_category or "").lower()
+        workflow_result = None
+
+        if db_session:
+            playbook = self._build_critical_playbook(threat_category, incident)
+            if playbook:
+                workflow_result = await self._launch_advanced_playbook(
+                    incident,
+                    playbook,
+                    db_session
+                )
+                if workflow_result and workflow_result.get("success"):
+                    reasoning.append(playbook["success_reason"])
+                    confidence = max(decision.confidence or 0.7, 0.85)
+                    executed_actions = [{
+                        "action": "automated_workflow",
+                        "workflow_id": workflow_result.get("workflow_id"),
+                        "status": workflow_result.get("status", "executed"),
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "steps": workflow_result.get("total_steps", len(playbook["steps"]))
+                    }]
+
+                    if workflow_result.get("approval_required"):
+                        executed_actions[0]["approval_required"] = True
+
+                    return {
+                        "success": True,
+                        "actions": executed_actions,
+                        "reasoning": "; ".join(reasoning) or playbook["success_reason"],
+                        "reason": playbook["success_reason"],
+                        "confidence": confidence,
+                        "workflow_triggered": workflow_result.get("workflow_id"),
+                    }
+                elif workflow_result and not workflow_result.get("success"):
+                    reasoning.append(
+                        f"Advanced playbook failed: {workflow_result.get('error', 'unknown error')}"
+                    )
+
         # Simple rule-based decision making
         if decision.should_contain or ml_score > 0.8:
             actions.append("block")
             reasoning.append(f"High risk detected (score: {decision.risk_score:.2f})")
-        
+
         if intel_result and intel_result.is_malicious:
             if "block" not in actions:
                 actions.append("block")
@@ -323,13 +363,241 @@ class ContainmentAgent:
         
         # Execute actions
         executed_actions = await self._execute_actions(actions, incident, decision)
-        
+
         return {
             "success": True,
             "actions": executed_actions,
             "reasoning": "; ".join(reasoning),
-            "confidence": 0.7  # Default confidence for rule-based
+            "reason": "; ".join(reasoning),
+            "confidence": max(decision.confidence or 0.6, 0.72)
         }
+
+    def _build_critical_playbook(self, threat_category: str, incident: Incident) -> Optional[Dict[str, Any]]:
+        """Return an enriched response playbook for critical threats"""
+        if not threat_category:
+            return None
+
+        src_ip = incident.src_ip
+        host_identifier = self.default_honeypot_host
+
+        if "ransom" in threat_category:
+            steps = [
+                {
+                    "action_type": "block_ip_advanced",
+                    "parameters": {
+                        "ip_address": src_ip,
+                        "duration": 604800,
+                        "block_level": "aggressive"
+                    }
+                },
+                {
+                    "action_type": "isolate_host_advanced",
+                    "parameters": {
+                        "host_identifier": host_identifier,
+                        "isolation_level": "strict",
+                        "exceptions": ["forensics-segment"],
+                        "monitoring": "packet-capture"
+                    }
+                },
+                {
+                    "action_type": "memory_dump_collection",
+                    "parameters": {
+                        "target_hosts": [host_identifier],
+                        "dump_type": "full",
+                        "encryption": True,
+                        "retention": "30d"
+                    }
+                },
+                {
+                    "action_type": "invoke_ai_agent",
+                    "parameters": {
+                        "agent": "containment",
+                        "task": "emergency_isolation",
+                        "context": "ransomware"
+                    }
+                },
+                {
+                    "action_type": "reset_passwords",
+                    "parameters": {
+                        "ip": host_identifier,
+                        "reason": "Ransomware mitigation credential reset"
+                    }
+                },
+                {
+                    "action_type": "send_notification",
+                    "parameters": {
+                        "channel": "slack",
+                        "priority": "high",
+                        "message": f"🔥 Automated ransomware containment executed for {src_ip}"
+                    }
+                },
+            ]
+            return {
+                "name": "Agent Ransomware Auto-Containment",
+                "priority": "CRITICAL",
+                "steps": steps,
+                "success_reason": "Critical ransomware playbook executed via response engine",
+            }
+
+        if "data_exfil" in threat_category:
+            steps = [
+                {
+                    "action_type": "block_ip_advanced",
+                    "parameters": {
+                        "ip_address": src_ip,
+                        "duration": 172800,
+                        "block_level": "aggressive"
+                    }
+                },
+                {
+                    "action_type": "deploy_firewall_rules",
+                    "parameters": {
+                        "rule_set": [
+                            {"action": "block", "ip": src_ip, "protocol": "*"},
+                            {"action": "mirror", "ip": src_ip, "destination": "forensics-tap"}
+                        ],
+                        "scope": "edge",
+                        "priority": "critical",
+                        "expiration": 86400
+                    }
+                },
+                {
+                    "action_type": "dns_sinkhole",
+                    "parameters": {
+                        "domains": [f"exfil-{src_ip}.demo.local"],
+                        "sinkhole_ip": "10.99.99.99",
+                        "ttl": 60,
+                        "scope": "global"
+                    }
+                },
+                {
+                    "action_type": "memory_dump_collection",
+                    "parameters": {
+                        "target_hosts": [host_identifier],
+                        "dump_type": "network-focused",
+                        "retention": "7d"
+                    }
+                },
+                {
+                    "action_type": "invoke_ai_agent",
+                    "parameters": {
+                        "agent": "forensics",
+                        "task": "analyze_data_transfer",
+                        "context": "data_exfiltration"
+                    }
+                },
+                {
+                    "action_type": "send_notification",
+                    "parameters": {
+                        "channel": "slack",
+                        "priority": "high",
+                        "message": f"🚨 Data exfiltration workflow executed for {src_ip}"
+                    }
+                },
+            ]
+            return {
+                "name": "Agent Data Exfiltration Response",
+                "priority": "CRITICAL",
+                "steps": steps,
+                "success_reason": "Automated data exfiltration playbook deployed",
+            }
+
+        if "ddos" in threat_category:
+            steps = [
+                {
+                    "action_type": "deploy_firewall_rules",
+                    "parameters": {
+                        "rule_set": [
+                            {"action": "rate_limit", "ip": src_ip, "pps": 100},
+                            {"action": "geo_block", "region": "*", "ip": src_ip}
+                        ],
+                        "scope": "edge",
+                        "priority": "critical",
+                        "expiration": 3600
+                    }
+                },
+                {
+                    "action_type": "block_ip",
+                    "parameters": {
+                        "ip_address": src_ip,
+                        "duration": 43200,
+                        "block_level": "aggressive"
+                    }
+                },
+                {
+                    "action_type": "capture_traffic",
+                    "parameters": {
+                        "ip": src_ip,
+                        "reason": "DDoS evidence collection"
+                    }
+                },
+                {
+                    "action_type": "invoke_ai_agent",
+                    "parameters": {
+                        "agent": "containment",
+                        "task": "enable_rate_limiting",
+                        "context": "ddos_attack"
+                    }
+                },
+                {
+                    "action_type": "send_notification",
+                    "parameters": {
+                        "channel": "slack",
+                        "priority": "medium",
+                        "message": f"⚠️ Automated DDoS mitigation engaged for {src_ip}"
+                    }
+                },
+            ]
+            return {
+                "name": "Agent DDoS Mitigation",
+                "priority": "CRITICAL",
+                "steps": steps,
+                "success_reason": "Automated DDoS mitigation workflow executed",
+            }
+
+        return None
+
+    async def _launch_advanced_playbook(
+        self,
+        incident: Incident,
+        playbook: Dict[str, Any],
+        db_session
+    ) -> Optional[Dict[str, Any]]:
+        """Launch an advanced response workflow for the incident"""
+        try:
+            from ..advanced_response_engine import get_response_engine, ResponsePriority
+
+            response_engine = await get_response_engine()
+            priority_name = playbook.get("priority", "HIGH")
+            priority_enum = getattr(ResponsePriority, priority_name.upper(), ResponsePriority.HIGH)
+
+            result = await response_engine.create_workflow(
+                incident_id=incident.id,
+                playbook_name=playbook["name"],
+                steps=playbook["steps"],
+                auto_execute=True,
+                priority=priority_enum,
+                db_session=db_session
+            )
+
+            if not result.get("success"):
+                self.logger.error(
+                    "Advanced playbook creation failed for incident %s: %s",
+                    incident.id,
+                    result.get("error")
+                )
+            else:
+                self.logger.info(
+                    "Advanced playbook %s auto-executed for incident %s",
+                    playbook["name"],
+                    incident.id
+                )
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Failed to launch advanced playbook: {e}")
+            return {"success": False, "error": str(e)}
     
     def _parse_agent_response(self, response: str) -> Dict[str, Any]:
         """Parse agent response, handling various formats"""

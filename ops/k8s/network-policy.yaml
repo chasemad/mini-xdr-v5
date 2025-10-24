@@ -1,0 +1,57 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mini-xdr-ingress-policy
+  namespace: mini-xdr
+spec:
+  podSelector:
+    matchLabels:
+      app: mini-xdr-frontend
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow traffic from LoadBalancer only
+  - from:
+    - podSelector: {}
+    ports:
+    - protocol: TCP
+      port: 3000
+  # Allow internal communication with backend
+  - from:
+    - podSelector:
+        matchLabels:
+          app: mini-xdr-backend
+    ports:
+    - protocol: TCP
+      port: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mini-xdr-backend-policy
+  namespace: mini-xdr
+spec:
+  podSelector:
+    matchLabels:
+      app: mini-xdr-backend
+  policyTypes:
+  - Ingress
+  ingress:
+  # Only allow traffic from frontend
+  - from:
+    - podSelector:
+        matchLabels:
+          app: mini-xdr-frontend
+    ports:
+    - protocol: TCP
+      port: 8000
+  # Allow internal pod-to-pod communication
+  - from:
+    - podSelector:
+        matchLabels:
+          app: mini-xdr-backend
+    ports:
+    - protocol: TCP
+      port: 8000
+    - protocol: TCP
+      port: 9090

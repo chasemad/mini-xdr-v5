@@ -576,6 +576,28 @@ class AdaptiveDetectionEngine:
             logger.debug(f"Open incident already exists for {src_ip}: {existing_incident.id}")
             return {"incident_id": existing_incident.id}
         
+        # Enhanced escalation logic - check recent events for critical threat indicators
+        recent_events = await self._get_recent_events(db, src_ip, 10)
+        critical_keywords = [
+            "malware", "ransomware", "data_exfiltration", "privilege_escalation",
+            "lateral_movement", "backdoor", "trojan", "cryptominer", "rootkit"
+        ]
+        
+        # Check event messages and event IDs for critical indicators
+        has_critical_indicators = False
+        for event in recent_events:
+            event_text = f"{event.eventid} {event.message}".lower()
+            if any(keyword in event_text for keyword in critical_keywords):
+                has_critical_indicators = True
+                logger.info(f"Critical indicator detected in adaptive detection: {event.eventid}")
+                break
+        
+        # Elevate priority if critical indicators found
+        if has_critical_indicators and severity not in ["critical", "high"]:
+            severity = "high"
+            composite_score = max(composite_score, 0.75)
+            logger.info(f"Elevated adaptive detection to HIGH priority due to critical threat indicators for {src_ip}")
+        
         # Create new incident
         incident_data = {
             "src_ip": src_ip,

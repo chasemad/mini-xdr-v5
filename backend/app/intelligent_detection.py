@@ -541,31 +541,66 @@ class IntelligentDetectionEngine:
     ) -> int:
         """Create incident with intelligent classification details"""
 
+        # Enhanced escalation level logic - check for critical indicators
+        escalation_level = classification.severity.value
+        risk_score = classification.anomaly_score
+        
+        # Check for critical threat indicators that should elevate priority
+        critical_indicators = [
+            "malware", "ransomware", "data_exfiltration", "privilege_escalation",
+            "lateral_movement", "backdoor", "trojan", "cryptominer", "rootkit"
+        ]
+        
+        threat_type_lower = classification.threat_type.lower()
+        indicators_lower = [ind.lower() for ind in classification.indicators]
+        
+        # Elevate to HIGH if malware or data exfiltration detected
+        if any(keyword in threat_type_lower or any(keyword in ind for ind in indicators_lower) 
+               for keyword in critical_indicators):
+            if escalation_level not in ["critical", "high"]:
+                escalation_level = "high"
+                risk_score = max(risk_score, 0.75)  # Ensure risk score reflects severity
+                self.logger.info(f"Elevated escalation to HIGH due to critical threat indicators: {threat_type_lower}")
+        
+        # Further elevate to CRITICAL if multiple critical indicators or high event count
+        critical_count = sum(1 for keyword in critical_indicators 
+                           if keyword in threat_type_lower or any(keyword in ind for ind in indicators_lower))
+        if critical_count >= 2 or (len(events) > 50 and escalation_level == "high"):
+            escalation_level = "critical"
+            risk_score = max(risk_score, 0.85)
+            self.logger.info(f"Elevated escalation to CRITICAL: {critical_count} critical indicators, {len(events)} events")
+        
+        # Boost ML confidence for well-defined threat patterns
+        boosted_confidence = classification.confidence
+        if classification.confidence > 0.4 and any(keyword in threat_type_lower for keyword in critical_indicators):
+            boosted_confidence = min(classification.confidence + 0.15, 0.95)
+            self.logger.info(f"Boosted ML confidence from {classification.confidence:.2f} to {boosted_confidence:.2f}")
+
         # Create comprehensive triage note
         triage_note = {
             "summary": f"{classification.threat_type} detected from {src_ip}",
-            "severity": classification.severity.value,
-            "confidence": classification.confidence,
-            "anomaly_score": classification.anomaly_score,
+            "severity": escalation_level,  # Use enhanced escalation level
+            "confidence": boosted_confidence,
+            "anomaly_score": risk_score,
             "threat_class": classification.threat_class,
             "event_count": len(events),
             "analysis_method": "sagemaker_ml" + ("_openai_enhanced" if classification.openai_enhanced else ""),
             "recommendation": self._get_response_recommendation(classification),
             "indicators": classification.indicators,
-            "rationale": f"ML model classified with {classification.confidence:.1%} confidence as {classification.threat_type}"
+            "rationale": f"ML model classified with {boosted_confidence:.1%} confidence as {classification.threat_type}. Escalation elevated due to critical threat indicators."
         }
 
-        # Create incident with ML confidence
+        # Create incident with enhanced ML confidence and escalation
         incident = Incident(
             src_ip=src_ip,
-            reason=f"{classification.threat_type} (ML Confidence: {classification.confidence:.1%})",
+            reason=f"{classification.threat_type} (ML Confidence: {boosted_confidence:.1%})",
             status="open",
-            escalation_level=classification.severity.value,
-            risk_score=classification.anomaly_score,
+            escalation_level=escalation_level,  # Use enhanced escalation level
+            risk_score=risk_score,  # Use enhanced risk score
             threat_category=classification.threat_type.lower().replace(" ", "_"),
-            containment_confidence=classification.confidence,
+            containment_confidence=boosted_confidence,  # Use boosted confidence
             containment_method="ml_driven",
-            ml_confidence=classification.confidence,  # Set ML confidence explicitly
+            ml_confidence=boosted_confidence,  # Set boosted ML confidence
             triage_note=triage_note
         )
 
@@ -576,7 +611,8 @@ class IntelligentDetectionEngine:
         self.logger.info(
             f"Intelligent incident created: ID={incident.id}, "
             f"IP={src_ip}, Type={classification.threat_type}, "
-            f"Confidence={classification.confidence:.3f}"
+            f"Escalation={escalation_level}, Risk={risk_score:.2f}, "
+            f"Confidence={boosted_confidence:.3f}"
         )
 
         return incident.id

@@ -564,6 +564,31 @@ TPOT_TRIGGERS = [
                 "continue_on_failure": False
             },
             {
+                "action_type": "deploy_firewall_rules",
+                "parameters": {
+                    "rule_set": [
+                        {"action": "block", "ip": "{source_ip}", "protocol": "*"},
+                        {"action": "throttle", "ip": "{source_ip}", "bandwidth_kbps": 64}
+                    ],
+                    "scope": "edge",
+                    "priority": "critical",
+                    "expiration": 86400
+                },
+                "timeout_seconds": 90,
+                "continue_on_failure": True
+            },
+            {
+                "action_type": "dns_sinkhole",
+                "parameters": {
+                    "domains": ["exfil.demo.local", "{source_ip}"],
+                    "sinkhole_ip": "10.99.99.99",
+                    "ttl": 60,
+                    "scope": "global"
+                },
+                "timeout_seconds": 45,
+                "continue_on_failure": True
+            },
+            {
                 "action_type": "invoke_ai_agent",
                 "parameters": {
                     "agent": "forensics",
@@ -571,6 +596,16 @@ TPOT_TRIGGERS = [
                     "context": "data_exfiltration"
                 },
                 "timeout_seconds": 120,
+                "continue_on_failure": True
+            },
+            {
+                "action_type": "memory_dump_collection",
+                "parameters": {
+                    "target_hosts": ["tpot-honeypot"],
+                    "dump_type": "network-focused",
+                    "retention": "7d"
+                },
+                "timeout_seconds": 300,
                 "continue_on_failure": True
             },
             {
@@ -622,6 +657,28 @@ TPOT_TRIGGERS = [
                 "continue_on_failure": False
             },
             {
+                "action_type": "isolate_host_advanced",
+                "parameters": {
+                    "host_identifier": "tpot-honeypot",
+                    "isolation_level": "strict",
+                    "exceptions": ["forensics-segment"],
+                    "monitoring": "packet-capture"
+                },
+                "timeout_seconds": 120,
+                "continue_on_failure": False
+            },
+            {
+                "action_type": "memory_dump_collection",
+                "parameters": {
+                    "target_hosts": ["tpot-honeypot"],
+                    "dump_type": "full",
+                    "encryption": True,
+                    "retention": "30d"
+                },
+                "timeout_seconds": 300,
+                "continue_on_failure": True
+            },
+            {
                 "action_type": "invoke_ai_agent",
                 "parameters": {
                     "agent": "containment",
@@ -629,6 +686,15 @@ TPOT_TRIGGERS = [
                     "context": "ransomware"
                 },
                 "timeout_seconds": 120,
+                "continue_on_failure": True
+            },
+            {
+                "action_type": "reset_passwords",
+                "parameters": {
+                    "ip": "tpot-honeypot",
+                    "reason": "Ransomware mitigation"
+                },
+                "timeout_seconds": 60,
                 "continue_on_failure": True
             },
             {
@@ -710,6 +776,16 @@ TPOT_TRIGGERS = [
         "playbook_name": "DDoS Mitigation",
         "workflow_steps": [
             {
+                "action_type": "block_ip",
+                "parameters": {
+                    "ip_address": "event.source_ip",
+                    "duration": 43200,
+                    "block_level": "aggressive"
+                },
+                "timeout_seconds": 30,
+                "continue_on_failure": True
+            },
+            {
                 "action_type": "create_incident",
                 "parameters": {
                     "title": "DDoS Attack Detected",
@@ -718,6 +794,29 @@ TPOT_TRIGGERS = [
                 },
                 "timeout_seconds": 10,
                 "continue_on_failure": False
+            },
+            {
+                "action_type": "deploy_firewall_rules",
+                "parameters": {
+                    "rule_set": [
+                        {"action": "rate_limit", "ip": "{source_ip}", "pps": 100},
+                        {"action": "geo_block", "region": "*", "ip": "{source_ip}"}
+                    ],
+                    "scope": "edge",
+                    "priority": "critical",
+                    "expiration": 3600
+                },
+                "timeout_seconds": 90,
+                "continue_on_failure": True
+            },
+            {
+                "action_type": "capture_traffic",
+                "parameters": {
+                    "ip": "{source_ip}",
+                    "reason": "DDoS evidence collection"
+                },
+                "timeout_seconds": 60,
+                "continue_on_failure": True
             },
             {
                 "action_type": "invoke_ai_agent",
@@ -937,6 +1036,3 @@ async def main():
 
 if __name__ == "__main__":
     sys.exit(asyncio.run(main()))
-
-
-

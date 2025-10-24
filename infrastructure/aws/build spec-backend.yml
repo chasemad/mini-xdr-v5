@@ -1,0 +1,25 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 116912495274.dkr.ecr.us-east-1.amazonaws.com
+      - echo Downloading source from S3...
+      - aws s3 cp s3://mini-xdr-build-artifacts-116912495274/source.tar.gz .
+      - tar -xzf source.tar.gz
+      - ls -la
+      - echo Build started on `date`
+  build:
+    commands:
+      - echo Building the Docker image...
+      - docker build -t mini-xdr-backend:amd64 -f ops/Dockerfile.backend .
+      - docker tag mini-xdr-backend:amd64 116912495274.dkr.ecr.us-east-1.amazonaws.com/mini-xdr-backend:amd64
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo Pushing the Docker image...
+      - docker push 116912495274.dkr.ecr.us-east-1.amazonaws.com/mini-xdr-backend:amd64
+      - echo Push completed!
+
+

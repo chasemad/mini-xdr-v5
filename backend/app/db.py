@@ -15,10 +15,28 @@ database_url = settings.database_url
 if database_url.startswith('sqlite://'):
     database_url = database_url.replace('sqlite://', 'sqlite+aiosqlite://')
 
+connect_args = {}
+
+# Driver-specific connection arguments
+if database_url.startswith("sqlite+aiosqlite://"):
+    # aiosqlite supports the standard sqlite3 'timeout' parameter only
+    connect_args = {
+        "timeout": 60,
+    }
+elif database_url.startswith("postgresql+asyncpg://"):
+    # asyncpg supports server_settings; omit non-standard args here for compatibility
+    connect_args = {
+        "server_settings": {
+            "application_name": "mini-xdr-backend"
+        }
+    }
+
 engine = create_async_engine(
     database_url,
     echo=False,
-    future=True
+    future=True,
+    pool_pre_ping=True,  # Verify connections before use
+    connect_args=connect_args
 )
 
 AsyncSessionLocal = async_sessionmaker(
@@ -39,5 +57,7 @@ async def get_db():
 
 async def init_db():
     """Initialize database tables"""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Skip automatic table creation - tables should be created via Alembic migrations
+    # async with engine.begin() as conn:
+    #     await conn.run_sync(Base.metadata.create_all)
+    pass

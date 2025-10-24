@@ -1,0 +1,131 @@
+# ============================================================================
+# Mini-XDR Frontend Dockerfile - Production (Optimized)
+# ============================================================================
+# Multi-stage build for minimal production image
+# Excludes: Development files, node_modules bloat, source maps
+# Includes: Optimized static assets, standalone Next.js server
+# ============================================================================
+
+# ============================================================================
+# STAGE 1: Dependencies
+# ============================================================================
+FROM node:20-alpine AS deps
+
+# Build arguments for metadata
+ARG BUILD_DATE
+ARG VCS_REF
+ARG VERSION=1.0.0
+
+LABEL org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.title="mini-xdr-frontend-production" \
+      org.opencontainers.image.description="Mini-XDR Frontend Dashboard (Production Optimized)"
+
+WORKDIR /app
+
+# Install dependencies based on preferred package manager
+COPY frontend/package.json frontend/package-lock.json* ./
+
+# Install dependencies with production optimizations
+RUN apk add --no-cache libc6-compat && \
+    npm ci --only=production --legacy-peer-deps && \
+    # Keep production deps separate
+    cp -R node_modules node_modules_prod && \
+    # Install all deps for build
+    npm ci --legacy-peer-deps && \
+    # Clean npm cache
+    npm cache clean --force
+
+# ============================================================================
+# STAGE 2: Builder (compile and build application)
+# ============================================================================
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy dependencies from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copy frontend source code
+COPY frontend/ .
+
+# Build arguments for Next.js (can be overridden at build time)
+ARG NEXT_PUBLIC_API_URL=http://mini-xdr-backend-service:8000
+ARG NODE_ENV=production
+
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
+    NODE_ENV=$NODE_ENV \
+    NEXT_TELEMETRY_DISABLED=1
+
+# Build the application with optimizations
+RUN npm run build && \
+    # Remove source maps in production for security
+    find .next -name "*.map" -type f -delete && \
+    # Remove development files
+    rm -rf .next/cache
+
+# ============================================================================
+# STAGE 3: Production runner (minimal runtime image)
+# ============================================================================
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME="0.0.0.0"
+
+# Install runtime dependencies only
+RUN apk add --no-cache \
+    # wget for healthcheck
+    wget \
+    # tini for proper signal handling
+    tini \
+    && rm -rf /var/cache/apk/*
+
+# Create non-root user for security
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
+
+# Copy production node_modules
+COPY --from=deps /app/node_modules_prod ./node_modules
+
+# Copy built application from builder
+COPY --from=builder /app/public ./public
+
+# Automatically leverage output traces to reduce image size
+# https://nextjs.org/docs/advanced-features/output-file-tracing
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Create necessary directories with proper permissions
+RUN mkdir -p /app/.next/cache && \
+    chown -R nextjs:nodejs /app
+
+# Switch to non-root user
+USER nextjs
+
+# Expose port
+EXPOSE 3000
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || \
+        wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1
+
+# Use tini for proper signal handling
+ENTRYPOINT ["/sbin/tini", "--"]
+
+# Start the application
+CMD ["node", "server.js"]
+
+# ============================================================================
+# Image size verification (should be ~100-150MB):
+# - Alpine base: ~40MB
+# - Node.js runtime: ~40MB
+# - Production node_modules: ~30MB
+# - Built application: ~20-30MB
+# - Total: ~130-140MB (much smaller than development image)
+# ============================================================================

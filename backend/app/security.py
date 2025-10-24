@@ -22,8 +22,9 @@ MAX_CLOCK_SKEW_SECONDS = 300  # +/- 5 minutes
 NONCE_TTL_SECONDS = 600
 SECURED_PREFIXES = ("/ingest", "/api")
 
-# Paths that bypass HMAC authentication (use simple API key instead)
+# Paths that bypass HMAC authentication (use simple API key instead or JWT)
 SIMPLE_AUTH_PREFIXES = [
+    "/api/auth",  # Authentication endpoints use JWT  
     "/api/response",  # All response system endpoints use simple API key
     "/api/intelligence",  # Visualization endpoints
     "/api/incidents",  # Incident endpoints including AI analysis

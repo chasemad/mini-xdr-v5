@@ -1,0 +1,120 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mini-xdr-ingress
+  namespace: mini-xdr
+  annotations:
+    # AWS ALB Ingress Controller Configuration
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    
+    # SSL/TLS Configuration
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    # TODO: Replace with your ACM certificate ARN
+    # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/CERT_ID
+    
+    # IP Whitelisting - CHANGE THIS FOR PUBLIC ACCESS
+    # Current: Restricted to your IP only
+    # For public demos: Remove this annotation or set to 0.0.0.0/0
+    alb.ingress.kubernetes.io/inbound-cidrs: 37.19.221.202/32
+    
+    # Health Check Configuration
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '5'
+    alb.ingress.kubernetes.io/healthy-threshold-count: '2'
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: '2'
+    
+    # Security Configuration
+    alb.ingress.kubernetes.io/security-groups: mini-xdr-alb-sg
+    
+    # Timeout Configuration
+    alb.ingress.kubernetes.io/idle-timeout-seconds: '120'
+    
+    # Load Balancer Attributes
+    alb.ingress.kubernetes.io/load-balancer-attributes: |
+      routing.http2.enabled=true,
+      deletion_protection.enabled=false,
+      access_logs.s3.enabled=false
+    
+    # Tags
+    alb.ingress.kubernetes.io/tags: |
+      Environment=production,
+      Project=mini-xdr,
+      ManagedBy=kubernetes
+spec:
+  rules:
+  - http:
+      paths:
+      # Backend API routes
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: mini-xdr-backend-service
+            port:
+              number: 8000
+      
+      - path: /ingest
+        pathType: Prefix
+        backend:
+          service:
+            name: mini-xdr-backend-service
+            port:
+              number: 8000
+      
+      - path: /incidents
+        pathType: Prefix
+        backend:
+          service:
+            name: mini-xdr-backend-service
+            port:
+              number: 8000
+      
+      - path: /health
+        pathType: Prefix
+        backend:
+          service:
+            name: mini-xdr-backend-service
+            port:
+              number: 8000
+      
+      # Frontend routes (catch-all for SPA)
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: mini-xdr-frontend-service
+            port:
+              number: 3000
+
+---
+# Instructions for switching from IP-restricted to public access:
+#
+# 1. For Public Demos:
+#    Remove or comment out the IP restriction:
+#    # alb.ingress.kubernetes.io/inbound-cidrs: 37.19.221.202/32
+#
+#    OR set to allow all IPs:
+#    alb.ingress.kubernetes.io/inbound-cidrs: 0.0.0.0/0
+#
+# 2. For SSL/TLS (HTTPS):
+#    a) Create ACM certificate for your domain
+#    b) Uncomment and update certificate ARN above
+#    c) Configure DNS to point to ALB hostname
+#
+# 3. To apply changes:
+#    kubectl apply -f k8s/ingress-alb.yaml
+#
+# 4. Get ALB hostname:
+#    kubectl get ingress -n mini-xdr mini-xdr-ingress
+#    
+#    The ADDRESS column will show your ALB DNS name after ~3 minutes
+#    Example: k8s-minixdr-minixdri-abc123-123456789.us-east-1.elb.amazonaws.com
+#
+# 5. Access your dashboard:
+#    http://YOUR_ALB_HOSTNAME (or https:// if certificate configured)
+
+
