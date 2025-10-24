@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     api_port: int = 8000
     ui_origin: str = "http://localhost:3000"
     api_key: Optional[str] = None
+    
+    # Authentication
+    JWT_SECRET_KEY: Optional[str] = None
+    ENCRYPTION_KEY: Optional[str] = None
 
     # Database
     database_url: str = "sqlite+aiosqlite:///./xdr.db"

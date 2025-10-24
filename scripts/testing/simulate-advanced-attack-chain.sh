@@ -4,7 +4,25 @@
 
 set -e
 
-HONEYPOT_IP="34.193.101.171"
+# Load .env file to get Azure T-Pot IP
+ENV_FILE="$(cd "$(dirname "$0")/../.." && pwd)/backend/.env"
+if [ -f "$ENV_FILE" ]; then
+    export $(grep -v '^#' "$ENV_FILE" | grep 'TPOT_HOST\|HONEYPOT_HOST' | xargs)
+fi
+
+# Use Azure T-Pot IP if available, otherwise prompt user
+HONEYPOT_IP="${TPOT_HOST:-${HONEYPOT_HOST:-}}"
+
+if [ -z "$HONEYPOT_IP" ]; then
+    echo "❌ T-Pot IP not configured!"
+    echo "Please enter your Azure T-Pot public IP address:"
+    read -p "T-Pot IP: " HONEYPOT_IP
+    if [ -z "$HONEYPOT_IP" ]; then
+        echo "Error: No IP provided. Exiting."
+        exit 1
+    fi
+fi
+
 XDR_API="http://localhost:8000"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SEND_SCRIPT="$SCRIPT_DIR/../auth/send_signed_request.py"

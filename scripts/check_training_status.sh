@@ -1,63 +1,63 @@
 #!/bin/bash
-# Quick training status checker
+# Quick script to check Azure ML training status
 
-echo "======================================================================"
-echo "Mini-XDR Training Status"
-echo "======================================================================"
-echo ""
+echo "🔍 Checking Azure ML Training Status..."
+echo "========================================"
 
-# Check if training is running
-if ps aux | grep -v grep | grep "train_local.py" > /dev/null; then
-    echo "✅ Training is RUNNING"
+JOB_ID="calm_frame_b9rlxztg0v"
+WORKSPACE="mini-xdr-ml-workspace"
+RESOURCE_GROUP="mini-xdr-ml-rg"
+
+# Get status
+STATUS=$(az ml job show \
+  --name $JOB_ID \
+  --workspace-name $WORKSPACE \
+  --resource-group $RESOURCE_GROUP \
+  --query "status" -o tsv 2>/dev/null)
+
+echo "📊 Job ID: $JOB_ID"
+echo "🔄 Status: $STATUS"
+
+# Show creation time
+CREATED=$(az ml job show \
+  --name $JOB_ID \
+  --workspace-name $WORKSPACE \
+  --resource-group $RESOURCE_GROUP \
+  --query "properties.creation_context.created_at" -o tsv 2>/dev/null)
+
+echo "⏰ Started: $CREATED"
+
+# Calculate elapsed time
+if [ "$STATUS" = "Running" ]; then
     echo ""
-    
-    # Show current progress
-    echo "Last 15 lines of training log:"
-    echo "----------------------------------------------------------------------"
-    tail -15 training.log
-    echo "----------------------------------------------------------------------"
+    echo "✅ Training is RUNNING on Azure!"
+    echo "🔗 Monitor at: https://ml.azure.com/runs/$JOB_ID"
     echo ""
-    
-    # Show which model is training
-    if grep -q "TRAINING GENERAL MODEL" training.log | tail -1; then
-        current_model=$(grep "TRAINING.*MODEL" training.log | tail -1 | awk '{print $2}')
-        echo "Currently training: $current_model model"
-    fi
-    
-    # Show progress
-    epochs_done=$(grep -c "Epoch \[" training.log)
-    echo "Training epochs completed so far: $epochs_done"
-    
+    echo "⏱️  Estimated completion: 2-4 hours from start"
+    echo "💰 Cost: ~\$0.20/hour (Standard_D4s_v3 CPU)"
+    echo ""
+    echo "💡 Tip: Check Azure ML Studio for real-time progress"
+elif [ "$STATUS" = "Completed" ]; then
+    echo ""
+    echo "🎉 Training COMPLETED!"
+    echo ""
+    echo "📥 Download models with:"
+    echo "  ./DOWNLOAD_TRAINED_MODELS.sh"
+elif [ "$STATUS" = "Failed" ]; then
+    echo ""
+    echo "❌ Training FAILED"
+    echo ""
+    echo "📋 Check logs:"
+    echo "  az ml job stream --name $JOB_ID --workspace-name $WORKSPACE --resource-group $RESOURCE_GROUP"
+elif [ "$STATUS" = "Preparing" ] || [ "$STATUS" = "Starting" ]; then
+    echo ""
+    echo "🔄 Training is starting up..."
+    echo "⏳ Usually takes 2-5 minutes to begin"
 else
-    echo "⚠️  Training is NOT running"
     echo ""
-    
-    # Check if it completed
-    if grep -q "✅ All models trained successfully!" training.log 2>/dev/null; then
-        echo "✅ Training COMPLETED successfully!"
-        echo ""
-        echo "Results:"
-        tail -30 training.log | grep -E "(general|ddos|brute_force|web_attacks).*Accuracy"
-        echo ""
-        echo "Models saved to: models/local_trained/"
-        echo ""
-        echo "Next steps:"
-        echo "  1. Test models: python3 aws/local_inference.py"
-        echo "  2. Check results: cat models/local_trained/training_summary.json"
-    else
-        echo "❌ Training may have failed. Check training.log for errors:"
-        echo ""
-        tail -30 training.log
-    fi
+    echo "Status: $STATUS"
 fi
 
 echo ""
-echo "======================================================================"
-echo ""
-echo "Commands:"
-echo "  Watch live:     watch -n 2 tail -20 training.log"
-echo "  Full log:       less training.log"
-echo "  Stop training:  pkill -f train_local.py"
-echo ""
-
+echo "========================================"
 

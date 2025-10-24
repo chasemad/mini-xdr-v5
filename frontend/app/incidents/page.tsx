@@ -7,7 +7,7 @@ import {
   Shield, AlertTriangle, Bot, Zap, 
   Search, Filter, RefreshCw, Settings, Bell, User,
   ChevronDown, ChevronRight, Eye, MessageSquare,
-  BarChart3, Activity, Target, Globe,
+  BarChart3, Activity, Target, Globe, Workflow,
   MoreHorizontal,
   ArrowUpRight, ArrowDownRight, Minus
 } from "lucide-react";
@@ -236,23 +236,25 @@ export default function SOCAnalystDashboard() {
             <div className="p-4">
               <nav className="space-y-2">
                 {[
-                  { id: 'overview', label: 'Threat Overview', icon: BarChart3 },
-                  { id: 'incidents', label: 'Active Incidents', icon: AlertTriangle },
-                  { id: 'intelligence', label: 'Threat Intel', icon: Globe },
-                  { id: 'hunting', label: 'Threat Hunting', icon: Target },
-                  { id: 'forensics', label: 'Forensics', icon: Search },
-                  { id: 'response', label: 'Response Actions', icon: Shield }
-                ].map(({ id, label, icon: Icon }) => (
-                  <button
+                  { id: 'overview', label: 'Threat Overview', icon: BarChart3, href: '/' },
+                  { id: 'incidents', label: 'Active Incidents', icon: AlertTriangle, href: '/incidents', active: true },
+                  { id: 'intelligence', label: 'Threat Intel', icon: Globe, href: '/intelligence' },
+                  { id: 'hunting', label: 'Threat Hunting', icon: Target, href: '/hunt' },
+                  { id: 'forensics', label: 'Forensics', icon: Search, href: '/investigations' },
+                  { id: 'response', label: 'Response Actions', icon: Shield, href: '/' },
+                  { id: 'workflows', label: 'Workflow Automation', icon: Workflow, href: '/workflows' },
+                  { id: 'visualizations', label: '3D Visualization', icon: Activity, href: '/visualizations' }
+                ].map(({ id, label, icon: Icon, href, active }) => (
+                  <Link
                     key={id}
-                    onClick={() => setActiveTab(id)}
+                    href={href}
                     className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
-                      activeTab === id ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30' : 'hover:bg-gray-700/50 text-gray-300'
+                      active ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30' : 'hover:bg-gray-700/50 text-gray-300 hover:text-white'
                     }`}
                   >
                     <Icon className="w-4 h-4" />
                     <span className="text-sm font-medium">{label}</span>
-                  </button>
+                  </Link>
                 ))}
               </nav>
             </div>

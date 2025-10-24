@@ -4,10 +4,55 @@ from sqlalchemy.orm import relationship
 from .db import Base
 
 
+# Multi-Tenant Models
+class Organization(Base):
+    """Organization/Tenant model for multi-tenancy"""
+    __tablename__ = "organizations"
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), unique=True, nullable=False, index=True)
+    slug = Column(String(100), unique=True, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    status = Column(String(20), default="active", index=True)  # active|suspended|trial
+    settings = Column(JSON, nullable=True)  # Custom org settings
+    max_users = Column(Integer, default=10)  # User limit for organization
+    max_log_sources = Column(Integer, default=50)  # Log source limit
+    
+    # Onboarding state tracking
+    onboarding_status = Column(String(20), default="not_started", index=True)  # not_started|in_progress|completed
+    onboarding_step = Column(String(50), nullable=True)  # profile|network_scan|agents|integrations|validation
+    onboarding_data = Column(JSON, nullable=True)  # Wizard state (network ranges, scan results, tokens)
+    onboarding_completed_at = Column(DateTime(timezone=True), nullable=True)
+    first_login_completed = Column(Boolean, default=False)
+
+
+class User(Base):
+    """User model with organization association"""
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    hashed_password = Column(String(255), nullable=False)
+    full_name = Column(String(255))
+    role = Column(String(50), default="analyst", index=True)  # admin|analyst|viewer|soc_lead
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    last_login = Column(DateTime(timezone=True), nullable=True)
+    is_active = Column(Boolean, default=True, index=True)
+    failed_login_attempts = Column(Integer, default=0)
+    locked_until = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships
+    organization = relationship("Organization", backref="users")
+
+
 class Event(Base):
     __tablename__ = "events"
     
     id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)  # Nullable for migration
     ts = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     src_ip = Column(String(64), index=True)
     dst_ip = Column(String(64), nullable=True)
@@ -23,13 +68,17 @@ class Event(Base):
     agent_timestamp = Column(Float, nullable=True)  # Agent collection timestamp
     anomaly_score = Column(Float, nullable=True)  # ML-calculated anomaly score
     
-    __table_args__ = (Index("ix_events_src_ts", "src_ip", "ts"),)
+    # Relationships
+    organization = relationship("Organization")
+    
+    __table_args__ = (Index("ix_events_src_ts", "src_ip", "ts"), Index("ix_events_org_ts", "organization_id", "ts"))
 
 
 class Incident(Base):
     __tablename__ = "incidents"
     
     id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)  # Nullable for migration
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     src_ip = Column(String(64), index=True)
     reason = Column(String(256))
@@ -61,6 +110,10 @@ class Incident(Base):
     ai_analysis = Column(JSON, nullable=True)  # Cached AI analysis results
     ai_analysis_timestamp = Column(DateTime(timezone=True), nullable=True)  # When analysis was done
     last_event_count = Column(Integer, default=0)  # Track new events to trigger re-analysis
+    
+    # Relationships
+    organization = relationship("Organization")
+    action_logs = relationship("ActionLog", back_populates="incident", cascade="all, delete-orphan")
 
 
 class Action(Base):
@@ -86,10 +139,42 @@ class Action(Base):
     tpot_verification_details = Column(JSON, nullable=True)  # Verification results
 
 
+class ActionLog(Base):
+    """Complete audit trail of agent actions"""
+    __tablename__ = "action_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)  # Nullable for migration
+    action_id = Column(String, unique=True, index=True, nullable=False)
+    agent_id = Column(String, index=True, nullable=False)
+    agent_type = Column(String, index=True)  # iam, edr, dlp, containment
+    action_name = Column(String, index=True, nullable=False)
+    incident_id = Column(Integer, ForeignKey("incidents.id"), nullable=True, index=True)
+    
+    params = Column(JSON, nullable=False)
+    result = Column(JSON, nullable=True)
+    status = Column(String, nullable=False)  # success, failed, rolled_back
+    error = Column(Text, nullable=True)
+    
+    rollback_id = Column(String, unique=True, index=True, nullable=True)
+    rollback_data = Column(JSON, nullable=True)
+    rollback_executed = Column(Boolean, default=False)
+    rollback_timestamp = Column(DateTime(timezone=True), nullable=True)
+    rollback_result = Column(JSON, nullable=True)
+    
+    executed_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    organization = relationship("Organization")
+    incident = relationship("Incident", back_populates="action_logs")
+
+
 class LogSource(Base):
     __tablename__ = "log_sources"
     
     id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)  # Nullable for migration
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
@@ -110,6 +195,9 @@ class LogSource(Base):
     events_processed = Column(Integer, default=0)
     events_failed = Column(Integer, default=0)
     config = Column(JSON, nullable=True)  # Source-specific configuration
+    
+    # Relationships
+    organization = relationship("Organization")
 
 
 class ThreatIntelSource(Base):
@@ -131,6 +219,7 @@ class MLModel(Base):
     __tablename__ = "ml_models"
     
     id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)  # Nullable for shared/global models
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
@@ -152,12 +241,16 @@ class MLModel(Base):
     # Federated learning
     is_federated = Column(Boolean, default=False)
     federated_round = Column(Integer, default=0)
+    
+    # Relationships
+    organization = relationship("Organization")
 
 
 class ContainmentPolicy(Base):
     __tablename__ = "containment_policies"
     
     id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)  # Nullable for migration
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
@@ -177,6 +270,9 @@ class ContainmentPolicy(Base):
     # Usage statistics
     times_triggered = Column(Integer, default=0)
     success_rate = Column(Float, default=0.0)
+    
+    # Relationships
+    organization = relationship("Organization")
 
 
 class AgentCredential(Base):
@@ -597,3 +693,85 @@ class NLPWorkflowSuggestion(Base):
     # Relationships
     incident = relationship("Incident", backref="nlp_suggestions")
     trigger = relationship("WorkflowTrigger", backref="nlp_suggestion")
+
+
+# =============================================================================
+# ONBOARDING & ASSET DISCOVERY MODELS
+# =============================================================================
+
+class DiscoveredAsset(Base):
+    """Network assets discovered during onboarding scan"""
+    __tablename__ = "discovered_assets"
+    
+    id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    
+    # Asset identification
+    ip = Column(String(64), nullable=False, index=True)
+    hostname = Column(String(255), nullable=True)
+    mac_address = Column(String(17), nullable=True)
+    
+    # Discovery metadata
+    os_type = Column(String(64), nullable=True)  # Windows, Linux/Unix, unknown
+    os_role = Column(String(128), nullable=True)  # Domain Controller, Web Server, etc.
+    classification = Column(String(64), nullable=True)  # From AssetClassifier
+    classification_confidence = Column(Float, default=0.0)
+    
+    # Network information
+    open_ports = Column(JSON, nullable=True)  # List of open port numbers
+    services = Column(JSON, nullable=True)  # Service details per port
+    
+    # Deployment information
+    deployment_profile = Column(JSON, nullable=True)  # Agent deployment recommendations
+    agent_compatible = Column(Boolean, default=True)
+    deployment_priority = Column(String(16), default="medium")  # critical|high|medium|low
+    
+    # Discovery details
+    discovered_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_seen = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    scan_id = Column(String(64), nullable=True, index=True)  # Link to scan session
+    
+    # Relationships
+    organization = relationship("Organization")
+    
+    __table_args__ = (Index("ix_discovered_assets_org_ip", "organization_id", "ip"),)
+
+
+class AgentEnrollment(Base):
+    """Agent enrollment tokens and registration tracking"""
+    __tablename__ = "agent_enrollments"
+    
+    id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Token and identification
+    agent_token = Column(String(128), unique=True, nullable=False, index=True)  # Unique enrollment token
+    agent_id = Column(String(64), unique=True, nullable=True, index=True)  # Agent's self-reported ID after registration
+    
+    # Agent information
+    hostname = Column(String(255), nullable=True)
+    platform = Column(String(64), nullable=True)  # windows|linux|macos|docker
+    ip_address = Column(String(64), nullable=True)
+    
+    # Status tracking
+    status = Column(String(20), default="pending", index=True)  # pending|active|inactive|revoked
+    first_checkin = Column(DateTime(timezone=True), nullable=True)
+    last_heartbeat = Column(DateTime(timezone=True), nullable=True)
+    
+    # Agent metadata
+    agent_metadata = Column(JSON, nullable=True)  # OS version, agent version, etc.
+    enrollment_source = Column(String(64), nullable=True)  # onboarding_wizard|manual|api
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    revoked_reason = Column(String(255), nullable=True)
+    
+    # Link to discovered asset if applicable
+    discovered_asset_id = Column(Integer, ForeignKey("discovered_assets.id"), nullable=True)
+    
+    # Relationships
+    organization = relationship("Organization")
+    discovered_asset = relationship("DiscoveredAsset")
+    
+    __table_args__ = (Index("ix_agent_enrollments_org_status", "organization_id", "status"),)

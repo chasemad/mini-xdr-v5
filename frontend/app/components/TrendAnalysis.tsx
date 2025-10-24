@@ -530,9 +530,9 @@ const TrendAnalysis: React.FC<TrendAnalysisProps> = ({
                 </div>
               </div>
             </div>
-          </div>
         </CardContent>
       </Card>
+      )}
 
       {/* Detailed Trend Chart */}
       <Card>
@@ -607,6 +607,7 @@ const TrendAnalysis: React.FC<TrendAnalysisProps> = ({
 }
 
 export default TrendAnalysis
+
 
 
 

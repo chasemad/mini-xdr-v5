@@ -1,0 +1,289 @@
+---
+# Mini-XDR AWS Security Hardening Configuration
+# Apply industry security standards to EKS deployment
+# User IP: 37.19.221.202
+
+# 1. Kubernetes Network Policies
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mini-xdr-backend-network-policy
+  namespace: mini-xdr
+spec:
+  podSelector:
+    matchLabels:
+      app: mini-xdr-backend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from frontend only
+    - from:
+      - podSelector:
+          matchLabels:
+            app: mini-xdr-frontend
+      ports:
+      - protocol: TCP
+        port: 8000
+    # Allow from ALB
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            name: kube-system
+      ports:
+      - protocol: TCP
+        port: 8000
+  egress:
+    # Allow to RDS (PostgreSQL)
+    - to:
+      - podSelector: {}
+      ports:
+      - protocol: TCP
+        port: 5432
+    # Allow to Redis
+    - to:
+      - podSelector: {}
+      ports:
+      - protocol: TCP
+        port: 6379
+    # Allow DNS
+    - to:
+      - namespaceSelector:
+          matchLabels:
+            name: kube-system
+      ports:
+      - protocol: UDP
+        port: 53
+    # Allow HTTPS for external APIs
+    - to:
+      - podSelector: {}
+      ports:
+      - protocol: TCP
+        port: 443
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mini-xdr-frontend-network-policy
+  namespace: mini-xdr
+spec:
+  podSelector:
+    matchLabels:
+      app: mini-xdr-frontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from ALB only
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            name: kube-system
+      ports:
+      - protocol: TCP
+        port: 3000
+  egress:
+    # Allow to backend
+    - to:
+      - podSelector:
+          matchLabels:
+            app: mini-xdr-backend
+      ports:
+      - protocol: TCP
+        port: 8000
+    # Allow DNS
+    - to:
+      - namespaceSelector:
+          matchLabels:
+            name: kube-system
+      ports:
+      - protocol: UDP
+        port: 53
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mini-xdr-deny-all-default
+  namespace: mini-xdr
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# 2. Pod Security Standards
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mini-xdr
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+
+---
+# 3. Resource Quotas (prevent resource exhaustion attacks)
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: mini-xdr-quota
+  namespace: mini-xdr
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    limits.cpu: "8"
+    limits.memory: 16Gi
+    persistentvolumeclaims: "5"
+    services.loadbalancers: "1"
+
+---
+# 4. Limit Ranges (prevent pod bombing)
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: mini-xdr-limits
+  namespace: mini-xdr
+spec:
+  limits:
+  - max:
+      cpu: "2"
+      memory: 4Gi
+    min:
+      cpu: "50m"
+      memory: 128Mi
+    default:
+      cpu: "500m"
+      memory: 1Gi
+    defaultRequest:
+      cpu: "250m"
+      memory: 512Mi
+    type: Container
+
+---
+# 5. Service Account with minimal permissions
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mini-xdr-backend
+  namespace: mini-xdr
+automountServiceAccountToken: false
+
+---
+# 6. RBAC Role (least privilege)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mini-xdr-backend-role
+  namespace: mini-xdr
+rules:
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mini-xdr-backend-rolebinding
+  namespace: mini-xdr
+subjects:
+- kind: ServiceAccount
+  name: mini-xdr-backend
+  namespace: mini-xdr
+roleRef:
+  kind: Role
+  name: mini-xdr-backend-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# 7. Ingress with IP Whitelist and TLS
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mini-xdr-ingress
+  namespace: mini-xdr
+  annotations:
+    # ALB Configuration
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+
+    # Security Configuration
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+
+    # IP Whitelist - ONLY YOUR IP
+    alb.ingress.kubernetes.io/inbound-cidrs: 37.19.221.202/32
+
+    # Security Headers
+    alb.ingress.kubernetes.io/actions.ssl-redirect: |
+      {
+        "Type": "redirect",
+        "RedirectConfig": {
+          "Protocol": "HTTPS",
+          "Port": "443",
+          "StatusCode": "HTTP_301"
+        }
+      }
+
+    # WAF Integration (after creating WAF)
+    # alb.ingress.kubernetes.io/wafv2-acl-arn: arn:aws:wafv2:us-east-1:116912495274:regional/webacl/mini-xdr-waf/...
+
+    # Health Check
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '5'
+    alb.ingress.kubernetes.io/healthy-threshold-count: '2'
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: '3'
+
+    # Access Logs (for audit trail)
+    alb.ingress.kubernetes.io/load-balancer-attributes: |
+      access_logs.s3.enabled=true,
+      access_logs.s3.bucket=mini-xdr-alb-logs,
+      access_logs.s3.prefix=production,
+      deletion_protection.enabled=true,
+      idle_timeout.timeout_seconds=60,
+      routing.http.drop_invalid_header_fields.enabled=true,
+      routing.http2.enabled=true,
+      waf.fail_open.enabled=false
+
+spec:
+  ingressClassName: alb
+  rules:
+  - host: mini-xdr.example.com  # Update with your domain
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: mini-xdr-frontend-service
+            port:
+              number: 3000
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: mini-xdr-backend-service
+            port:
+              number: 8000
+      - path: /health
+        pathType: Exact
+        backend:
+          service:
+            name: mini-xdr-backend-service
+            port:
+              number: 8000
+  # TLS will be added after certificate setup
+  # tls:
+  # - hosts:
+  #   - mini-xdr.example.com
+  #   secretName: mini-xdr-tls-cert

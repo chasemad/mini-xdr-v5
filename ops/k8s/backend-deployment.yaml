@@ -17,20 +17,41 @@ spec:
         app: mini-xdr-backend
         component: backend
     spec:
+      # Security: Run as non-root user
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: mini-xdr-backend-sa
       containers:
       - name: backend
-        image: mini-xdr-backend:latest
+        image: minixdracr.azurecr.io/mini-xdr-backend:latest
         ports:
         - containerPort: 8000
           name: http
         - containerPort: 9090
           name: metrics
+        # Container-level security context
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          readOnlyRootFilesystem: false  # Need write access for logs and temp files
+          runAsNonRoot: true
+          runAsUser: 1000
         env:
         - name: DATABASE_URL
           valueFrom:
             configMapKeyRef:
               name: mini-xdr-config
               key: DATABASE_URL
+        - name: KUBE_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         - name: API_HOST
           valueFrom:
             configMapKeyRef:

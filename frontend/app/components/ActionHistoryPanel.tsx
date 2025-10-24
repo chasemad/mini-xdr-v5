@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Shield, Clock, RefreshCw } from "lucide-react";
+import { useMemo, useState, useEffect } from "react";
+import { Shield, Clock, RefreshCw, User, HardDrive, Lock, Undo2 } from "lucide-react";
 
 interface Action {
   id: number;
@@ -40,13 +40,32 @@ interface AutomatedAction {
   } | null;
 }
 
-type ActionSource = "manual" | "workflow";
+interface AgentAction {
+  id: number;
+  action_id: string;
+  agent_id: string;
+  agent_type: "iam" | "edr" | "dlp";
+  action_name: string;
+  incident_id: number;
+  params: Record<string, any>;
+  result: Record<string, any> | null;
+  status: "success" | "failed" | "rolled_back";
+  error: string | null;
+  rollback_id: string | null;
+  rollback_executed: boolean;
+  rollback_timestamp: string | null;
+  executed_at: string;
+  created_at: string;
+}
+
+type ActionSource = "manual" | "workflow" | "agent";
 
 interface RollbackMeta {
   actionType: string;
   label: string;
   source: ActionSource;
   originalId: number | string;
+  rollbackId?: string;
 }
 
 interface UnifiedAction {
@@ -73,6 +92,12 @@ interface UnifiedAction {
   };
   completedAt?: string;
   errorDetails?: Record<string, unknown>;
+  // Agent-specific fields
+  agentType?: "iam" | "edr" | "dlp";
+  rollbackId?: string;
+  rollbackExecuted?: boolean;
+  rollbackTimestamp?: string;
+  error?: string;
 }
 
 interface ActionHistoryPanelProps {
@@ -81,6 +106,7 @@ interface ActionHistoryPanelProps {
   automatedActions?: AutomatedAction[];
   onRefresh?: () => void;
   onRollback?: (meta: RollbackMeta) => void;
+  onActionClick?: (action: any) => void;
 }
 
 const statusColorMap: Record<string, string> = {
@@ -98,7 +124,35 @@ const statusColorMap: Record<string, string> = {
 
 const toTitle = (value: string) => value.replace(/_/g, " ");
 
-const getActionIcon = (action: string) => {
+const ACTION_NAME_MAP: Record<string, string> = {
+  // IAM
+  disable_user_account: "Disable User Account",
+  quarantine_user: "Quarantine User",
+  revoke_kerberos_tickets: "Revoke Kerberos Tickets",
+  reset_password: "Reset Password",
+  remove_from_group: "Remove from Group",
+  enforce_mfa: "Enforce MFA",
+  
+  // EDR
+  kill_process: "Kill Process",
+  quarantine_file: "Quarantine File",
+  collect_memory_dump: "Collect Memory Dump",
+  isolate_host: "Isolate Host",
+  delete_registry_key: "Delete Registry Key",
+  disable_scheduled_task: "Disable Scheduled Task",
+  
+  // DLP
+  scan_file: "Scan File",
+  block_upload: "Block Upload",
+  quarantine_sensitive_file: "Quarantine Sensitive File"
+};
+
+const getActionIcon = (action: string, agentType?: string) => {
+  // Agent-specific icons
+  if (agentType === "iam") return "👤";
+  if (agentType === "edr") return "🖥️";
+  if (agentType === "dlp") return "🔒";
+
   switch (action) {
     case "block":
     case "block_ip":
@@ -180,9 +234,33 @@ export default function ActionHistoryPanel({
   automatedActions = [],
   onRefresh,
   onRollback,
+  onActionClick,
 }: ActionHistoryPanelProps) {
   const [verifying, setVerifying] = useState(false);
+  const [agentActions, setAgentActions] = useState<AgentAction[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [rollingBackAgent, setRollingBackAgent] = useState<string | null>(null);
   const hasManualActions = actions.length > 0;
+
+  // Fetch agent actions
+  useEffect(() => {
+    const fetchAgentActions = async () => {
+      try {
+        const response = await fetch(`http://localhost:8000/api/agents/actions/${incidentId}`);
+        if (response.ok) {
+          const data = await response.json();
+          setAgentActions(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch agent actions:", error);
+      }
+    };
+
+    fetchAgentActions();
+    // Auto-refresh every 5 seconds
+    const interval = setInterval(fetchAgentActions, 5000);
+    return () => clearInterval(interval);
+  }, [incidentId]);
 
   const mergedActions = useMemo<UnifiedAction[]>(() => {
     const manualItems: UnifiedAction[] = actions.map((action) => ({
@@ -191,7 +269,7 @@ export default function ActionHistoryPanel({
       createdAt: action.created_at,
       actionKey: action.action,
       displayName: toTitle(action.action),
-      source: "manual",
+      source: "manual" as ActionSource,
       sourceLabel: "Manual Quick Action",
       icon: getActionIcon(action.action),
       status: action.result,
@@ -207,7 +285,7 @@ export default function ActionHistoryPanel({
       createdAt: action.created_at,
       actionKey: action.action_type,
       displayName: action.action_name || toTitle(action.action_type),
-      source: "workflow",
+      source: "workflow" as ActionSource,
       sourceLabel: action.workflow_name ? `Workflow · ${action.workflow_name}` : "Automated Workflow",
       icon: getActionIcon(action.action_type),
       status: action.status,
@@ -222,12 +300,32 @@ export default function ActionHistoryPanel({
       errorDetails: action.error_details ?? undefined,
     }));
 
-    return [...manualItems, ...workflowItems].sort((a, b) => {
+    const agentItems: UnifiedAction[] = agentActions.map((action) => ({
+      id: `agent-${action.id}`,
+      originalId: action.id,
+      createdAt: action.executed_at || action.created_at,
+      actionKey: action.action_name,
+      displayName: ACTION_NAME_MAP[action.action_name] || toTitle(action.action_name),
+      source: "agent" as ActionSource,
+      sourceLabel: `${action.agent_type.toUpperCase()} Agent`,
+      icon: getActionIcon(action.action_name, action.agent_type),
+      status: action.status,
+      detail: action.result ? JSON.stringify(action.result) : undefined,
+      params: action.params,
+      agentType: action.agent_type,
+      rollbackId: action.rollback_id ?? undefined,
+      rollbackExecuted: action.rollback_executed,
+      rollbackTimestamp: action.rollback_timestamp ?? undefined,
+      error: action.error ?? undefined,
+      errorDetails: action.error ? { error: action.error } : undefined,
+    }));
+
+    return [...manualItems, ...workflowItems, ...agentItems].sort((a, b) => {
       const aTime = new Date(a.createdAt).getTime();
       const bTime = new Date(b.createdAt).getTime();
       return bTime - aTime;
     });
-  }, [actions, automatedActions]);
+  }, [actions, automatedActions, agentActions]);
 
   const verifyActions = async () => {
     if (!hasManualActions) return;
@@ -253,6 +351,49 @@ export default function ActionHistoryPanel({
     }
   };
 
+  const handleAgentRollback = async (action: UnifiedAction) => {
+    if (!action.rollbackId || action.rollbackExecuted) return;
+    
+    if (!confirm(`Are you sure you want to rollback "${action.displayName}"?\n\nThis will restore the previous state.`)) {
+      return;
+    }
+
+    setRollingBackAgent(action.rollbackId);
+    
+    try {
+      const response = await fetch(`http://localhost:8000/api/agents/rollback/${action.rollbackId}`, {
+        method: "POST"
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log("Rollback result:", result);
+        // Refresh agent actions
+        const agentResponse = await fetch(`http://localhost:8000/api/agents/actions/${incidentId}`);
+        if (agentResponse.ok) {
+          const data = await agentResponse.json();
+          setAgentActions(data);
+        }
+        onRefresh?.();
+      } else {
+        const error = await response.json();
+        alert(`Rollback failed: ${error.detail || "Unknown error"}`);
+      }
+    } catch (error) {
+      console.error("Rollback failed:", error);
+      alert("Rollback failed: Network error");
+    } finally {
+      setRollingBackAgent(null);
+    }
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    onRefresh?.();
+    // Agent actions will be refreshed by useEffect
+    setTimeout(() => setRefreshing(false), 1000);
+  };
+
   if (mergedActions.length === 0) {
     return (
       <div className="bg-gray-800/30 border border-gray-700/50 rounded-xl p-6 text-center">
@@ -269,26 +410,50 @@ export default function ActionHistoryPanel({
       <div className="p-4 border-b border-gray-700/50 flex items-center justify-between">
         <h3 className="text-base font-semibold text-white flex items-center gap-2">
           <Shield className="w-5 h-5 text-blue-400" />
-          Action History
+          Unified Response Actions
           <span className="text-xs text-gray-400 font-normal">
-            ({mergedActions.length} total • {actions.length} manual / {automatedActions.length} automated)
+            ({mergedActions.length} total • {actions.length} manual • {automatedActions.length} workflow • {agentActions.length} agent)
           </span>
         </h3>
-        <button
-          onClick={verifyActions}
-          disabled={verifying || !hasManualActions}
-          className="flex items-center gap-2 px-3 py-1.5 text-xs bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-lg transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${verifying ? "animate-spin" : ""}`} />
-          Verify Manual Actions
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+          <button
+            onClick={verifyActions}
+            disabled={verifying || !hasManualActions}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs bg-green-600/20 hover:bg-green-600/30 border border-green-500/30 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${verifying ? "animate-spin" : ""}`} />
+            Verify
+          </button>
+        </div>
       </div>
 
       <div className="p-4 space-y-2 max-h-96 overflow-y-auto">
-        {mergedActions.map((item) => (
+        {mergedActions.map((item) => {
+          const isAgent = item.source === "agent";
+          const canRollbackAgent = isAgent && item.rollbackId && !item.rollbackExecuted && item.status !== "failed";
+          const isRollingBack = rollingBackAgent === item.rollbackId;
+          
+          // Agent color mapping
+          const agentColors = {
+            iam: { badge: "bg-blue-500/20 text-blue-300 border-blue-500/30", icon: "text-blue-400" },
+            edr: { badge: "bg-purple-500/20 text-purple-300 border-purple-500/30", icon: "text-purple-400" },
+            dlp: { badge: "bg-green-500/20 text-green-300 border-green-500/30", icon: "text-green-400" },
+          };
+          const agentColor = item.agentType ? agentColors[item.agentType] : null;
+
+          return (
           <div
             key={item.id}
-            className="bg-gray-900/50 border border-gray-700/50 rounded-lg p-3 hover:border-gray-600/50 transition-colors"
+            onClick={() => onActionClick && onActionClick(item)}
+            className="bg-gray-900/50 border border-gray-700/50 rounded-lg p-3 hover:border-gray-600/50 transition-colors cursor-pointer"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-3 flex-1">
@@ -301,9 +466,15 @@ export default function ActionHistoryPanel({
                     <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(item.status)}`}>
                       {toTitle(item.status)}
                     </span>
-                    <span className="text-[10px] uppercase tracking-wide text-gray-300 bg-gray-700/50 px-2 py-0.5 rounded">
-                      {item.sourceLabel}
-                    </span>
+                    {isAgent && agentColor ? (
+                      <span className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border ${agentColor.badge}`}>
+                        {item.sourceLabel}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] uppercase tracking-wide text-gray-300 bg-gray-700/50 px-2 py-0.5 rounded">
+                        {item.sourceLabel}
+                      </span>
+                    )}
                     {item.verifiedOnTpot && (
                       <span className="text-[10px] uppercase px-2 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30">
                         Verified on T-Pot
@@ -360,16 +531,50 @@ export default function ActionHistoryPanel({
                     </div>
                   )}
 
+                  {/* Rollback info for already rolled back agent actions */}
+                  {isAgent && item.rollbackExecuted && item.rollbackTimestamp && (
+                    <div className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/20 rounded px-2 py-1 flex items-center gap-1">
+                      <Undo2 className="w-3 h-3" />
+                      Rolled back {formatTimeAgo(item.rollbackTimestamp)}
+                    </div>
+                  )}
+
+                  {/* Rollback button for agent actions */}
+                  {canRollbackAgent && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleAgentRollback(item);
+                      }}
+                      disabled={isRollingBack}
+                      className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/30 text-orange-300 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {isRollingBack ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          Rolling back...
+                        </>
+                      ) : (
+                        <>
+                          <Undo2 className="w-3.5 h-3.5" />
+                          Rollback Action
+                        </>
+                      )}
+                    </button>
+                  )}
+
+                  {/* Workflow rollback button */}
                   {item.rollback && item.source === "workflow" && (
                     <button
-                      onClick={() =>
+                      onClick={(e) => {
+                        e.stopPropagation();
                         onRollback?.({
                           actionType: item.rollback.action_type,
                           label: item.rollback.label,
                           source: item.source,
                           originalId: item.originalId,
-                        })
-                      }
+                        });
+                      }}
                       className="mt-2 inline-flex items-center gap-1 text-xs text-blue-300 hover:text-blue-200"
                     >
                       ⟲ {item.rollback.label}
@@ -386,7 +591,8 @@ export default function ActionHistoryPanel({
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

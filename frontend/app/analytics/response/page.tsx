@@ -97,8 +97,7 @@ const ResponseAnalyticsPage: React.FC = () => {
       
       // Get comprehensive analytics data
       const result = await getResponseImpactMetrics({
-        days_back: parseInt(selectedTimeframe.replace('d', '')),
-        metric_types: ['effectiveness', 'performance', 'business_impact', 'compliance']
+        days_back: parseInt(selectedTimeframe.replace('d', ''))
       })
 
       if (result.success) {
@@ -509,6 +508,7 @@ const ResponseAnalyticsPage: React.FC = () => {
 }
 
 export default ResponseAnalyticsPage
+
 
 
 
