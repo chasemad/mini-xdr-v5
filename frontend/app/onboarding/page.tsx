@@ -49,17 +49,17 @@ export default function OnboardingPage() {
   };
 
   const handleSeamlessComplete = () => {
-    router.push("/");
+      router.push("/");
   };
 
   if (loading) {
-    return (
+  return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black py-8 px-4 flex items-center justify-center">
-        <div className="text-center">
+                  <div className="text-center">
           <Loader2 className="w-12 h-12 text-blue-400 animate-spin mx-auto mb-4" />
           <p className="text-gray-400">Loading onboarding...</p>
         </div>
-      </div>
+          </div>
     );
   }
 
@@ -72,9 +72,9 @@ export default function OnboardingPage() {
           <p className="text-red-200 mb-4">{error}</p>
           <ActionButton onClick={() => router.push("/")}>
             Go to Dashboard
-          </ActionButton>
-        </div>
-      </div>
+                    </ActionButton>
+                  </div>
+                </div>
     );
   }
 
@@ -87,12 +87,28 @@ export default function OnboardingPage() {
     }
   }
 
+  // Debug: Show what we're detecting
+  console.log('Onboarding page debug:', {
+    organization,
+    onboardingFlow,
+    loading,
+    error
+  });
+
   // Fallback to legacy onboarding (for now, just show a message)
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black py-8 px-4 flex items-center justify-center">
       <div className="text-center max-w-2xl">
         <AlertCircle className="w-16 h-16 text-yellow-400 mx-auto mb-6" />
-        <h1 className="text-3xl font-bold text-white mb-4">Legacy Onboarding</h1>
+        <h1 className="text-3xl font-bold text-white mb-4">Debug Info</h1>
+        <div className="bg-gray-800 p-4 rounded mb-6 text-left">
+          <p className="text-gray-300">Organization: {organization?.name || 'null'}</p>
+          <p className="text-gray-300">Flow Version: {onboardingFlow || 'null'}</p>
+          <p className="text-gray-300">Loading: {loading ? 'true' : 'false'}</p>
+          <p className="text-gray-300">Error: {error || 'none'}</p>
+          <p className="text-gray-300">Org ID: {(organization as any)?.id || 'null'}</p>
+          <p className="text-gray-300">Org Flow: {(organization as any)?.onboarding_flow_version || 'null'}</p>
+        </div>
         <p className="text-gray-400 mb-6">
           This organization is configured to use the legacy onboarding flow, which is currently under maintenance.
           Please contact your administrator to upgrade to seamless onboarding.

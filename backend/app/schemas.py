@@ -55,7 +55,12 @@ class OrganizationResponse(BaseModel):
     onboarding_status: Optional[str]
     onboarding_step: Optional[str]
     onboarding_completed_at: Optional[datetime]
-    
+
+    # Seamless onboarding (v2) fields
+    onboarding_flow_version: Optional[str] = "seamless"
+    auto_discovery_enabled: Optional[bool] = True
+    integration_settings: Optional[Dict[str, Any]] = None
+
     class Config:
         from_attributes = True
 
