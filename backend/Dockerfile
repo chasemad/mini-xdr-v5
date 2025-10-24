@@ -59,7 +59,8 @@ WORKDIR /app
 COPY --from=builder --chown=xdr:xdr /root/.local /home/xdr/.local
 
 # Make sure scripts in .local are usable
-ENV PATH=/home/xdr/.local/bin:$PATH
+ENV PATH=/home/xdr/.local/bin:$PATH \
+    PYTHONUSERBASE=/home/xdr/.local
 
 # Copy application code (includes fixed auth.py)
 COPY --chown=xdr:xdr . .
@@ -88,7 +89,7 @@ USER xdr:xdr
 
 # Run application with uvicorn
 # Note: Single worker in container, scale with Kubernetes replicas
-CMD ["python", "-m", "uvicorn", "app.main:app", \
+CMD ["uvicorn", "app.main:app", \
      "--host", "0.0.0.0", \
      "--port", "8000", \
      "--workers", "1", \
