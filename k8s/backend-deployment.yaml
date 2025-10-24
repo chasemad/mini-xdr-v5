@@ -38,7 +38,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: backend
-        image: 116912495274.dkr.ecr.us-east-1.amazonaws.com/mini-xdr-backend:1.1.0
+        image: 116912495274.dkr.ecr.us-east-1.amazonaws.com/mini-xdr-backend:1.1.8
         imagePullPolicy: IfNotPresent
         securityContext:
           allowPrivilegeEscalation: false
