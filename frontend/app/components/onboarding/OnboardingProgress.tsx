@@ -13,9 +13,9 @@ import {
   ChevronRight,
   Clock,
 } from "lucide-react";
-import { ActionButton } from "../ui/ActionButton";
-import { StatusChip } from "../ui/StatusChip";
-import { onboardingV2API, ProgressResponse, CloudAsset } from "../../lib/api/onboardingV2";
+import { ActionButton } from "../../components/ui/ActionButton";
+import { StatusChip } from "../../components/ui/StatusChip";
+import { onboardingV2API, ProgressResponse, CloudAsset } from "../../../lib/api/onboardingV2";
 
 interface OnboardingProgressProps {
   onComplete?: () => void;
