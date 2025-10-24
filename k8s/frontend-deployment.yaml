@@ -25,7 +25,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: frontend
-        image: 116912495274.dkr.ecr.us-east-1.amazonaws.com/mini-xdr-frontend:amd64
+        image: 116912495274.dkr.ecr.us-east-1.amazonaws.com/mini-xdr-frontend:1.1.0
         securityContext:
           allowPrivilegeEscalation: false
           runAsNonRoot: true
