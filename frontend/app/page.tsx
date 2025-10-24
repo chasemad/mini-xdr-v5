@@ -2,22 +2,20 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { 
+import {
   getIncidents, agentOrchestrate,
   socBlockIP, socIsolateHost, socResetPasswords, socThreatIntelLookup, socHuntSimilarAttacks
 } from "./lib/api";
 import Link from "next/link";
 import {
   Shield, AlertTriangle, Bot, Zap,
-  Search, Filter, RefreshCw, Settings, Bell, User,
-  ChevronDown, ChevronRight, Eye, MessageSquare,
+  Search, Filter, RefreshCw,
+  ChevronDown, Eye, MessageSquare,
   BarChart3, Activity, Target, Globe,
   ArrowUpRight, ArrowDownRight, Minus, Ban, Key, Loader2, Workflow, ArrowRight, Database, CheckCircle
 } from "lucide-react";
 import { useAuth } from "./contexts/AuthContext";
 import { DashboardLayout } from "../components/DashboardLayout";
-import { ActionButton } from "../components/ui/ActionButton";
-import { StatusChip } from "../components/ui/StatusChip";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -97,7 +95,6 @@ export default function SOCAnalystDashboard() {
   ]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [filterSeverity, setFilterSeverity] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -163,10 +160,10 @@ export default function SOCAnalystDashboard() {
         case 'hunt_similar_attacks': await socHuntSimilarAttacks(incidentId); break;
         default: throw new Error(`Unknown action type: ${actionType}`);
       }
-      
+
       showToast('success', `${actionLabel} completed successfully`);
       await fetchIncidents(); // Refresh incidents
-      
+
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       showToast('error', `${actionLabel} failed: ${message}`);
@@ -178,18 +175,18 @@ export default function SOCAnalystDashboard() {
   // Chat functionality
   const sendChatMessage = async () => {
     if (!chatInput.trim() || chatLoading) return;
-    
+
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       type: 'user',
       content: chatInput.trim(),
       timestamp: new Date()
     };
-    
+
     setChatMessages(prev => [...prev, userMessage]);
     setChatInput('');
     setChatLoading(true);
-    
+
     // Add loading message
     const loadingMessage: ChatMessage = {
       id: (Date.now() + 1).toString(),
@@ -198,24 +195,24 @@ export default function SOCAnalystDashboard() {
       timestamp: new Date(),
       loading: true
     };
-    
+
     setChatMessages(prev => [...prev, loadingMessage]);
-    
+
     try {
       const response = await agentOrchestrate(userMessage.content, selectedIncident?.id, {
         incident_data: selectedIncident,
         chat_history: chatMessages.slice(-5)
       });
-      
+
       const aiMessage: ChatMessage = {
         id: (Date.now() + 2).toString(),
         type: 'ai',
         content: response.message || response.analysis || "I've analyzed your query. How can I help further?",
         timestamp: new Date()
       };
-      
+
       setChatMessages(prev => prev.slice(0, -1).concat(aiMessage));
-      
+
     } catch (error) {
       setChatMessages(prev => prev.slice(0, -1));
       console.error('AI response failed:', error);
@@ -237,7 +234,7 @@ export default function SOCAnalystDashboard() {
     const date = new Date(dateString);
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
-    
+
     if (diffMins < 1) return 'just now';
     if (diffMins < 60) return `${diffMins}m ago`;
     const diffHours = Math.floor(diffMins / 60);
@@ -285,7 +282,7 @@ export default function SOCAnalystDashboard() {
   const needsOnboarding = !authLoading && organization && (!organization.onboarding_status || organization.onboarding_status === 'not_started' || organization.onboarding_status === 'in_progress');
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white flex">
+    <DashboardLayout breadcrumbs={[{ label: activeTab === 'overview' ? 'Dashboard' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1) }]}>
       {/* Onboarding Banner */}
       {needsOnboarding && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-gradient-to-r from-amber-600 to-orange-600 px-6 py-3 flex items-center justify-between shadow-lg">
@@ -303,7 +300,7 @@ export default function SOCAnalystDashboard() {
           </Link>
         </div>
       )}
-      
+
       {/* Toast Notifications */}
       <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
         {toasts.map(toast => (
@@ -315,195 +312,41 @@ export default function SOCAnalystDashboard() {
           </div>
         ))}
       </div>
-      {/* Sidebar */}
-      <div className={`${sidebarCollapsed ? 'w-16' : 'w-80'} bg-gray-900 border-r border-gray-800 transition-all duration-300 flex flex-col`}>
-        {/* Header */}
-        <div className="p-4 border-b border-gray-800">
-          <div className="flex items-center justify-between">
-            {!sidebarCollapsed && (
-              <div>
-                <h1 className="text-xl font-bold text-white">SOC Command</h1>
-                <p className="text-xs text-gray-400">Enterprise Security Center</p>
-              </div>
-            )}
+
+      {/* Tab Navigation */}
+      <div className="mb-6 flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          {[
+            { id: 'overview', label: 'Threat Overview', icon: BarChart3 },
+            { id: 'incidents', label: 'Active Incidents', icon: AlertTriangle },
+            { id: 'response', label: 'Response Actions', icon: Shield },
+          ].map(({ id, label, icon: Icon }) => (
             <button
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+              key={id}
+              onClick={() => setActiveTab(id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === id
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
             >
-              {sidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              <Icon className="w-4 h-4" />
+              {label}
             </button>
-          </div>
+          ))}
         </div>
-
-        {!sidebarCollapsed && (
-          <>
-            {/* Navigation */}
-            <div className="p-4">
-              <nav className="space-y-2">
-                {[
-                  { id: 'overview', label: 'Threat Overview', icon: BarChart3, isTab: true },
-                  { id: 'incidents', label: 'Active Incidents', icon: AlertTriangle, isTab: true },
-                  { id: 'intelligence', label: 'Threat Intel', icon: Globe, isTab: true, href: '/intelligence' },
-                  { id: 'hunting', label: 'Threat Hunting', icon: Target, href: '/hunt' },
-                  { id: 'forensics', label: 'Forensics', icon: Search, href: '/investigations' },
-                  { id: 'response', label: 'Response Actions', icon: Shield, isTab: true },
-                  { id: 'workflows', label: 'Workflow Automation', icon: Workflow, href: '/workflows' },
-                  { id: 'visualizations', label: '3D Visualization', icon: Activity, href: '/visualizations' }
-                ].map(({ id, label, icon: Icon, isTab, href }) => {
-                  if (href) {
-                    return (
-                      <Link
-                        key={id}
-                        href={href}
-                        className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors hover:bg-gray-700/50 text-gray-300 hover:text-white"
-                      >
-                        <Icon className="w-4 h-4" />
-                        <span className="text-sm font-medium">{label}</span>
-                      </Link>
-                    );
-                  }
-                  
-                  return (
-                    <button
-                      key={id}
-                      onClick={() => setActiveTab(id)}
-                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
-                        activeTab === id ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30' : 'hover:bg-gray-700/50 text-gray-300'
-                      }`}
-                    >
-                      <Icon className="w-4 h-4" />
-                      <span className="text-sm font-medium">{label}</span>
-                    </button>
-                  );
-                })}
-              </nav>
-            </div>
-
-            {/* Quick Stats */}
-            <div className="p-4 border-t border-gray-800">
-              <h3 className="text-sm font-semibold text-gray-300 mb-3">System Status</h3>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">Active Threats</span>
-                  <span className="text-sm font-bold text-red-400">{metrics.high_priority}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">Contained</span>
-                  <span className="text-sm font-bold text-green-400">{metrics.contained}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">AI Detected</span>
-                  <span className="text-sm font-bold text-blue-400">{metrics.ml_detected}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">Avg Response</span>
-                  <span className="text-sm font-bold text-purple-400">{metrics.avg_response_time}m</span>
-                </div>
-              </div>
-            </div>
-
-            {/* AI Agents & MCP Status */}
-            <div className="p-4 border-t border-gray-800">
-              <div className="flex items-center gap-2 mb-3">
-                <Bot className="w-4 h-4 text-purple-400" />
-                <h3 className="text-sm font-semibold text-gray-300">AI Agent Orchestra</h3>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between p-2 bg-gray-700/30 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span className="text-xs text-gray-300">Attribution</span>
-                  </div>
-                  <span className="text-xs text-green-400 font-medium">Active</span>
-                </div>
-                <div className="flex items-center justify-between p-2 bg-gray-700/30 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span className="text-xs text-gray-300">Containment</span>
-                  </div>
-                  <span className="text-xs text-green-400 font-medium">Active</span>
-                </div>
-                <div className="flex items-center justify-between p-2 bg-gray-700/30 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span className="text-xs text-gray-300">Forensics</span>
-                  </div>
-                  <span className="text-xs text-green-400 font-medium">Active</span>
-                </div>
-                <div className="flex items-center justify-between p-2 bg-gray-700/30 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span className="text-xs text-gray-300">Deception</span>
-                  </div>
-                  <span className="text-xs text-green-400 font-medium">Active</span>
-                </div>
-
-                <div className="mt-3 pt-3 border-t border-gray-800">
-                  <div className="flex items-center justify-between p-2 bg-blue-600/20 border border-blue-500/30 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <Zap className="w-3 h-3 text-blue-400" />
-                      <span className="text-xs text-blue-300 font-medium">MCP Server</span>
-                    </div>
-                    <span className="text-xs text-green-400 font-medium">Online</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </>
+        {autoRefreshing && (
+          <div className="flex items-center gap-2 px-3 py-1 bg-blue-500/20 border border-blue-500/50 rounded-full">
+            <RefreshCw className="w-3 h-3 text-blue-400 animate-spin" />
+            <span className="text-xs text-blue-300 font-medium">Live</span>
+          </div>
         )}
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col" style={{ marginTop: needsOnboarding ? '52px' : '0' }}>
-        {/* Top Bar */}
-        <div className="bg-gray-900/50 border-b border-gray-800 p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <h2 className="text-2xl font-bold text-white">
-                {activeTab === 'overview' && '📊 Threat Overview'}
-                {activeTab === 'incidents' && '🚨 Active Incidents'}
-                {activeTab === 'intelligence' && '🌐 Threat Intelligence'}
-                {activeTab === 'hunting' && '🎯 Threat Hunting'}
-                {activeTab === 'forensics' && '🔍 Digital Forensics'}
-                {activeTab === 'response' && '🛡️ Response Actions'}
-                {activeTab === 'visualizations' && '🌍 3D Threat Visualization'}
-              </h2>
-              {autoRefreshing && (
-                <div className="flex items-center gap-2 px-3 py-1 bg-blue-500/20 border border-blue-500/50 rounded-full">
-                  <RefreshCw className="w-3 h-3 text-blue-400 animate-spin" />
-                  <span className="text-xs text-blue-300 font-medium">Live</span>
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Search className="w-4 h-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search incidents..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-gray-700/50 border border-gray-600/50 rounded-lg px-3 py-1 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500/50 w-64"
-                />
-              </div>
-              <button className="p-2 hover:bg-gray-700 rounded-lg transition-colors">
-                <Bell className="w-4 h-4 text-gray-400" />
-              </button>
-              <button className="p-2 hover:bg-gray-700 rounded-lg transition-colors">
-                <Settings className="w-4 h-4 text-gray-400" />
-              </button>
-              <button className="p-2 hover:bg-gray-700 rounded-lg transition-colors">
-                <User className="w-4 h-4 text-gray-400" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Content Area */}
-        <div className="flex-1 flex">
-          {/* Main Panel */}
-          <div className="flex-1 p-6 overflow-y-auto">
+      {/* Content Area - Two column layout */}
+      <div className="flex gap-6">
+        {/* Main Content Panel */}
+        <div className="flex-1 space-y-6">
             {activeTab === 'overview' && (
               <div className="space-y-6">
                 {/* Zero-state when telemetry not flowing yet */}
@@ -682,7 +525,7 @@ export default function SOCAnalystDashboard() {
                             )}
                           </div>
                         </div>
-                        
+
                         <div className="flex items-center gap-3 mt-3">
                           {[
                             { action: 'block_ip', label: 'Block IP', icon: Ban, color: 'red' },
@@ -807,7 +650,7 @@ export default function SOCAnalystDashboard() {
                       </button>
                     </Link>
                   </div>
-                  
+
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                     <div className="bg-gray-700/30 rounded-lg p-4">
                       <h4 className="text-white font-semibold mb-2 flex items-center gap-2">
@@ -822,7 +665,7 @@ export default function SOCAnalystDashboard() {
                         <li>• Performance optimized WebGL rendering</li>
                       </ul>
                     </div>
-                    
+
                     <div className="bg-gray-700/30 rounded-lg p-4">
                       <h4 className="text-white font-semibold mb-2 flex items-center gap-2">
                         <Activity className="w-4 h-4 text-purple-400" />
@@ -837,7 +680,7 @@ export default function SOCAnalystDashboard() {
                       </ul>
                     </div>
                   </div>
-                  
+
                   <div className="bg-gradient-to-r from-blue-600/10 to-purple-600/10 border border-blue-500/20 rounded-lg p-4">
                     <div className="flex items-center gap-3">
                       <div className="p-2 bg-blue-600/20 rounded-lg">
@@ -878,7 +721,7 @@ export default function SOCAnalystDashboard() {
                       </button>
                     </Link>
                   </div>
-                  
+
                   <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
                     <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                       <BarChart3 className="w-5 h-5 text-blue-400" />
@@ -979,7 +822,7 @@ export default function SOCAnalystDashboard() {
                       ))}
                     </div>
                   </div>
-                  
+
                   <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
                     <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                       <Settings className="w-5 h-5 text-purple-400" />
@@ -1029,7 +872,7 @@ export default function SOCAnalystDashboard() {
                       <Bot className="w-4 h-4 text-white" />
                     </div>
                   )}
-                  
+
                   <div className={`max-w-[80%] p-3 rounded-lg ${
                     message.type === 'user'
                       ? 'bg-blue-600/20 border border-blue-500/30 text-blue-100'
@@ -1073,8 +916,7 @@ export default function SOCAnalystDashboard() {
               </div>
             </div>
           </div>
-        </div>
       </div>
-    </div>
+    </DashboardLayout>
   );
 }

@@ -52,6 +52,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   breadcrumbs,
 }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const { user, organization, logout } = useAuth();
@@ -76,6 +77,19 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     fetchTelemetry();
   }, []);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (userDropdownOpen && !target.closest('[data-user-dropdown]')) {
+        setUserDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [userDropdownOpen]);
+
   // Filter navigation based on user role
   const roleHierarchy: Record<string, number> = {
     viewer: 1,
@@ -88,12 +102,12 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
 
   const filteredNavigation = navigation.filter((item) => {
     if (!item.roles) return true; // Available to all
-    
+
     // Check if user's role meets the minimum requirement
     const minRequiredLevel = Math.min(
       ...item.roles.map((role) => roleHierarchy[role] || 99)
     );
-    
+
     return userRoleLevel >= minRequiredLevel;
   });
 
@@ -260,6 +274,67 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                   Awaiting data
                 </button>
               )}
+
+              {/* User Dropdown */}
+              <div className="relative" data-user-dropdown>
+                <button
+                  onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                  className="flex items-center gap-2 p-2 hover:bg-gray-800 rounded-lg transition-colors"
+                >
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                    <User className="w-4 h-4 text-white" />
+                  </div>
+                  <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${userDropdownOpen ? 'rotate-90' : ''}`} />
+                </button>
+
+                {/* Dropdown Menu */}
+                {userDropdownOpen && (
+                  <div className="absolute right-0 mt-2 w-64 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50">
+                    {/* User Info */}
+                    <div className="px-4 py-3 border-b border-gray-700">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                          <User className="w-5 h-5 text-white" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-white truncate">
+                            {user?.full_name || user?.email}
+                          </div>
+                          <div className="text-xs text-gray-400 capitalize">{user?.role}</div>
+                        </div>
+                      </div>
+                      {organization && (
+                        <div className="mt-2 pt-2 border-t border-gray-700">
+                          <div className="text-xs text-gray-500">Organization</div>
+                          <div className="text-sm text-gray-300 truncate">{organization.name}</div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Menu Items */}
+                    <div className="py-2">
+                      <Link
+                        href="/settings"
+                        className="flex items-center gap-3 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+                        onClick={() => setUserDropdownOpen(false)}
+                      >
+                        <Settings className="w-4 h-4" />
+                        Settings
+                      </Link>
+                      <button
+                        onClick={() => {
+                          setUserDropdownOpen(false);
+                          handleLogout();
+                        }}
+                        className="flex items-center gap-3 w-full px-4 py-2 text-sm text-red-400 hover:bg-gray-700 transition-colors"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        Sign Out
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </header>
@@ -287,5 +362,3 @@ function Shield(props: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
-
-
