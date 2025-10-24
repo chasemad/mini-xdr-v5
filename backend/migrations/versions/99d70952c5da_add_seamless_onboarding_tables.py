@@ -120,9 +120,15 @@ def upgrade() -> None:
             nullable=True,
             server_default="pending",
         ),
+        sa.Column("agent_enrollment_id", sa.Integer(), nullable=True),
+        sa.Column("deployment_method", sa.String(length=50), nullable=True),
+        sa.Column("deployment_error", sa.Text(), nullable=True),
         sa.Column("tags", sa.JSON(), nullable=True, server_default="{}"),
         sa.ForeignKeyConstraint(
             ["organization_id"], ["organizations.id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["agent_enrollment_id"], ["agent_enrollments.id"], ondelete="SET NULL"
         ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
