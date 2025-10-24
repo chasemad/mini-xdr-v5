@@ -1,61 +1,87 @@
-# Multi-stage build for Mini-XDR Frontend
+# ============================================
+# Mini-XDR Frontend - Production Dockerfile
+# ============================================
+# Multi-stage build with TypeScript support and security hardening
+
+# ============ Builder Stage ============
 FROM node:18-alpine AS builder
+
+LABEL stage=builder
 
 # Set working directory
 WORKDIR /app
 
-# Build arguments for Next.js environment variables
-ARG NEXT_PUBLIC_API_BASE=http://k8s-minixdr-minixdri-dc5fc1df8b-1132128475.us-east-1.elb.amazonaws.com
-ARG NEXT_PUBLIC_API_URL=http://k8s-minixdr-minixdri-dc5fc1df8b-1132128475.us-east-1.elb.amazonaws.com
+# Build arguments for Next.js public environment variables
+# These get baked into the build
+ARG NEXT_PUBLIC_API_BASE=http://localhost:8000
+ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 ARG NEXT_PUBLIC_API_KEY=demo-minixdr-api-key
 
 # Set environment variables for build
-ENV NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_BASE
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_API_KEY=$NEXT_PUBLIC_API_KEY
+ENV NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_BASE \
+    NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
+    NEXT_PUBLIC_API_KEY=$NEXT_PUBLIC_API_KEY \
+    NEXT_TELEMETRY_DISABLED=1
 
-# Copy package files
-COPY package*.json ./
+# Install dependencies based on lockfile
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
 
-# Install dependencies
-RUN npm ci
-
-# Copy application code
+# Copy application source (includes TypeScript config)
 COPY . .
 
 # Build Next.js application
+# This handles TypeScript compilation automatically
 RUN npm run build
 
-# Production stage
+# ============ Production Stage ============
 FROM node:18-alpine
+
+# Metadata labels following OCI Image Spec
+LABEL org.opencontainers.image.title="Mini-XDR Frontend" \
+      org.opencontainers.image.description="Enterprise XDR Platform Web Interface" \
+      org.opencontainers.image.vendor="Mini-XDR" \
+      org.opencontainers.image.authors="chasemadrian@protonmail.com" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.source="https://github.com/chasemad/mini-xdr" \
+      org.opencontainers.image.documentation="https://github.com/chasemad/mini-xdr/blob/main/README.md"
+
+# Security: Create non-root user
+RUN addgroup -g 1000 -S xdr && \
+    adduser -u 1000 -S xdr -G xdr
 
 # Set working directory
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY --chown=xdr:xdr package.json package-lock.json ./
 
 # Install production dependencies only
-RUN npm ci --only=production
+RUN npm ci --only=production --ignore-scripts && \
+    npm cache clean --force
 
-# Copy built application from builder
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/next.config.js ./next.config.js
+# Copy built application from builder (standalone mode)
+# Next.js standalone mode creates a minimal server.js
+COPY --from=builder --chown=xdr:xdr /app/.next ./.next
+COPY --from=builder --chown=xdr:xdr /app/public ./public
+# Copy next.config.ts for runtime (TypeScript supported in production)
+COPY --from=builder --chown=xdr:xdr /app/next.config.ts ./next.config.ts
+
+# Set environment variables
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOSTNAME="0.0.0.0" \
+    NEXT_TELEMETRY_DISABLED=1
 
 # Expose port
 EXPOSE 3000
 
-# Set environment variables
-ENV NODE_ENV=production
-ENV PORT=3000
-
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
+
+# Switch to non-root user
+USER xdr:xdr
 
 # Run application
 CMD ["npm", "start"]
-
-
-
