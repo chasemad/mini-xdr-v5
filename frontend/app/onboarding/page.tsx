@@ -81,9 +81,9 @@ export default function OnboardingPage() {
   // Show seamless onboarding for organizations with seamless flow
   if (onboardingFlow === 'seamless') {
     if (showProgress) {
-      // return <OnboardingProgress onComplete={handleSeamlessComplete} />;
+      return <OnboardingProgress onComplete={handleSeamlessComplete} />;
     } else {
-      // return <QuickStartOnboarding onComplete={handleSeamlessComplete} />;
+      return <QuickStartOnboarding onComplete={handleSeamlessComplete} />;
     }
   }
 
