@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { 
   getIncidents, agentOrchestrate,
   socBlockIP, socIsolateHost, socResetPasswords, socThreatIntelLookup, socHuntSimilarAttacks
@@ -11,8 +12,14 @@ import {
   Search, Filter, RefreshCw, Settings, Bell, User,
   ChevronDown, ChevronRight, Eye, MessageSquare,
   BarChart3, Activity, Target, Globe,
-  ArrowUpRight, ArrowDownRight, Minus, Ban, Key, Loader2, Workflow
+  ArrowUpRight, ArrowDownRight, Minus, Ban, Key, Loader2, Workflow, ArrowRight, Database, CheckCircle
 } from "lucide-react";
+import { useAuth } from "./contexts/AuthContext";
+import { DashboardLayout } from "../components/DashboardLayout";
+import { ActionButton } from "../components/ui/ActionButton";
+import { StatusChip } from "../components/ui/StatusChip";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 interface Incident {
   id: number;
@@ -52,7 +59,30 @@ interface SystemMetrics {
 }
 
 export default function SOCAnalystDashboard() {
-  // State management
+  // Auth and telemetry gating
+  const router = useRouter();
+  const { user, organization, loading: authLoading } = useAuth();
+  const [telemetry, setTelemetry] = useState<{ hasLogs: boolean; lastEventAt?: string; assetsDiscovered?: number; agentsEnrolled?: number; incidents?: number } | null>(null);
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      console.log('⚠️ User not authenticated, redirecting to login...');
+      router.push('/login');
+    }
+  }, [authLoading, user, router]);
+
+  useEffect(() => {
+    const fetchTelemetry = async () => {
+      try {
+        const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
+        if (!token) return;
+        const res = await fetch(`${API_BASE}/api/telemetry/status`, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) setTelemetry(await res.json());
+      } catch {}
+    };
+    fetchTelemetry();
+  }, []);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [autoRefreshing, setAutoRefreshing] = useState(false);
@@ -234,7 +264,8 @@ export default function SOCAnalystDashboard() {
     }
   };
 
-  if (loading) {
+  // Show loading only if authenticated or still checking auth
+  if (authLoading || (!authLoading && user && loading)) {
     return (
       <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">
         <div className="text-center">
@@ -245,8 +276,34 @@ export default function SOCAnalystDashboard() {
     );
   }
 
+  // If not authenticated and not loading, return null (will redirect to login)
+  if (!authLoading && !user) {
+    return null;
+  }
+
+  // Check if onboarding is incomplete - show banner instead of blocking
+  const needsOnboarding = !authLoading && organization && (!organization.onboarding_status || organization.onboarding_status === 'not_started' || organization.onboarding_status === 'in_progress');
+
   return (
     <div className="min-h-screen bg-gray-950 text-white flex">
+      {/* Onboarding Banner */}
+      {needsOnboarding && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-gradient-to-r from-amber-600 to-orange-600 px-6 py-3 flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-3">
+            <Database className="w-5 h-5 text-white" />
+            <div>
+              <p className="text-white font-semibold">Complete your setup to unlock full functionality</p>
+              <p className="text-amber-100 text-sm">Network discovery and agent deployment pending</p>
+            </div>
+          </div>
+          <Link href="/onboarding" className="inline-flex items-center gap-2 px-4 py-2 bg-white text-amber-700 rounded-lg font-medium hover:bg-amber-50 transition-colors">
+            <CheckCircle className="w-4 h-4" />
+            Complete Setup
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+      )}
+      
       {/* Toast Notifications */}
       <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
         {toasts.map(toast => (
@@ -286,9 +343,9 @@ export default function SOCAnalystDashboard() {
                 {[
                   { id: 'overview', label: 'Threat Overview', icon: BarChart3, isTab: true },
                   { id: 'incidents', label: 'Active Incidents', icon: AlertTriangle, isTab: true },
-                  { id: 'intelligence', label: 'Threat Intel', icon: Globe, isTab: true },
-                  { id: 'hunting', label: 'Threat Hunting', icon: Target, isTab: true },
-                  { id: 'forensics', label: 'Forensics', icon: Search, isTab: true },
+                  { id: 'intelligence', label: 'Threat Intel', icon: Globe, isTab: true, href: '/intelligence' },
+                  { id: 'hunting', label: 'Threat Hunting', icon: Target, href: '/hunt' },
+                  { id: 'forensics', label: 'Forensics', icon: Search, href: '/investigations' },
                   { id: 'response', label: 'Response Actions', icon: Shield, isTab: true },
                   { id: 'workflows', label: 'Workflow Automation', icon: Workflow, href: '/workflows' },
                   { id: 'visualizations', label: '3D Visualization', icon: Activity, href: '/visualizations' }
@@ -397,7 +454,7 @@ export default function SOCAnalystDashboard() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col" style={{ marginTop: needsOnboarding ? '52px' : '0' }}>
         {/* Top Bar */}
         <div className="bg-gray-900/50 border-b border-gray-800 p-4">
           <div className="flex items-center justify-between">
@@ -449,6 +506,24 @@ export default function SOCAnalystDashboard() {
           <div className="flex-1 p-6 overflow-y-auto">
             {activeTab === 'overview' && (
               <div className="space-y-6">
+                {/* Zero-state when telemetry not flowing yet */}
+                {telemetry && telemetry.hasLogs === false && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-6">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h3 className="text-lg font-semibold text-amber-300">Awaiting first data</h3>
+                        <p className="text-sm text-amber-200/80">
+                          Network discovered. Agents deployed. Waiting for initial events to arrive. This can take a few minutes.
+                        </p>
+                      </div>
+                      <div className="text-right text-sm text-amber-200/80">
+                        <div>Assets: {telemetry.assetsDiscovered ?? 0}</div>
+                        <div>Agents: {telemetry.agentsEnrolled ?? 0}</div>
+                        <div>Incidents: {telemetry.incidents ?? 0}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {/* Metrics Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   <div className="bg-gray-900 border border-red-500/30 rounded-xl p-6">
