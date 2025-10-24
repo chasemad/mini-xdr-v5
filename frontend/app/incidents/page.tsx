@@ -9,7 +9,8 @@ import {
   ChevronDown, Eye, MessageSquare,
   BarChart3, Activity,
   MoreHorizontal,
-  ArrowUpRight, ArrowDownRight, Minus
+  ArrowUpRight, ArrowDownRight, Minus,
+  Globe
 } from "lucide-react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 

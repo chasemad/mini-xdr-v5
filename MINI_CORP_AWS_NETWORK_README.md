@@ -53,14 +53,14 @@ This document provides a comprehensive plan for creating a "mini corporate netwo
 VPC: 10.100.0.0/16 (Separate from Mini-XDR's 10.0.0.0/16)
 ├── Public Subnet: 10.100.1.0/24 (Bastion host)
 ├── Private Subnet: 10.100.10.0/24 (Corporate systems)
-│   ├── Domain Controller (Windows Server)
-│   ├── File Server (Windows Server)
-│   ├── Web Server (Linux)
-│   ├── Database Server (Linux)
-│   ├── Workstation 1 (Windows 11)
-│   ├── Workstation 2 (Ubuntu Desktop)
+│   ├── Domain Controller (Windows Server 2022)
+│   ├── File Server (Windows Server 2019)
+│   ├── Web Server (Ubuntu 22.04)
+│   ├── Database Server (Ubuntu 22.04)
+│   ├── Workstation 1 (Windows Server 2022 Desktop Experience)
+│   ├── Workstation 2 (Ubuntu 22.04 + GUI)
 │   └── Honeypot (T-Pot)
-└── Security Groups: Restricted to your IP only
+└── Security Groups: Admin /32 + Mini-XDR VPC CIDR (templated)
 ```
 
 ### Target Systems for Detection & Monitoring
@@ -71,35 +71,26 @@ VPC: 10.100.0.0/16 (Separate from Mini-XDR's 10.0.0.0/16)
 | **FS-01** | Windows Server 2019 | SMB, File Shares | File access monitoring, lateral movement | DLP + Forensics agents |
 | **WEB-01** | Ubuntu 22.04 | Apache/Nginx, SSH | Web attacks, service enumeration | Containment + Attribution agents |
 | **DB-01** | Ubuntu 22.04 | PostgreSQL, MySQL | Database attacks, data exfiltration | DLP + Predictive Hunter agents |
-| **WK-01** | Windows 11 Pro | RDP, SMB | Endpoint behavior, credential theft | EDR + Forensics agents |
-| **WK-02** | Ubuntu 22.04 Desktop | SSH, VNC | Linux endpoint monitoring | Ingestion + NLP agents |
+| **WK-01** | Windows Server 2022 (Desktop Experience) | RDP, SMB | Endpoint behavior, credential theft | EDR + Forensics agents |
+| **WK-02** | Ubuntu 22.04 Server + GUI | SSH, VNC | Linux endpoint monitoring | Ingestion + NLP agents |
 | **HP-01** | T-Pot (Ubuntu) | 20+ honeypot services | Attack simulation, threat intelligence | Deception + Coordination agents |
 
 ## Security & Access Control
 
 ### IP-Based Access Restrictions
+The stack seeds inbound rules for both the trusted admin /32 and the Mini-XDR VPC CIDR. After peering is established, verify the security group configuration:
+
 ```bash
-# Your IP address (replace with actual)
-YOUR_IP="YOUR.ACTUAL.IP.ADDRESS/32"
-
-# Security group rules - INBOUND ONLY from your IP
-aws ec2 authorize-security-group-ingress \
-  --group-id $CORP_SG_ID \
-  --protocol tcp \
-  --port 22 \
-  --cidr $YOUR_IP \
-  --description "SSH access for testing"
-
-aws ec2 authorize-security-group-ingress \
-  --group-id $CORP_SG_ID \
-  --protocol tcp \
-  --port 3389 \
-  --cidr $YOUR_IP \
-  --description "RDP access for testing"
+aws ec2 describe-security-groups \
+  --group-ids $CORP_SG_ID \
+  --query 'SecurityGroups[0].IpPermissions'
 ```
 
+If you need to tighten or reapply the Mini-XDR allowances (for example, after changing the CIDR), rerun the stack with updated parameters or use `aws ec2 revoke-security-group-ingress` / `authorize-security-group-ingress` to adjust specific ports.
+
 ### Zero Trust Network Design
-- **No internet access** for private subnet systems
+- **No direct internet ingress**; private subnet routes outbound via a managed NAT gateway only for OS updates and package installs.
+- **SSM, SSM Messages, and EC2 Messages interface endpoints** keep management traffic inside AWS without traversing the internet.
 - **Bastion host** for secure access to private systems
 - **Security groups** restrict all traffic to your IP only
 - **Network ACLs** provide additional layer of network-level filtering
@@ -191,14 +182,21 @@ aws ec2 authorize-security-group-ingress \
 ### 2. Deploy Bastion Host
 
 ```bash
+# Resolve latest Amazon Linux AMI for bastion
+BASTION_AMI=$(aws ssm get-parameters \
+  --names /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64 \
+  --query 'Parameters[0].Value' \
+  --output text)
+
 # Launch bastion host in public subnet
 aws ec2 run-instances \
-  --image-id ami-0abcdef1234567890 \  # Ubuntu 22.04 AMI
+  --image-id $BASTION_AMI \
   --instance-type t3.medium \
   --key-name mini-corp-key \
   --security-group-ids $CORP_SG_ID \
   --subnet-id $CORP_PUBLIC_SUBNET \
   --associate-public-ip-address \
+  --iam-instance-profile Name=MiniCorpSSMInstanceProfile \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Mini-Corp-Bastion}]'
 
 # Configure bastion for SSH proxy to private instances
@@ -207,16 +205,36 @@ aws ec2 run-instances \
 
 ### 3. Deploy Corporate Systems
 
+Before launching instances, resolve the latest regional AMIs once and reuse the variables:
+
+```bash
+UBUNTU_2204_AMI=$(aws ssm get-parameters \
+  --names /aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp3/ami-id \
+  --query 'Parameters[0].Value' \
+  --output text)
+
+WINDOWS_2022_AMI=$(aws ssm get-parameters \
+  --names /aws/service/ami-windows-latest/Windows_Server-2022-English-Full-Base \
+  --query 'Parameters[0].Value' \
+  --output text)
+
+WINDOWS_2019_AMI=$(aws ssm get-parameters \
+  --names /aws/service/ami-windows-latest/Windows_Server-2019-English-Full-Base \
+  --query 'Parameters[0].Value' \
+  --output text)
+```
+
 #### Windows Domain Controller (DC-01)
 ```bash
 # Windows Server 2022 with AD DS
 aws ec2 run-instances \
-  --image-id ami-0abcdef1234567890 \  # Windows Server 2022 AMI
+  --image-id $WINDOWS_2022_AMI \
   --instance-type t3.medium \
   --key-name mini-corp-key \
   --security-group-ids $CORP_SG_ID \
   --subnet-id $CORP_PRIVATE_SUBNET \
   --private-ip-address 10.100.10.10 \
+  --iam-instance-profile Name=MiniCorpSSMInstanceProfile \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=DC-01}]'
 
 # Post-deployment:
@@ -229,12 +247,13 @@ aws ec2 run-instances \
 #### Windows File Server (FS-01)
 ```bash
 aws ec2 run-instances \
-  --image-id ami-0abcdef1234567890 \  # Windows Server 2019 AMI
+  --image-id $WINDOWS_2019_AMI \
   --instance-type t3.small \
   --key-name mini-corp-key \
   --security-group-ids $CORP_SG_ID \
   --subnet-id $CORP_PRIVATE_SUBNET \
   --private-ip-address 10.100.10.11 \
+  --iam-instance-profile Name=MiniCorpSSMInstanceProfile \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=FS-01}]'
 
 # Post-deployment:
@@ -247,12 +266,13 @@ aws ec2 run-instances \
 #### Linux Web Server (WEB-01)
 ```bash
 aws ec2 run-instances \
-  --image-id ami-0abcdef1234567890 \  # Ubuntu 22.04 AMI
+  --image-id $UBUNTU_2204_AMI \
   --instance-type t3.small \
   --key-name mini-corp-key \
   --security-group-ids $CORP_SG_ID \
   --subnet-id $CORP_PRIVATE_SUBNET \
   --private-ip-address 10.100.10.12 \
+  --iam-instance-profile Name=MiniCorpSSMInstanceProfile \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=WEB-01}]'
 
 # Post-deployment:
@@ -265,12 +285,13 @@ aws ec2 run-instances \
 #### Linux Database Server (DB-01)
 ```bash
 aws ec2 run-instances \
-  --image-id ami-0abcdef1234567890 \  # Ubuntu 22.04 AMI
+  --image-id $UBUNTU_2204_AMI \
   --instance-type t3.small \
   --key-name mini-corp-key \
   --security-group-ids $CORP_SG_ID \
   --subnet-id $CORP_PRIVATE_SUBNET \
   --private-ip-address 10.100.10.13 \
+  --iam-instance-profile Name=MiniCorpSSMInstanceProfile \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=DB-01}]'
 
 # Post-deployment:
@@ -283,15 +304,17 @@ aws ec2 run-instances \
 #### Windows Workstation (WK-01)
 ```bash
 aws ec2 run-instances \
-  --image-id ami-0abcdef1234567890 \  # Windows 11 AMI
+  --image-id $WINDOWS_2022_AMI \
   --instance-type t3.small \
   --key-name mini-corp-key \
   --security-group-ids $CORP_SG_ID \
   --subnet-id $CORP_PRIVATE_SUBNET \
   --private-ip-address 10.100.10.14 \
+  --iam-instance-profile Name=MiniCorpSSMInstanceProfile \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=WK-01}]'
 
 # Post-deployment:
+# - Install Desktop Experience components (Server Manager → Add Features) to mimic a workstation
 # - Join to corp.local domain
 # - Install common business applications
 # - Configure RDP access
@@ -301,16 +324,18 @@ aws ec2 run-instances \
 #### Linux Workstation (WK-02)
 ```bash
 aws ec2 run-instances \
-  --image-id ami-0abcdef1234567890 \  # Ubuntu 22.04 Desktop AMI
+  --image-id $UBUNTU_2204_AMI \
   --instance-type t3.small \
   --key-name mini-corp-key \
   --security-group-ids $CORP_SG_ID \
   --subnet-id $CORP_PRIVATE_SUBNET \
   --private-ip-address 10.100.10.15 \
+  --iam-instance-profile Name=MiniCorpSSMInstanceProfile \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=WK-02}]'
 
 # Post-deployment:
 # - Install desktop environment
+#   sudo apt update && sudo apt install -y ubuntu-desktop xrdp
 # - Configure SSH and VNC
 # - Install development tools
 # - Create user accounts
@@ -319,12 +344,13 @@ aws ec2 run-instances \
 #### T-Pot Honeypot (HP-01)
 ```bash
 aws ec2 run-instances \
-  --image-id ami-0abcdef1234567890 \  # Ubuntu 22.04 AMI
+  --image-id $UBUNTU_2204_AMI \
   --instance-type t3.medium \
   --key-name mini-corp-key \
   --security-group-ids $CORP_SG_ID \
   --subnet-id $CORP_PRIVATE_SUBNET \
   --private-ip-address 10.100.10.16 \
+  --iam-instance-profile Name=MiniCorpSSMInstanceProfile \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=HP-01}]'
 
 # Post-deployment:
@@ -332,6 +358,47 @@ aws ec2 run-instances \
 # - Configure 20+ honeypot services
 # - Enable log shipping to Mini-XDR
 # - Set up deception scenarios
+```
+
+### 4. Establish VPC Peering with Mini-XDR
+
+```bash
+PEERING_ID=$(aws ec2 create-vpc-peering-connection \
+  --vpc-id "$MINIXDR_VPC_ID" \
+  --peer-vpc-id "$CORP_VPC_ID" \
+  --region "$AWS_REGION" \
+  --query 'VpcPeeringConnection.VpcPeeringConnectionId' \
+  --output text)
+
+aws ec2 accept-vpc-peering-connection \
+  --vpc-peering-connection-id "$PEERING_ID" \
+  --region "$AWS_REGION"
+
+MINIXDR_PRIVATE_RTS=$(aws ec2 describe-route-tables \
+  --region "$AWS_REGION" \
+  --filters "Name=vpc-id,Values=$MINIXDR_VPC_ID" "Name=tag:Name,Values=*private*" \
+  --query 'RouteTables[*].RouteTableId' \
+  --output text)
+
+for RT in $MINIXDR_PRIVATE_RTS; do
+  aws ec2 create-route \
+    --route-table-id "$RT" \
+    --destination-cidr-block 10.100.0.0/16 \
+    --vpc-peering-connection-id "$PEERING_ID" \
+    --region "$AWS_REGION" || true
+done
+
+aws ec2 create-route \
+  --route-table-id "$CORP_PRIVATE_RT" \
+  --destination-cidr-block "$MINIXDR_VPC_CIDR" \
+  --vpc-peering-connection-id "$PEERING_ID" \
+  --region "$AWS_REGION" || true
+```
+
+Use the bastion host to confirm reachability:
+
+```bash
+ping -c 3 10.0.0.5   # Example EKS node IP
 ```
 
 ## Mini-XDR Onboarding Integration
@@ -342,8 +409,8 @@ When onboarding through the Mini-XDR wizard:
 1. **Network Range**: `10.100.10.0/24`
 2. **Discovery Mode**: Quick scan (recommended for initial testing)
 3. **Expected Detection**:
-   - 7 live hosts (DC-01 through HP-01)
-   - Mixed OS detection (Windows Server, Ubuntu, Windows 11)
+  - 7 live hosts (DC-01 through HP-01)
+  - Mixed OS detection (Windows Server, Ubuntu Server, Windows desktop experience)
    - Service enumeration (SSH, RDP, SMB, HTTP, databases)
 
 ### Agent Deployment Strategy
@@ -388,20 +455,24 @@ HP-01 (T-Pot): Deception + Coordination agents
 
 ```yaml
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Mini Corporate Network VPC for Mini-XDR Testing'
+Description: Mini corporate VPC for Mini-XDR integration lab
 
 Parameters:
-  YourIPAddress:
+  AllowedAdminCidr:
     Type: String
-    Description: Your IP address with /32 CIDR for security group restrictions
+    Description: /32 CIDR for trusted admin workstation or VPN
+  MiniXdrVpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR of the existing Mini-XDR VPC to allow peered traffic
 
 Resources:
-  VPC:
+  CorporateVpc:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: 10.100.0.0/16
-      EnableDnsHostnames: true
       EnableDnsSupport: true
+      EnableDnsHostnames: true
       Tags:
         - Key: Name
           Value: mini-corp-vpc
@@ -413,134 +484,209 @@ Resources:
         - Key: Name
           Value: mini-corp-igw
 
-  InternetGatewayAttachment:
-    Type: AWS::EC2::InternetGateway
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
     Properties:
+      VpcId: !Ref CorporateVpc
       InternetGatewayId: !Ref InternetGateway
-      VpcId: !Ref VPC
 
-  # Public Subnet for Bastion
   PublicSubnet:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref VPC
-      AvailabilityZone: us-east-1a
+      VpcId: !Ref CorporateVpc
       CidrBlock: 10.100.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
           Value: mini-corp-public-subnet
 
-  # Private Subnet for Corporate Systems
   PrivateSubnet:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref VPC
-      AvailabilityZone: us-east-1a
+      VpcId: !Ref CorporateVpc
       CidrBlock: 10.100.10.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
       Tags:
         - Key: Name
           Value: mini-corp-private-subnet
 
-  # Security Group - Restricted to your IP only
-  CorpSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
+  NatEip:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
     Properties:
-      GroupDescription: Security group for mini corp network
-      VpcId: !Ref VPC
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: !Ref YourIPAddress
-          Description: SSH access
-        - IpProtocol: tcp
-          FromPort: 3389
-          ToPort: 3389
-          CidrIp: !Ref YourIPAddress
-          Description: RDP access
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: !Ref YourIPAddress
-          Description: HTTP access
-        - IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          CidrIp: !Ref YourIPAddress
-          Description: HTTPS access
-        - IpProtocol: tcp
-          FromPort: 3389
-          ToPort: 3389
-          CidrIp: 10.100.0.0/16
-          Description: Internal RDP
-        - IpProtocol: tcp
-          FromPort: 445
-          ToPort: 445
-          CidrIp: 10.100.0.0/16
-          Description: SMB access
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: 10.100.0.0/16
-          Description: Internal SSH
-        - IpProtocol: tcp
-          FromPort: 3306
-          ToPort: 3306
-          CidrIp: 10.100.0.0/16
-          Description: MySQL access
-        - IpProtocol: tcp
-          FromPort: 5432
-          ToPort: 5432
-          CidrIp: 10.100.0.0/16
-          Description: PostgreSQL access
+      Domain: vpc
 
-  # Route Tables
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEip.AllocationId
+      SubnetId: !Ref PublicSubnet
+      Tags:
+        - Key: Name
+          Value: mini-corp-nat
+
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: !Ref VPC
+      VpcId: !Ref CorporateVpc
       Tags:
         - Key: Name
           Value: mini-corp-public-routes
 
   DefaultPublicRoute:
     Type: AWS::EC2::Route
+    DependsOn: AttachGateway
     Properties:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
 
-  PublicSubnetRouteTableAssociation:
+  PublicSubnetAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref PublicSubnet
 
-Outputs:
-  VPC:
-    Description: VPC ID
-    Value: !Ref VPC
-    Export:
-      Name: mini-corp-vpc
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref CorporateVpc
+      Tags:
+        - Key: Name
+          Value: mini-corp-private-routes
 
-  PublicSubnet:
+  PrivateDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: NatGateway
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnetAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet
+
+  CorporateSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Mini corporate perimeter security group
+      VpcId: !Ref CorporateVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AllowedAdminCidr
+          Description: Admin SSH
+        - IpProtocol: tcp
+          FromPort: 3389
+          ToPort: 3389
+          CidrIp: !Ref AllowedAdminCidr
+          Description: Admin RDP
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Ref MiniXdrVpcCidr
+          Description: Mini-XDR discovery (ICMP)
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref MiniXdrVpcCidr
+          Description: Mini-XDR SSH
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref MiniXdrVpcCidr
+          Description: Mini-XDR HTTP
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref MiniXdrVpcCidr
+          Description: Mini-XDR HTTPS
+        - IpProtocol: tcp
+          FromPort: 445
+          ToPort: 445
+          CidrIp: !Ref MiniXdrVpcCidr
+          Description: Mini-XDR SMB
+        - IpProtocol: tcp
+          FromPort: 3389
+          ToPort: 3389
+          CidrIp: !Ref MiniXdrVpcCidr
+          Description: Mini-XDR RDP
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: !Ref MiniXdrVpcCidr
+          Description: Mini-XDR MySQL
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: !Ref MiniXdrVpcCidr
+          Description: Mini-XDR PostgreSQL
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: mini-corp-sg
+
+  SsmEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssm
+      VpcId: !Ref CorporateVpc
+      SubnetIds:
+        - !Ref PrivateSubnet
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref CorporateSecurityGroup
+      VpcEndpointType: Interface
+
+  SsmMessagesEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssmmessages
+      VpcId: !Ref CorporateVpc
+      SubnetIds:
+        - !Ref PrivateSubnet
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref CorporateSecurityGroup
+      VpcEndpointType: Interface
+
+  Ec2MessagesEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ec2messages
+      VpcId: !Ref CorporateVpc
+      SubnetIds:
+        - !Ref PrivateSubnet
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref CorporateSecurityGroup
+      VpcEndpointType: Interface
+
+Outputs:
+  VpcId:
+    Description: Corporate VPC ID
+    Value: !Ref CorporateVpc
+  PublicSubnetId:
     Description: Public subnet ID
     Value: !Ref PublicSubnet
-    Export:
-      Name: mini-corp-public-subnet
-
-  PrivateSubnet:
+  PrivateSubnetId:
     Description: Private subnet ID
     Value: !Ref PrivateSubnet
-    Export:
-      Name: mini-corp-private-subnet
-
-  CorpSecurityGroup:
-    Description: Security group ID
-    Value: !Ref CorpSecurityGroup
-    Export:
-      Name: mini-corp-security-group
+  CorporateSecurityGroupId:
+    Description: Primary security group ID
+    Value: !Ref CorporateSecurityGroup
+  PrivateRouteTableId:
+    Description: Private route table ID
+    Value: !Ref PrivateRouteTable
 ```
 
 ## Testing & Validation Plan
@@ -642,56 +788,62 @@ Based on analysis of the Mini-XDR onboarding system, here are critical issues th
 **Solution**:
 ```bash
 # Create VPC peering connection
-aws ec2 create-vpc-peering-connection \
-  --vpc-id vpc-12345678 \  # Mini-XDR VPC
-  --peer-vpc-id vpc-87654321 \  # Corporate VPC
+PEERING_ID=$(aws ec2 create-vpc-peering-connection \
+  --vpc-id "$MINIXDR_VPC_ID" \
+  --peer-vpc-id "$CORP_VPC_ID" \
+  --region "$AWS_REGION" \
+  --query 'VpcPeeringConnection.VpcPeeringConnectionId' \
+  --output text)
 
-# Accept the peering connection
 aws ec2 accept-vpc-peering-connection \
-  --vpc-peering-connection-id pcx-xxxxxxxx
+  --vpc-peering-connection-id "$PEERING_ID" \
+  --region "$AWS_REGION"
 
-# Update route tables for cross-VPC routing
-aws ec2 create-route \
-  --route-table-id rtb-mini-xdr-private \
-  --destination-cidr-block 10.100.0.0/16 \
-  --vpc-peering-connection-id pcx-xxxxxxxx
+# Update Mini-XDR route tables (private subnets only)
+MINIXDR_PRIVATE_RTS=$(aws ec2 describe-route-tables \
+  --region "$AWS_REGION" \
+  --filters "Name=vpc-id,Values=$MINIXDR_VPC_ID" "Name=tag:Name,Values=*private*" \
+  --query 'RouteTables[*].RouteTableId' \
+  --output text)
 
+for RT in $MINIXDR_PRIVATE_RTS; do
+  aws ec2 create-route \
+    --route-table-id "$RT" \
+    --destination-cidr-block 10.100.0.0/16 \
+    --vpc-peering-connection-id "$PEERING_ID" \
+    --region "$AWS_REGION" || true
+done
+
+# Update corporate private route table
 aws ec2 create-route \
-  --route-table-id rtb-corp-private \
-  --destination-cidr-block 10.0.0.0/16 \
-  --vpc-peering-connection-id pcx-xxxxxxxx
+  --route-table-id "$CORP_PRIVATE_RT" \
+  --destination-cidr-block "$MINIXDR_VPC_CIDR" \
+  --vpc-peering-connection-id "$PEERING_ID" \
+  --region "$AWS_REGION" || true
 ```
 
 #### Issue 2: Agent Installation Scripts Hardcode Internal URLs
 **Problem**: Agent installation scripts use `backend-service:8000` which won't resolve from the corporate VPC.
 
-**Solution**: Update the installation scripts to use the public ALB URL:
-```bash
-# In backend/app/agent_enrollment_service.py, change:
-backend_url = "http://backend-service:8000"  # Internal only
+**Solution**: Make the backend aware of a public agent base URL instead of hardcoding the ClusterIP service.
 
-# To use public ALB URL:
-backend_url = "http://k8s-minixdr-minixdri-dc5fc1df8b-1132128475.us-east-1.elb.amazonaws.com"
-```
+1. Update `backend/app/agent_enrollment_service.py` to read from an environment variable:
+   ```python
+   import os
+
+   backend_url = os.getenv("AGENT_PUBLIC_BASE_URL", "http://backend-service:8000")
+   ```
+2. Inject the environment variable in the Kubernetes deployment (ConfigMap or Deployment env section):
+   ```yaml
+   - name: AGENT_PUBLIC_BASE_URL
+     value: "http://k8s-minixdr-minixdri-dc5fc1df8b-1132128475.us-east-1.elb.amazonaws.com"
+   ```
+3. Restart the backend deployment so newly generated installers point agents at the ALB.
 
 #### Issue 3: Security Groups Block Network Discovery
 **Problem**: Corporate security groups restrict all traffic to your IP only, but Mini-XDR needs ICMP and port scanning access.
 
-**Solution**: Add temporary rules for Mini-XDR scanning:
-```bash
-# Allow ICMP from Mini-XDR VPC for host discovery
-aws ec2 authorize-security-group-ingress \
-  --group-id $CORP_SG_ID \
-  --protocol icmp \
-  --source-group sg-minixdr-eks-nodes
-
-# Allow port scanning from Mini-XDR VPC
-aws ec2 authorize-security-group-ingress \
-  --group-id $CORP_SG_ID \
-  --protocol tcp \
-  --port 22,80,443,445,3389,3306,5432 \
-  --source-group sg-minixdr-eks-nodes
-```
+**Solution**: The refreshed CloudFormation template grants the Mini-XDR VPC scoped access on ICMP and required TCP ports. After attaching the peering connection, re-run `aws ec2 describe-security-groups --group-ids $CORP_SG_ID` to confirm the rules list the Mini-XDR CIDR. If you need to tighten the exposure further, remove unused ports with `aws ec2 revoke-security-group-ingress`.
 
 #### Issue 4: Network Scan Range Configuration
 **Problem**: Onboarding wizard needs correct CIDR range input.
@@ -707,9 +859,15 @@ aws ec2 authorize-security-group-ingress \
 - Domain Controller: LDAP (389), DNS (53)
 
 #### Issue 6: Agent Download URLs Not Accessible
-**Problem**: Agents need to download installation packages, but corporate VPC may not have internet access.
+**Problem**: Agents need to download installation packages, but the corporate VPC isolates private subnets from the internet.
 
-**Solution**: Configure NAT Gateway for corporate VPC to allow outbound internet access for agent downloads.
+**Solution**: The template enables a managed NAT gateway plus SSM/EC2 Messages endpoints. Verify the instances appear in AWS Systems Manager:
+```bash
+aws ssm describe-instance-information \
+  --query 'InstanceInformationList[*].[InstanceId,PlatformName,AgentVersion]' \
+  --output table
+```
+If instances are missing, confirm they use the `MiniCorpSSMInstanceProfile` role and that security groups allow HTTPS egress. For further lockdown, create VPC endpoint policies limiting SSM access to required services only.
 
 ## Expected Onboarding Flow & Validation
 

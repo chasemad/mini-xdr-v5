@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-**Replace Mini-XDR's legacy 4-step onboarding wizard with a seamless 5-minute, one-click experience** that reduces time-to-value from hours to minutes while maintaining enterprise security and multi-tenancy.
+**Introduce a seamless, one-click onboarding pathway alongside the existing 4/5-step wizard** with the goal of reducing time-to-value from hours to minutes while preserving enterprise security and multi-tenancy. The legacy flow remains the default until the new experience is validated end-to-end, then we plan a controlled cutover.
 
 ### Current State → Future State
 
@@ -17,32 +17,77 @@
 
 ---
 
+## Current Reality Check (Oct 2024 codebase)
+
+- **Legacy flow is active and wired into the UI**: `/api/onboarding/*` endpoints in `backend/app/onboarding_routes.py` power the 5-step wizard rendered at `frontend/app/onboarding/page.tsx`. The frontend polls these endpoints every few seconds for agent status, so we cannot simply remove them without breaking the UI.
+- **Schema changes require real migrations**: `backend/app/models.py` does not yet contain `integration_credentials` or `cloud_assets`. The application currently bootstraps the schema at runtime via `init_db()`. Introducing the new tables/columns means adopting Alembic (see `docs/overview/roadmap-and-status.md`) and generating migrations that can run in production.
+- **Agent enrollment assumes an internal service URL**: `backend/app/agent_enrollment_service.py` hardcodes `http://backend-service:8000`. AWS deployment documentation shows we front the cluster with an ALB, so the new flow must inject an external base URL before agents in a different VPC can phone home.
+- **Background scheduler already exists**: `backend/app/main.py` starts an `AsyncIOScheduler`. We can reuse it for the auto-discovery and smart deployment jobs instead of adding yet another scheduling mechanism.
+- **Secrets and encryption**: Optional AWS Secrets Manager integration lives in `backend/app/secrets_manager.py`. Any stored integration credentials must go through this path (or equivalent KMS-backed encryption) to satisfy compliance docs under `docs/security-compliance`.
+- **Testing gap**: There is no automation covering onboarding today. We need at least API-level tests plus a manual regression checklist before considering the new flow production-ready.
+
+---
+
 ## 🎯 **Replacement Strategy**
 
-**This upgrade COMPLETELY REPLACES the legacy 4-step onboarding wizard** with the new seamless experience. There is no gradual rollout or A/B testing - the new system becomes the default and only onboarding method.
+**Deliver the seamless onboarding flow behind a feature flag, validate it with Mini Corp, then retire the legacy wizard once parity is proven.** This keeps production stable and gives us explicit exit criteria for the cutover.
 
-### **Why Complete Replacement?**
-- **Legacy system is fundamentally flawed**: Complex, error-prone, high support burden
-- **New system is superior**: Cloud-native, automated, user-friendly
-- **Mini Corp as pilot**: Test with Mini Corp organization first, then roll to all users
-- **No migration needed**: New organizations start with new system, legacy data is archived
+### **Why a Phased Rollout?**
+- **UI and API contracts are entrenched**: The current wizard is intertwined with dashboards and agent telemetry. A sudden removal would break day-one experiences for every tenant.
+- **Infrastructure prerequisites**: Until Mini Corp’s AWS lab and agent enrollment fixes ship (see `MINI_CORP_AWS_NETWORK_README.md`), the new flow cannot succeed end-to-end.
+- **Migration effort**: Database changes, Secrets Manager wiring, and background workers all require careful sequencing and rollback plans.
 
-### **What Gets Replaced**
-- ❌ Legacy 4-step wizard (`/onboarding` routes)
-- ❌ Manual network scanning and agent deployment
-- ❌ Complex credential management
-- ❌ Multi-step validation process
+### **What Changes in V2**
+- ✅ New `/api/onboarding/v2/*` endpoints with auto-discovery and smart agent deployment
+- ✅ Integration credential storage scoped per organization and encrypted at rest
+- ✅ Real-time progress aggregation (discovery + deployment + validation) surfaced via a single API call
+- ✅ Frontend “Quick Start” component that guides OAuth/assume-role and displays progress
 
-### **What's New**
-- ✅ One-click cloud integration
-- ✅ Automatic asset discovery and classification
-- ✅ Smart agent deployment and configuration
-- ✅ Real-time progress monitoring
-- ✅ Instant security monitoring
+### **What Stays During Transition**
+- ✅ Legacy `/api/onboarding/*` routes remain available until feature parity + reliability SLAs are met
+- ✅ Frontend keeps the existing wizard for organizations flagged as `onboarding_flow_version='legacy'`
+- ✅ Manual network scans and agent tokens continue to work for self-managed environments or air-gapped customers
+
+### **Cutover Criteria**
+1. Mini Corp onboarding completes successfully via the new flow—agents reporting, telemetry ingested.
+2. Automated smoke tests cover quick start, progress polling, error handling, and rollback back to the legacy wizard.
+3. Runbook updated for Support/SOC explaining how to force legacy vs seamless per organization.
+
+---
+
+## 📅 Implementation Phases & Dependencies
+
+1. **Foundation (Week 0-1)**
+   - Introduce Alembic migrations, create initial revision that mirrors current schema, and add migration stubs for the new tables/columns.
+   - Add `AGENT_PUBLIC_BASE_URL` support to `agent_enrollment_service.py` and propagate the value through Kubernetes manifests (see AWS network doc).
+   - Define a feature flag on `organizations.onboarding_flow_version` with allowed values `legacy` / `quick_start`.
+
+2. **Backend scaffolding (Week 1-2)**
+   - Implement `backend/app/integrations/` + `IntegrationManager` with Secrets Manager encryption by default.
+   - Build the `onboarding_v2` package (routes, auto discovery engine, smart deployment, validation) but behind the feature flag.
+   - Register new routers in `backend/app/main.py` once the feature flag is present.
+
+3. **AWS integration MVP (Week 2-3)**
+   - Finish the AWS connector (`aws.py`) using `asyncio.to_thread` / threadpool to wrap boto3 calls.
+   - Add Systems Manager execution path for agent deployment (requires IAM role from the Mini Corp lab plan).
+   - Persist discovered assets into `cloud_assets` and expose progress via `/api/onboarding/v2/progress`.
+
+4. **Frontend quick start (Week 3-4)**
+   - Build `frontend/app/components/onboarding/QuickStartOnboarding.tsx` and integrate it into the dashboard banner when `organization.onboarding_flow_version === 'quick_start'`.
+   - Implement a provider selection + credential intake UI (role ARN, external ID, etc.).
+   - Add progress polling + error handling UI states.
+
+5. **Validation & roll-out (Week 4-5)**
+   - Execute end-to-end onboarding inside the Mini Corp lab VPC using the new flow.
+   - Backfill documentation (`docs/api/reference.md`, `docs/security-compliance`, release notes).
+   - Build smoke tests (pytest or Playwright) covering both the legacy and quick-start flows.
+   - Once stable, migrate early adopters by flipping the `onboarding_flow_version` flag.
 
 ---
 
 ## 🏗️ **Implementation Architecture**
+
+The new flow lives alongside the legacy wizard. Keep the existing `backend/app/onboarding_routes.py` and `frontend/app/onboarding/page.tsx` untouched until the cutover criteria are met. The structure below highlights additive components.
 
 ### Core Components
 
@@ -91,6 +136,10 @@ CREATE TABLE cloud_assets (
     UNIQUE(organization_id, provider, asset_id)
 );
 ```
+
+> Encrypt credential payloads using the existing `secrets_manager` helper or a new KMS data key per organization. The decrypted form should only live in memory for the duration of the boto3 call.
+
+> **Migration plan**: Generate an Alembic revision that adds these structures in a single transaction. Do **not** rely on `init_db()` auto-creation once production data exists. `integration_credentials.credential_data` should hold ciphertext—use AWS KMS or Secrets Manager helper functions during insert/update.
 
 #### **New Backend Services**
 
@@ -174,8 +223,11 @@ class CloudIntegration(ABC):
 
 ```python
 # backend/app/integrations/aws.py
+import asyncio
 import boto3
 import botocore.exceptions
+import os
+import secrets
 from typing import Dict, List, Optional, Any
 from .base import CloudIntegration
 
@@ -188,43 +240,43 @@ class AWSIntegration(CloudIntegration):
 
     async def authenticate(self) -> bool:
         """Authenticate using AWS STS AssumeRole or direct credentials"""
-        try:
-            # Try STS AssumeRole first (recommended)
-            if 'role_arn' in self.credentials:
-                sts_client = boto3.client(
-                    'sts',
-                    aws_access_key_id=self.credentials.get('access_key_id'),
-                    aws_secret_access_key=self.credentials.get('secret_access_key')
+
+        def _authenticate_sync() -> bool:
+            try:
+                if 'role_arn' in self.credentials:
+                    sts_client = boto3.client(
+                        'sts',
+                        aws_access_key_id=self.credentials.get('access_key_id'),
+                        aws_secret_access_key=self.credentials.get('secret_access_key')
+                    )
+
+                    assumed_role = sts_client.assume_role(
+                        RoleArn=self.credentials['role_arn'],
+                        RoleSessionName=f'mini-xdr-onboarding-{self.organization_id}'
+                    )
+
+                    self.credentials = {
+                        'aws_access_key_id': assumed_role['Credentials']['AccessKeyId'],
+                        'aws_secret_access_key': assumed_role['Credentials']['SecretAccessKey'],
+                        'aws_session_token': assumed_role['Credentials']['SessionToken']
+                    }
+
+                ec2 = boto3.client(
+                    'ec2',
+                    aws_access_key_id=self.credentials['aws_access_key_id'],
+                    aws_secret_access_key=self.credentials['aws_secret_access_key'],
+                    aws_session_token=self.credentials.get('aws_session_token')
                 )
 
-                assumed_role = sts_client.assume_role(
-                    RoleArn=self.credentials['role_arn'],
-                    RoleSessionName=f'mini-xdr-onboarding-{self.organization_id}'
-                )
+                regions_response = ec2.describe_regions()
+                self.regions = [r['RegionName'] for r in regions_response['Regions']]
+                return True
 
-                self.credentials = {
-                    'aws_access_key_id': assumed_role['Credentials']['AccessKeyId'],
-                    'aws_secret_access_key': assumed_role['Credentials']['SecretAccessKey'],
-                    'aws_session_token': assumed_role['Credentials']['SessionToken']
-                }
+            except Exception as e:
+                logger.error(f"AWS authentication failed: {e}")
+                return False
 
-            # Test authentication
-            ec2 = boto3.client(
-                'ec2',
-                aws_access_key_id=self.credentials['aws_access_key_id'],
-                aws_secret_access_key=self.credentials['aws_secret_access_key'],
-                aws_session_token=self.credentials.get('aws_session_token')
-            )
-
-            # Get available regions
-            regions_response = ec2.describe_regions()
-            self.regions = [r['RegionName'] for r in regions_response['Regions']]
-
-            return True
-
-        except Exception as e:
-            logger.error(f"AWS authentication failed: {e}")
-            return False
+        return await asyncio.to_thread(_authenticate_sync)
 
     async def discover_assets(self) -> List[Dict[str, Any]]:
         """Discover EC2 instances, RDS databases, Lambda functions, etc."""
@@ -241,7 +293,7 @@ class AWSIntegration(CloudIntegration):
                     aws_session_token=self.credentials.get('aws_session_token')
                 )
 
-                instances = ec2.describe_instances()
+                instances = await asyncio.to_thread(ec2.describe_instances)
                 for reservation in instances['Reservations']:
                     for instance in reservation['Instances']:
                         if instance['State']['Name'] == 'running':
@@ -271,7 +323,7 @@ class AWSIntegration(CloudIntegration):
                     aws_session_token=self.credentials.get('aws_session_token')
                 )
 
-                db_instances = rds.describe_db_instances()
+                db_instances = await asyncio.to_thread(rds.describe_db_instances)
                 for db in db_instances['DBInstances']:
                     assets.append({
                         'provider': 'aws',
@@ -314,7 +366,8 @@ class AWSIntegration(CloudIntegration):
                     install_script = self._generate_agent_script(asset)
 
                     # Send command via SSM
-                    response = ssm.send_command(
+                    response = await asyncio.to_thread(
+                        ssm.send_command,
                         InstanceIds=[asset['asset_id']],
                         DocumentName='AWS-RunShellScript',
                         Parameters={
@@ -343,7 +396,7 @@ class AWSIntegration(CloudIntegration):
     def _generate_agent_script(self, asset: Dict[str, Any]) -> str:
         """Generate platform-specific agent installation script"""
         platform = asset['data'].get('platform', 'linux')
-        backend_url = "http://k8s-minixdr-minixdri-dc5fc1df8b-1132128475.us-east-1.elb.amazonaws.com"
+        backend_url = os.getenv("AGENT_PUBLIC_BASE_URL", "http://backend-service:8000")
 
         if platform == 'windows':
             return f'''
@@ -400,6 +453,9 @@ async def quick_start_onboarding(
 
     # Get organization
     org = await get_organization(current_user, db)
+
+    if (org.onboarding_flow_version or "legacy") != "quick_start":
+        raise HTTPException(status_code=409, detail="Quick-start onboarding not enabled for this organization")
 
     # Initialize integration manager
     integration_mgr = IntegrationManager(org.id, db)
@@ -560,7 +616,7 @@ class IntegrationManager:
     async def _store_credentials(self, provider: str, credentials: Dict[str, Any]):
         """Store encrypted credentials in database"""
 
-        # Encrypt sensitive data
+        # Encrypt sensitive data (Secrets Manager / KMS-backed)
         encrypted_data = await self._encrypt_credentials(credentials)
 
         # Store in database
@@ -578,13 +634,12 @@ class IntegrationManager:
     async def _get_credentials(self, provider: str) -> Optional[Dict[str, Any]]:
         """Retrieve and decrypt credentials"""
 
-        # Query database
-        # Return decrypted credentials
+        # Query database, decrypt with org-level key, return dict ready for boto3
         pass
 
     async def _encrypt_credentials(self, credentials: Dict[str, Any]) -> Dict[str, Any]:
         """Encrypt sensitive credential data"""
-        # Use organization's encryption key
+        # Use organization's encryption key (Secrets Manager + KMS)
         pass
 
     async def _test_integration(self, provider: str) -> str:
@@ -627,7 +682,11 @@ export function QuickStartOnboarding() {
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [progress, setProgress] = useState<OnboardingProgress | null>(null);
-  const { user } = useAuth();
+  const { user, organization } = useAuth();
+
+  if (organization?.onboarding_flow_version !== 'quick_start') {
+    return null;
+  }
 
   const handleCloudConnect = async (provider: string) => {
     setIsConnecting(true);
@@ -729,7 +788,7 @@ export function QuickStartOnboarding() {
         </div>
       </div>
 
-      {/* No legacy fallback - this is the only onboarding method */}
+      {/* Legacy wizard remains available when organization.onboarding_flow_version !== 'quick_start' */}
     </div>
   );
 }
@@ -1136,37 +1195,38 @@ COMMIT;
 ### **Phase 3: Frontend Deployment**
 
 1. **Create new components** in `frontend/app/components/onboarding/`
-2. **Replace legacy onboarding completely**:
+2. **Gate the new component via organization flag**:
    ```typescript
-   // In frontend/app/onboarding/page.tsx - COMPLETELY REPLACE LEGACY
+   // frontend/app/onboarding/page.tsx
+   import LegacyOnboarding from '@/components/onboarding/LegacyWizard';
    import { QuickStartOnboarding } from '@/components/onboarding/QuickStartOnboarding';
-   import { OnboardingProgress } from '@/components/onboarding/OnboardingProgress';
+   import { useAuth } from '@/contexts/AuthContext';
 
    export default function OnboardingPage() {
-     // NEW: Always use seamless onboarding - no legacy fallback
-     return <QuickStartOnboarding />;
+     const { organization } = useAuth();
+
+     if (organization?.onboarding_flow_version === 'quick_start') {
+       return <QuickStartOnboarding />;
+     }
+
+     return <LegacyOnboarding />;
    }
    ```
 
-3. **Update navigation to remove legacy links**:
-   ```typescript
-   // Remove any links to legacy onboarding
-   // Update any settings that reference old onboarding flow
-   ```
+3. **Expose a tenant-level toggle** in the admin settings UI so Support can switch organizations between flows without code changes.
 
 ### **Phase 4: Mini Corp First Implementation**
 
-1. **Immediate Activation**: Enable new onboarding for Mini Corp organization (ID: 2)
-2. **Test with Mini Corp**: Deploy mini-corp network and test complete flow
-3. **Validate Integration**: Ensure AWS discovery, agent deployment, and monitoring work
-4. **Gather Feedback**: Use Mini Corp as pilot for refinements
+1. **Enable the flag** (`onboarding_flow_version='quick_start'`) for Mini Corp (ID: 2) only.
+2. **Run the AWS lab scenario** end-to-end, capturing command logs and telemetry validation steps.
+3. **Document gaps** (UI polish, error handling, missing metrics) before onboarding more tenants.
 
 ### **Phase 5: Complete Replacement**
 
-1. **Full Migration**: After Mini Corp success, enable for all organizations
-2. **Legacy Cleanup**: Remove old onboarding routes and components
-3. **Database Cleanup**: Archive old onboarding data structures
-4. **Documentation Update**: Update all docs to reference new onboarding only
+1. **Staged rollout**: Flip the flag for a small cohort, monitor metrics, then expand.
+2. **Retire legacy components** only after telemetry shows parity and support sign-off is complete.
+3. **Archive legacy data** and schema once no tenants depend on it (post-migration migration).
+4. **Documentation update**: switch product docs once all production tenants run the quick-start flow.
 
 ---
 

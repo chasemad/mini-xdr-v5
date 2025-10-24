@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import dynamic from 'next/dynamic'
 
 // Dynamic imports for 3D components to prevent SSR issues
-const ThreatGlobe = dynamic(() => import('./threat-globe'), { 
+const ThreatGlobe = dynamic(() => import('./threat-globe'), {
   ssr: false,
   loading: () => (
     <div className="flex items-center justify-center h-96 bg-gray-900 text-white">
@@ -27,7 +27,7 @@ const ThreatGlobe = dynamic(() => import('./threat-globe'), {
   )
 })
 
-const Attack3DTimeline = dynamic(() => import('./3d-timeline'), { 
+const Attack3DTimeline = dynamic(() => import('./3d-timeline'), {
   ssr: false,
   loading: () => (
     <div className="flex items-center justify-center h-96 bg-gray-900 text-white">
@@ -42,11 +42,11 @@ const Attack3DTimeline = dynamic(() => import('./3d-timeline'), {
 import { ThreatPoint, AttackPath, PerformanceMetrics } from '../../lib/three-helpers'
 import { TimelineEvent } from './3d-timeline'
 import { threatDataService, useThreatData } from '../../lib/threat-data'
-import { 
-  Globe, 
-  Activity, 
-  Shield, 
-  AlertTriangle, 
+import {
+  Globe,
+  Activity,
+  Shield,
+  AlertTriangle,
   TrendingUp,
   Settings,
   Maximize2,
@@ -65,6 +65,7 @@ import {
   X
 } from 'lucide-react'
 import Link from 'next/link'
+import { DashboardLayout } from '@/components/DashboardLayout'
 
 // Dashboard state interface
 interface DashboardState {
@@ -156,22 +157,21 @@ const VisualizationDashboard: React.FC = () => {
   const [activeView, setActiveView] = useState<'globe' | 'timeline' | 'split'>('globe')
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Data fetching hooks
-  const { 
-    fetchThreats, 
-    fetchDistributedThreats, 
-    fetchTimeline, 
-    fetchAttackPaths, 
+  const {
+    fetchThreats,
+    fetchDistributedThreats,
+    fetchTimeline,
+    fetchAttackPaths,
     fetchFederatedInsights,
-    subscribe 
+    subscribe
   } = useThreatData()
 
   // Calculate dashboard statistics
   const dashboardStats = useMemo<DashboardStats>(() => {
     const { threats, attackPaths, timelineEvents, performance } = dashboardState
-    
+
     return {
       totalThreats: threats.length,
       criticalThreats: threats.filter(t => t.details.severity === 'critical').length,
@@ -229,7 +229,7 @@ const VisualizationDashboard: React.FC = () => {
 
         // Combine regular and distributed threats
         const allThreats = [...threats, ...distributedThreats]
-        
+
         console.log('📊 Dashboard data loaded:', {
           regularThreats: threats.length,
           distributedThreats: distributedThreats.length,
@@ -265,7 +265,7 @@ const VisualizationDashboard: React.FC = () => {
   // Set up real-time subscriptions with stable dependencies
   const stableUpdateInterval = settings.updateInterval
   const stableIsPaused = isPaused
-  
+
   useEffect(() => {
     if (stableIsPaused) return
 
@@ -332,7 +332,7 @@ const VisualizationDashboard: React.FC = () => {
       const significantFpsChange = !prev.performance || Math.abs(prev.performance.fps - metrics.fps) > 1.0
       const significantDrawCallChange = !prev.performance || Math.abs(prev.performance.drawCalls - metrics.drawCalls) > 10
       const significantTriangleChange = !prev.performance || Math.abs(prev.performance.triangles - metrics.triangles) > 1000
-      
+
       if (significantFpsChange || significantDrawCallChange || significantTriangleChange) {
         return {
           ...prev,
@@ -362,7 +362,7 @@ const VisualizationDashboard: React.FC = () => {
       medium: 'bg-yellow-500 text-black',
       low: 'bg-green-500 text-white'
     }
-    
+
     return (
       <Badge className={colors[severity as keyof typeof colors]}>
         {severity.toUpperCase()}
@@ -370,101 +370,13 @@ const VisualizationDashboard: React.FC = () => {
     )
   }
 
-  // Navigation menu items
-  const navigationItems = [
-    { href: '/', label: 'SOC Dashboard', icon: Home, description: 'Main command center' },
-    { href: '/incidents', label: 'Incidents', icon: AlertTriangle, description: 'Active security incidents' },
-    { href: '/visualizations', label: '3D Visualization', icon: Globe, description: 'Interactive threat globe', active: true },
-    { href: '/analytics', label: 'Analytics', icon: BarChart3, description: 'ML monitoring & insights' },
-    { href: '/intelligence', label: 'Threat Intel', icon: Brain, description: 'Intelligence feeds' },
-    { href: '/hunt', label: 'Threat Hunting', icon: Target, description: 'Proactive hunting' },
-    { href: '/investigations', label: 'Investigations', icon: Search, description: 'Case management' },
-    { href: '/agents', label: 'AI Agents', icon: Users, description: 'Agent coordination' },
-    { href: '/settings', label: 'Settings', icon: Settings, description: 'System configuration' }
-  ]
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white flex">
-      {/* Sidebar Navigation */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-80 bg-gray-900/95 backdrop-blur-sm border-r border-gray-700 transform transition-transform duration-300 ease-in-out ${
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-      } lg:translate-x-0 lg:static lg:inset-0`}>
-        <div className="flex flex-col h-full">
-          {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-gray-700">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                <Shield className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h2 className="font-bold text-lg">Mini-XDR</h2>
-                <p className="text-xs text-gray-400">Security Operations</p>
-              </div>
-            </div>
-            <button
-              onClick={() => setSidebarOpen(false)}
-              className="lg:hidden p-2 hover:bg-gray-800 rounded-lg"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          {/* Navigation */}
-          <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-            {navigationItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${
-                  item.active 
-                    ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30' 
-                    : 'hover:bg-gray-800/50 text-gray-300 hover:text-white'
-                }`}
-              >
-                <item.icon className={`w-5 h-5 ${item.active ? 'text-blue-400' : 'text-gray-400 group-hover:text-white'}`} />
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm">{item.label}</div>
-                  <div className="text-xs text-gray-500 truncate">{item.description}</div>
-                </div>
-              </Link>
-            ))}
-          </nav>
-
-          {/* Status Footer */}
-          <div className="p-4 border-t border-gray-700">
-            <div className="flex items-center gap-2 text-xs">
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-              <span className="text-gray-400">System Status: Operational</span>
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              {dashboardStats.totalThreats} active threats detected
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Overlay for mobile */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* Main Content */}
-      <div className={`flex-1 ${isFullscreen ? 'p-0' : 'p-6'} lg:ml-0`}>
+    <DashboardLayout breadcrumbs={[{ label: "3D Visualizations" }]}>
+      <div className="space-y-6">
         {/* Header */}
         {!isFullscreen && (
           <div className="mb-6">
             <div className="flex items-center justify-between">
-              {/* Mobile menu button */}
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 hover:bg-gray-800 rounded-lg mr-4"
-              >
-                <Menu className="w-6 h-6" />
-              </button>
-              
               <div>
               <h1 className="text-3xl font-bold flex items-center gap-2">
                 <Globe className="w-8 h-8 text-blue-400" />
@@ -473,7 +385,7 @@ const VisualizationDashboard: React.FC = () => {
               <p className="text-gray-300 mt-1">
                 Real-time cybersecurity intelligence with immersive 3D visualization
               </p>
-              
+
               {/* Purpose and Usage Guide */}
               <div className="mt-6 bg-gradient-to-r from-blue-600/10 to-purple-600/10 border border-blue-500/20 rounded-lg p-6">
                 <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
@@ -515,20 +427,20 @@ const VisualizationDashboard: React.FC = () => {
                 </div>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-4">
               <div className="text-right">
                 <div className="text-sm text-gray-400">Last Updated</div>
                 <div className="text-sm">
-                  {dashboardState.lastUpdated ? 
-                    new Date(dashboardState.lastUpdated).toLocaleTimeString() : 
+                  {dashboardState.lastUpdated ?
+                    new Date(dashboardState.lastUpdated).toLocaleTimeString() :
                     'Never'
                   }
                 </div>
               </div>
-              
-              <Button 
-                variant="outline" 
+
+              <Button
+                variant="outline"
                 size="sm"
                 onClick={() => setIsPaused(!isPaused)}
               >
@@ -634,7 +546,7 @@ const VisualizationDashboard: React.FC = () => {
                   3D threat intelligence and attack timeline visualization
                 </CardDescription>
               </div>
-              
+
               <div className="flex items-center gap-2">
                 <Tabs value={activeView} onValueChange={(v) => setActiveView(v as any)}>
                   <TabsList className="grid w-48 grid-cols-3">
@@ -643,7 +555,7 @@ const VisualizationDashboard: React.FC = () => {
                     <TabsTrigger value="split">Split</TabsTrigger>
                   </TabsList>
                 </Tabs>
-                
+
                 <Button variant="outline" size="sm" onClick={toggleFullscreen}>
                   <Maximize2 className="w-4 h-4" />
                 </Button>
@@ -746,7 +658,7 @@ const VisualizationDashboard: React.FC = () => {
                       max={1}
                       step={0.1}
                       value={settings.globeOpacity}
-                      onChange={(e) => 
+                      onChange={(e) =>
                         setSettings(prev => ({ ...prev, globeOpacity: Number(e.target.value) }))
                       }
                       className="w-full"
@@ -764,7 +676,7 @@ const VisualizationDashboard: React.FC = () => {
                       max={5}
                       step={0.1}
                       value={settings.animationSpeed}
-                      onChange={(e) => 
+                      onChange={(e) =>
                         setSettings(prev => ({ ...prev, animationSpeed: Number(e.target.value) }))
                       }
                       className="w-full"
@@ -776,7 +688,7 @@ const VisualizationDashboard: React.FC = () => {
                     <label className="text-sm font-medium">Threat Severity</label>
                     <select
                       value={settings.threatFilter}
-                      onChange={(e) => 
+                      onChange={(e) =>
                         setSettings(prev => ({ ...prev, threatFilter: e.target.value as any }))
                       }
                       className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
@@ -793,7 +705,7 @@ const VisualizationDashboard: React.FC = () => {
                     <label className="text-sm font-medium">Region</label>
                     <select
                       value={settings.regionFilter}
-                      onChange={(e) => 
+                      onChange={(e) =>
                         setSettings(prev => ({ ...prev, regionFilter: e.target.value }))
                       }
                       className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
@@ -812,7 +724,7 @@ const VisualizationDashboard: React.FC = () => {
                     <div className="border-t border-gray-600 pt-3">
                       <h4 className="text-sm font-semibold text-blue-400 mb-2">Animation Controls</h4>
                     </div>
-                    
+
                     <div className="flex items-center justify-between">
                       <div>
                         <label className="text-sm font-medium">Auto Rotate Globe</label>
@@ -821,13 +733,13 @@ const VisualizationDashboard: React.FC = () => {
                       <input
                         type="checkbox"
                         checked={settings.autoRotate}
-                        onChange={(e) => 
+                        onChange={(e) =>
                           setSettings(prev => ({ ...prev, autoRotate: e.target.checked }))
                         }
                         className="rounded"
                       />
                     </div>
-                    
+
                     <div className="flex items-center justify-between">
                       <div>
                         <label className="text-sm font-medium">Country Labels</label>
@@ -836,13 +748,13 @@ const VisualizationDashboard: React.FC = () => {
                       <input
                         type="checkbox"
                         checked={settings.showCountryLabels}
-                        onChange={(e) => 
+                        onChange={(e) =>
                           setSettings(prev => ({ ...prev, showCountryLabels: e.target.checked }))
                         }
                         className="rounded"
                       />
                     </div>
-                    
+
                     <div className="flex items-center justify-between">
                       <div>
                         <label className="text-sm font-medium">Attack Paths</label>
@@ -851,13 +763,13 @@ const VisualizationDashboard: React.FC = () => {
                       <input
                         type="checkbox"
                         checked={settings.showAttackPaths}
-                        onChange={(e) => 
+                        onChange={(e) =>
                           setSettings(prev => ({ ...prev, showAttackPaths: e.target.checked }))
                         }
                         className="rounded"
                       />
                     </div>
-                    
+
                     <div className="flex items-center justify-between">
                       <div>
                         <label className="text-sm font-medium">Performance HUD</label>
@@ -866,13 +778,13 @@ const VisualizationDashboard: React.FC = () => {
                       <input
                         type="checkbox"
                         checked={settings.showPerformanceHUD}
-                        onChange={(e) => 
+                        onChange={(e) =>
                           setSettings(prev => ({ ...prev, showPerformanceHUD: e.target.checked }))
                         }
                         className="rounded"
                       />
                     </div>
-                    
+
                     <div className="flex items-center justify-between">
                       <div>
                         <label className="text-sm font-medium">Pause Updates</label>
@@ -983,7 +895,7 @@ const VisualizationDashboard: React.FC = () => {
           </div>
         )}
       </div>
-    </div>
+    </DashboardLayout>
   )
 }
 
