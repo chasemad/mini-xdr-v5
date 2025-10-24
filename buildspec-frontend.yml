@@ -26,7 +26,15 @@ phases:
           if [[ "$CODEBUILD_WEBHOOK_TRIGGER" == tag/* ]]; then
             VERSION_TAG=$(echo $CODEBUILD_WEBHOOK_TRIGGER | sed 's/tag\///')
             VERSION_NUMBER=$(echo $VERSION_TAG | sed 's/v//')
-            echo "Building from tag: $VERSION_TAG (version: $VERSION_NUMBER)"
+            echo "Building from webhook tag: $VERSION_TAG (version: $VERSION_NUMBER)"
+          fi
+        else
+          # Fallback: Check for git tags on current commit
+          git fetch --tags 2>/dev/null || true
+          VERSION_TAG=$(git describe --exact-match --tags HEAD 2>/dev/null || echo "")
+          if [ ! -z "$VERSION_TAG" ]; then
+            VERSION_NUMBER=$(echo $VERSION_TAG | sed 's/v//')
+            echo "Building from git tag: $VERSION_TAG (version: $VERSION_NUMBER)"
           fi
         fi
       - echo "Repository URI: $REPOSITORY_URI"
@@ -41,8 +49,7 @@ phases:
       - |
         if [ ! -z "$VERSION_NUMBER" ]; then
           # Build with version tags
-          docker buildx build \
-            --platform linux/amd64 \
+          docker build \
             --build-arg NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_URL \
             --build-arg NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
             --build-arg BUILD_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
@@ -51,19 +58,16 @@ phases:
             -t $REPOSITORY_URI:$VERSION_NUMBER \
             -t $REPOSITORY_URI:$IMAGE_TAG \
             -t $REPOSITORY_URI:latest \
-            --load \
             .
         else
           # Build with commit hash only
-          docker buildx build \
-            --platform linux/amd64 \
+          docker build \
             --build-arg NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_URL \
             --build-arg NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
             --build-arg BUILD_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
             --build-arg VCS_REF="$COMMIT_HASH" \
             -t $REPOSITORY_URI:$IMAGE_TAG \
             -t $REPOSITORY_URI:latest \
-            --load \
             .
         fi
       - echo "Frontend image built successfully"
