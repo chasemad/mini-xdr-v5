@@ -1,42 +1,69 @@
-FROM python:3.12-slim
+# ============================================================================
+# Mini-XDR Backend Dockerfile
+# ============================================================================
+FROM python:3.11-slim AS base
+
+# Build arguments
+ARG BUILD_DATE
+ARG VCS_REF
+LABEL org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.title="mini-xdr-backend" \
+      org.opencontainers.image.description="Mini-XDR Backend API with ML Detection"
 
 # Set working directory
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    postgresql-client \
     curl \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
+# Copy requirements first (for layer caching)
 COPY backend/requirements.txt .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Create necessary directories with proper structure for non-root user
+RUN mkdir -p /app/models /app/logs /app/evidence /app/data /app/policies \
+    /app/data/honeypot_configs /tmp/matplotlib
 
 # Copy application code
-COPY backend/ .
+COPY backend/app /app/app
+COPY backend/alembic.ini /app/
+COPY backend/migrations /app/migrations
 
-# Create directories for models and policies
-RUN mkdir -p models policies logs
+# Copy the entire backend directory structure (includes policies and models)
+COPY backend /tmp/backend_copy
 
-# Set environment variables
-ENV PYTHONPATH=/app
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+# Move models and policies to the correct locations
+RUN if [ -d "/tmp/backend_copy/policies" ]; then cp -r /tmp/backend_copy/policies/* /app/policies/ 2>/dev/null || true; fi && \
+    if [ -d "/tmp/backend_copy/models" ]; then cp -r /tmp/backend_copy/models/* /app/models/ 2>/dev/null || true; fi && \
+    rm -rf /tmp/backend_copy
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash app && chown -R app:app /app
-USER app
+# Copy root-level model files (best_*.pth) - Now efficient with .dockerignore!
+# With .dockerignore in place, this is now a simple direct copy (no 27GB overhead!)
+COPY best_*.pth /app/models/
 
-# Health check
+# Set permissions and ownership for non-root user (1000:1000)
+RUN chmod -R 755 /app /tmp/matplotlib && \
+    chown -R 1000:1000 /app /tmp/matplotlib
+
+# Set environment variables for writable directories
+ENV HOME=/app \
+    MPLCONFIGDIR=/tmp/matplotlib
+
+# Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Expose port
-EXPOSE 8000
+# Expose ports
+EXPOSE 8000 9090
 
-# Start command
-CMD ["uvicorn", "app.entrypoint:app", "--host", "127.0.0.1", "--port", "8000", "--workers", "1"]
+# Run the application
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

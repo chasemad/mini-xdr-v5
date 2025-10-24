@@ -5,6 +5,7 @@ Dynamic honeypot and deception technology management
 import asyncio
 import json
 import logging
+import os
 import yaml
 import subprocess
 import docker
@@ -98,8 +99,9 @@ class DeceptionAgent:
         self.deception_scenarios: Dict[str, DeceptionScenario] = {}
         self.attacker_profiles: Dict[str, AttackerProfile] = {}
         
-        # Configuration paths
-        self.config_dir = Path("./honeypot_configs")
+        # Configuration paths - use environment variable or fallback to local/Docker path
+        config_path = os.getenv("HONEYPOT_CONFIG_DIR", "./honeypot_configs")
+        self.config_dir = Path(config_path)
         self.config_dir.mkdir(exist_ok=True, parents=True)
         
         # Honeypot templates

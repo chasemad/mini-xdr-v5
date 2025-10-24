@@ -1,0 +1,6 @@
+{
+  "subscription_id": "e5636423-8514-4bdd-bfef-f7ecdb934260",
+  "resource_group": "mini-xdr-ml-rg",
+  "workspace_name": "mini-xdr-ml-workspace",
+  "location": "eastus"
+}

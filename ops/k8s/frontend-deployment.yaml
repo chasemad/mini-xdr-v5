@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: mini-xdr-frontend:latest
+        image: minixdracr.azurecr.io/mini-xdr-frontend:latest
         ports:
         - containerPort: 3000
           name: http

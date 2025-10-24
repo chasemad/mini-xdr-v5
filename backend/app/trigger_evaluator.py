@@ -118,7 +118,78 @@ class TriggerEvaluator:
         }
         """
         try:
-            conditions = trigger.conditions
+            conditions = trigger.conditions or {}
+
+            incident_reason = (incident.reason or "").lower()
+            incident_category = (incident.threat_category or "").lower()
+            incident_severity = (incident.escalation_level or "medium").lower()
+
+            # Optional threat category matching
+            if "threat_category" in conditions:
+                required = conditions["threat_category"]
+                if not isinstance(required, (list, tuple, set)):
+                    required = [required]
+                required = {str(value).lower() for value in required}
+                if incident_category not in required:
+                    logger.debug(
+                        "Trigger '%s': threat_category '%s' not in %s",
+                        trigger.name,
+                        incident_category,
+                        required,
+                    )
+                    return False
+
+            if "threat_category_in" in conditions:
+                required = conditions["threat_category_in"]
+                required = {str(value).lower() for value in required}
+                if incident_category not in required:
+                    logger.debug(
+                        "Trigger '%s': threat_category '%s' not in %s",
+                        trigger.name,
+                        incident_category,
+                        required,
+                    )
+                    return False
+
+            if "threat_category_pattern" in conditions:
+                pattern = str(conditions["threat_category_pattern"]).lower()
+                if pattern not in incident_category and pattern not in incident_reason:
+                    logger.debug(
+                        "Trigger '%s': threat pattern '%s' not found",
+                        trigger.name,
+                        pattern,
+                    )
+                    return False
+
+            # Escalation / severity matching
+            severity_order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+
+            if "escalation_level" in conditions:
+                required = conditions["escalation_level"]
+                if not isinstance(required, (list, tuple, set)):
+                    required = [required]
+                required = {str(value).lower() for value in required}
+                if incident_severity not in required:
+                    logger.debug(
+                        "Trigger '%s': escalation level '%s' not in %s",
+                        trigger.name,
+                        incident_severity,
+                        required,
+                    )
+                    return False
+
+            if "escalation_level_min" in conditions:
+                min_level = str(conditions["escalation_level_min"]).lower()
+                incident_rank = severity_order.get(incident_severity, 1)
+                required_rank = severity_order.get(min_level, 1)
+                if incident_rank < required_rank:
+                    logger.debug(
+                        "Trigger '%s': escalation level '%s' below minimum '%s'",
+                        trigger.name,
+                        incident_severity,
+                        min_level,
+                    )
+                    return False
 
             # Check event type (if events provided)
             if events and "event_type" in conditions:
@@ -238,21 +309,24 @@ class TriggerEvaluator:
             parameters = step.get("parameters", {})
             resolved_params = {}
 
+            def _resolve_value(value):
+                """Recursively resolve template variables within parameter values"""
+                if isinstance(value, str):
+                    if value.startswith("event."):
+                        var_name = value.split(".", 1)[1]
+                        return context.get(var_name, value)
+                    if value.startswith("{") and value.endswith("}"):
+                        var_name = value[1:-1]
+                        return context.get(var_name, value)
+                    return value
+                if isinstance(value, list):
+                    return [_resolve_value(item) for item in value]
+                if isinstance(value, dict):
+                    return {k: _resolve_value(v) for k, v in value.items()}
+                return value
+
             for param_key, param_value in parameters.items():
-                # Check if the value is a template variable
-                if isinstance(param_value, str):
-                    # Handle "event.source_ip" format
-                    if param_value.startswith("event."):
-                        var_name = param_value.split(".", 1)[1]  # Get "source_ip" from "event.source_ip"
-                        resolved_params[param_key] = context.get(var_name, param_value)
-                    # Handle "{source_ip}" format
-                    elif param_value.startswith("{") and param_value.endswith("}"):
-                        var_name = param_value[1:-1]  # Remove {}
-                        resolved_params[param_key] = context.get(var_name, param_value)
-                    else:
-                        resolved_params[param_key] = param_value
-                else:
-                    resolved_params[param_key] = param_value
+                resolved_params[param_key] = _resolve_value(param_value)
 
             resolved_step["parameters"] = resolved_params
             resolved_steps.append(resolved_step)

@@ -4,5 +4,4 @@ metadata:
   name: mini-xdr
   labels:
     name: mini-xdr
-    app.kubernetes.io/name: mini-xdr
-    app.kubernetes.io/version: "2.0"
+    environment: production

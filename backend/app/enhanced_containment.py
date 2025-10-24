@@ -118,8 +118,8 @@ class EnhancedContainmentEngine:
         # 6. Calculate composite risk score
         composite_risk = self._calculate_composite_risk(risk_factors)
         
-        # 7. Determine escalation level and containment decision
-        escalation_level = self._determine_escalation_level(composite_risk)
+        # 7. Determine escalation level and containment decision (pass incident for enhanced logic)
+        escalation_level = self._determine_escalation_level(composite_risk, incident)
         should_contain = composite_risk >= self.base_thresholds["medium"]
         
         # Policy override takes precedence
@@ -325,16 +325,32 @@ class EnhancedContainmentEngine:
         
         return min(weighted_sum / max(total_weight, 0.1), 1.0)
     
-    def _determine_escalation_level(self, risk_score: float) -> str:
-        """Determine escalation level based on risk score"""
+    def _determine_escalation_level(self, risk_score: float, incident: Incident = None) -> str:
+        """Determine escalation level based on risk score and threat indicators"""
+        base_level = "low"
+        
         if risk_score >= self.base_thresholds["critical"]:
-            return "critical"
+            base_level = "critical"
         elif risk_score >= self.base_thresholds["high"]:
-            return "high"
+            base_level = "high"
         elif risk_score >= self.base_thresholds["medium"]:
-            return "medium"
-        else:
-            return "low"
+            base_level = "medium"
+        
+        # Check incident for critical threat categories that should elevate priority
+        if incident and incident.threat_category:
+            critical_threats = [
+                "malware", "ransomware", "data_exfiltration", "privilege_escalation",
+                "lateral_movement", "backdoor", "trojan", "cryptominer"
+            ]
+            threat_cat = incident.threat_category.lower()
+            
+            if any(ct in threat_cat for ct in critical_threats):
+                # Ensure at least HIGH priority for critical threats
+                if base_level not in ["critical", "high"]:
+                    logger.info(f"Elevating escalation to HIGH due to critical threat category: {threat_cat}")
+                    return "high"
+        
+        return base_level
     
     def _calculate_confidence(
         self, risk_factors: Dict[str, float], event_count: int

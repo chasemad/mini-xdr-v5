@@ -1,0 +1,116 @@
+# ============================================================================
+# Mini-XDR Azure Deployment Configuration
+# ============================================================================
+# Copy this file to terraform.tfvars and customize for your deployment
+# ============================================================================
+
+# ============================================================================
+# Basic Configuration
+# ============================================================================
+
+project_name         = "mini-xdr"
+environment          = "prod"
+location             = "eastus"
+resource_group_name  = "mini-xdr-prod-rg"
+
+# ============================================================================
+# Network Configuration
+# ============================================================================
+
+vnet_address_space         = ["10.0.0.0/16"]
+aks_subnet_prefix          = "10.0.1.0/24"
+services_subnet_prefix     = "10.0.2.0/24"
+appgw_subnet_prefix        = "10.0.3.0/24"
+corp_network_subnet_prefix = "10.0.10.0/24"
+agents_subnet_prefix       = "10.0.20.0/24"
+
+# ============================================================================
+# AKS Configuration
+# ============================================================================
+
+aks_node_count = 3
+aks_node_size  = "Standard_D4s_v3"  # 4 vCPUs, 16 GB RAM
+
+# ============================================================================
+# Database Configuration
+# ============================================================================
+
+enable_postgres = true
+enable_redis    = true
+
+postgres_admin_username = "xdradmin"
+
+# ============================================================================
+# Mini Corporate Network Configuration
+# ============================================================================
+
+enable_mini_corp_network = true
+enable_bastion           = true
+
+# Domain Controller
+domain_controller_size = "Standard_D2s_v3"  # 2 vCPUs, 8 GB RAM
+
+# Windows Endpoints (Workstations)
+windows_endpoint_count = 3
+windows_endpoint_size  = "Standard_B2s"  # 2 vCPUs, 4 GB RAM
+
+# Linux Servers
+linux_server_count = 2
+linux_server_size  = "Standard_B2s"  # 2 vCPUs, 4 GB RAM
+
+# VM Admin Configuration
+admin_username = "xdradmin"
+
+# ============================================================================
+# Auto-shutdown Configuration (Cost Savings)
+# ============================================================================
+
+enable_auto_shutdown      = true
+auto_shutdown_time        = "2200"  # 10:00 PM
+auto_shutdown_timezone    = "Eastern Standard Time"
+auto_shutdown_email       = "admin@example.com"
+
+# ============================================================================
+# Tags
+# ============================================================================
+
+tags = {
+  Project     = "Mini-XDR"
+  Environment = "Production"
+  ManagedBy   = "Terraform"
+  Owner       = "Security Team"
+  CostCenter  = "Security"
+}
+
+# ============================================================================
+# Optional: Advanced Configuration
+# ============================================================================
+
+# Uncomment and customize as needed:
+
+# Application Gateway
+# appgw_sku_name     = "WAF_v2"
+# appgw_sku_tier     = "WAF_v2"
+# appgw_capacity_min = 2
+# appgw_capacity_max = 5
+
+# PostgreSQL
+# postgres_sku_name = "GP_Standard_D2s_v3"
+# postgres_storage_mb = 131072  # 128 GB
+
+# Redis
+# redis_capacity = 1
+# redis_family   = "C"
+# redis_sku_name = "Standard"
+
+# ============================================================================
+# Security Notes
+# ============================================================================
+#
+# - Your IP address is auto-detected for NSG rules (no configuration needed)
+# - All secrets (passwords, keys) are generated automatically
+# - Secrets are stored in Azure Key Vault
+# - No credentials are stored in this file or Terraform state
+#
+# ============================================================================
+

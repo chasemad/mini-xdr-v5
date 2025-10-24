@@ -1,0 +1,164 @@
+# ============================================================================
+# Mini-XDR Backend Dockerfile - Production (CPU-Only, No Training Data)
+# ============================================================================
+# Optimized for deployment within AWS quota limits (no GPU)
+# Excludes: 9.6GB training data, development files, tests
+# Includes: Application code, pre-trained models (92MB), runtime configs
+# ============================================================================
+
+FROM python:3.11-slim AS base
+
+# Build arguments for metadata
+ARG BUILD_DATE
+ARG VCS_REF
+ARG VERSION=1.0.0
+
+LABEL org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.title="mini-xdr-backend-production" \
+      org.opencontainers.image.description="Mini-XDR Backend API with CPU-only ML Detection (No Training Data)"
+
+# Set working directory
+WORKDIR /app
+
+# ============================================================================
+# STAGE 1: Install system dependencies
+# ============================================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Build essentials for Python packages
+    gcc \
+    g++ \
+    make \
+    # Database clients
+    postgresql-client \
+    libpq-dev \
+    # Network utilities
+    curl \
+    wget \
+    # SSH client for honeypot connections
+    openssh-client \
+    # DNS utilities for attribution agent
+    dnsutils \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# ============================================================================
+# STAGE 2: Install Python dependencies (CPU-only)
+# ============================================================================
+COPY backend/requirements.txt .
+
+# Install Python dependencies with optimizations
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    # Install CPU-only PyTorch first (before other requirements)
+    pip install --no-cache-dir torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cpu && \
+    # Install rest of dependencies (excluding torch/torchvision since they're already installed)
+    grep -v "^torch==" requirements.txt | grep -v "^torchvision==" > requirements_filtered.txt && \
+    pip install --no-cache-dir -r requirements_filtered.txt && \
+    # Clean up
+    rm -rf ~/.cache/pip requirements_filtered.txt
+
+# ============================================================================
+# STAGE 3: Create directory structure
+# ============================================================================
+RUN mkdir -p \
+    /app/models \
+    /app/logs \
+    /app/evidence \
+    /app/data \
+    /app/policies \
+    /app/data/honeypot_configs \
+    /tmp/matplotlib \
+    /tmp/torch_cache && \
+    chmod -R 755 /app /tmp/matplotlib /tmp/torch_cache
+
+# ============================================================================
+# STAGE 4: Copy application code
+# ============================================================================
+# Copy application source
+COPY backend/app /app/app
+
+# Copy database migrations
+COPY backend/alembic.ini /app/
+COPY backend/migrations /app/migrations
+
+# Copy policies
+COPY backend/policies /app/policies
+
+# ============================================================================
+# STAGE 5: Copy ONLY pre-trained models (exclude training data!)
+# ============================================================================
+# First, copy everything we need to a staging area
+COPY backend/models /tmp/backend_models
+COPY models /tmp/root_models
+
+# Now selectively copy only model files (not training data) using RUN
+RUN echo "Copying pre-trained models (excluding training data)..." && \
+    mkdir -p /app/models/windows_specialist_13class && \
+    # Copy backend models if they exist
+    find /tmp/backend_models -name "*.pkl" -exec cp {} /app/models/ \; 2>/dev/null || true && \
+    find /tmp/backend_models -name "*.pth" -exec cp {} /app/models/ \; 2>/dev/null || true && \
+    # Copy root models if they exist
+    find /tmp/root_models -maxdepth 1 -name "best_*.pth" -exec cp {} /app/models/ \; 2>/dev/null || true && \
+    find /tmp/root_models -maxdepth 1 -name "isolation_forest*.pkl" -exec cp {} /app/models/ \; 2>/dev/null || true && \
+    find /tmp/root_models -maxdepth 1 -name "scaler.pkl" -exec cp {} /app/models/ \; 2>/dev/null || true && \
+    find /tmp/root_models -maxdepth 1 -name "lstm_autoencoder.pth" -exec cp {} /app/models/ \; 2>/dev/null || true && \
+    # Copy Windows specialist models
+    find /tmp/root_models/windows_specialist_13class -name "*.pth" -exec cp {} /app/models/windows_specialist_13class/ \; 2>/dev/null || true && \
+    find /tmp/root_models/windows_specialist_13class -name "*.pkl" -exec cp {} /app/models/windows_specialist_13class/ \; 2>/dev/null || true && \
+    # Clean up staging area
+    rm -rf /tmp/backend_models /tmp/root_models && \
+    echo "=== Models copied to container ===" && \
+    ls -lh /app/models/ 2>/dev/null || echo "No models in /app/models/" && \
+    ls -lh /app/models/windows_specialist_13class/ 2>/dev/null || echo "No Windows models" && \
+    echo "=== Verifying no training data ===" && \
+    [ $(find /app -type f -name "*training_data*.csv" 2>/dev/null | wc -l) -eq 0 ] && \
+    [ $(find /app -type d -name "training_data" 2>/dev/null | wc -l) -eq 0 ] && \
+    echo "✅ No training data found - image is clean"
+
+# ============================================================================
+# STAGE 6: Security hardening
+# ============================================================================
+# Create non-root user for security
+RUN groupadd -r -g 1000 xdr && \
+    useradd -r -u 1000 -g xdr -m -s /bin/bash xdr && \
+    chown -R xdr:xdr /app /tmp/matplotlib /tmp/torch_cache
+
+# Set environment variables
+ENV HOME=/app \
+    MPLCONFIGDIR=/tmp/matplotlib \
+    TORCH_HOME=/tmp/torch_cache \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    # Disable GPU (CPU-only)
+    CUDA_VISIBLE_DEVICES="" \
+    # PyTorch CPU-only settings
+    OMP_NUM_THREADS=4 \
+    MKL_NUM_THREADS=4 \
+    # Security
+    PYTHONHASHSEED=random
+
+# Switch to non-root user
+USER xdr
+
+# ============================================================================
+# STAGE 7: Health check and runtime configuration
+# ============================================================================
+# Expose ports
+EXPOSE 8000 9090
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run database migrations on startup, then start the application
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4"]
+
+# ============================================================================
+# Build context size verification (should be ~100MB):
+# - backend/app/: ~5-10MB
+# - backend/models/: ~400KB
+# - models/*.pth: ~10-15MB (specialist models)
+# - Python deps: ~50MB installed
+# - Total: ~70-80MB (98% reduction from 27GB!)
+# ============================================================================

@@ -1,0 +1,21 @@
+
+name: mini-xdr-training
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pytorch>=2.0.0
+  - torchvision
+  - cudatoolkit=11.8
+  - numpy
+  - pandas
+  - scikit-learn
+  - joblib
+  - tqdm
+  - pip:
+    - azure-ai-ml
+    - azureml-core
+    - boto3

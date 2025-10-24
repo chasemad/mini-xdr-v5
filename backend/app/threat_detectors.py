@@ -103,11 +103,13 @@ class DataExfiltrationDetector:
     """Detects potential data exfiltration behaviour."""
 
     volume_threshold_bytes = 25 * 1024 * 1024  # 25 MB in aggregate
+    burst_threshold_bytes = 75 * 1024 * 1024  # 75 MB indicates aggressive exfil
 
     async def detect(self, events: List[Event]) -> Optional[SpecializedDetectionResult]:
         total_bytes = 0
         upload_events: List[Dict[str, Any]] = []
         suspicious_commands: List[str] = []
+        exfil_domains: Dict[str, int] = {}
 
         for event in events:
             raw = _normalize_raw(event)
@@ -121,23 +123,40 @@ class DataExfiltrationDetector:
                     "filename": raw.get("filename"),
                     "size": bytes_sent,
                 })
+                if raw.get("remote_address"):
+                    exfil_domains[str(raw.get("remote_address"))] = exfil_domains.get(str(raw.get("remote_address")), 0) + 1
+
+            if event.eventid == "cowrie.session.file_download":
+                url = str(raw.get("url", ""))
+                if "paste" in url or "dropbox" in url or "file.io" in url:
+                    suspicious_commands.append(f"remote_download:{url}")
 
             if event.eventid == "cowrie.command.input":
                 command = str(raw.get("input", "")).lower()
                 if any(marker in command for marker in ["scp", "rsync", "curl -t", "ftp", "invoke-webrequest", "powershell -enc", "curl --upload"]):
                     suspicious_commands.append(command)
+                if "base64" in command and "decode" in command:
+                    suspicious_commands.append(f"encoded_transfer:{command[:80]}")
 
         if total_bytes >= self.volume_threshold_bytes or upload_events or suspicious_commands:
             indicators: Dict[str, Any] = {
                 "approx_bytes_exfiltrated": total_bytes,
                 "upload_events": upload_events[:10],
                 "suspicious_commands": suspicious_commands[:10],
+                "unique_destinations": len(exfil_domains),
             }
             severity = "high" if total_bytes >= self.volume_threshold_bytes else "medium"
-            confidence = min(1.0, 0.5 + (total_bytes / (self.volume_threshold_bytes * 2)))
-            if upload_events:
+            confidence = 0.55
+            if total_bytes >= self.volume_threshold_bytes:
+                confidence += 0.2
+            if total_bytes >= self.burst_threshold_bytes:
                 confidence += 0.15
+                severity = "critical"
+            if upload_events:
+                confidence += min(0.2, 0.05 * len(upload_events))
             if suspicious_commands:
+                confidence += min(0.2, 0.05 * len(suspicious_commands))
+            if len(exfil_domains) >= 3:
                 confidence += 0.1
 
             return SpecializedDetectionResult(
@@ -155,15 +174,35 @@ class RansomwareDetector:
     """Detects ransomware preparation and execution behaviours."""
 
     command_markers = [
-        "vssadmin delete", "wbadmin delete", "bcdedit", "cipher /w",
-        "shadowcopy", "reg add", "schtasks", "icacls", "takeown",
+        "vssadmin delete",
+        "wbadmin delete",
+        "bcdedit",
+        "cipher /w",
+        "shadowcopy",
+        "reg add",
+        "schtasks",
+        "icacls",
+        "takeown",
+        "wmic shadowcopy delete",
+        "powershell -enc",
     ]
 
-    ransom_keywords = ["how_to_decrypt", "decrypt", "ransom", "help_restore"]
+    ransom_keywords = [
+        "how_to_decrypt",
+        "decrypt",
+        "ransom",
+        "help_restore",
+        "recover_files",
+        "bitcoin",
+        "pay_ransom",
+    ]
+    ransom_extensions = (".lock", ".crypted", ".ransom", ".payme", ".encrypted")
 
     async def detect(self, events: List[Event]) -> Optional[SpecializedDetectionResult]:
         destructive_commands: List[str] = []
         ransom_files: List[str] = []
+        process_hits: List[str] = []
+        dropped_notes: List[str] = []
 
         for event in events:
             raw = _normalize_raw(event)
@@ -173,21 +212,38 @@ class RansomwareDetector:
                 command = str(raw.get("input", "")).lower()
                 if any(marker in command for marker in self.command_markers):
                     destructive_commands.append(command)
+                if "wallpaper" in command or "set-mp" in command:
+                    process_hits.append(command)
 
             filename = str(raw.get("filename", "")).lower()
             if any(keyword in filename for keyword in self.ransom_keywords):
                 ransom_files.append(filename)
+            if filename.endswith(self.ransom_extensions):
+                dropped_notes.append(filename)
 
             if any(keyword in message for keyword in self.ransom_keywords):
                 ransom_files.append(message)
+            if "note" in filename and "readme" in filename:
+                dropped_notes.append(filename)
 
-        if destructive_commands or ransom_files:
+        if destructive_commands or ransom_files or process_hits or dropped_notes:
             indicators = {
                 "destructive_commands": destructive_commands[:10],
                 "ransom_artifacts": ransom_files[:10],
+                "process_artifacts": process_hits[:10],
+                "dropped_notes": dropped_notes[:10],
             }
-            confidence = 0.5 + 0.1 * len(destructive_commands) + 0.1 * len(ransom_files)
-            severity = "critical" if len(destructive_commands) >= 2 else "high"
+            base_confidence = 0.6 if destructive_commands else 0.55
+            confidence = base_confidence
+            confidence += 0.12 * min(len(destructive_commands), 3)
+            confidence += 0.08 * min(len(ransom_files), 4)
+            confidence += 0.05 * len(process_hits)
+            confidence += 0.07 * len(dropped_notes)
+
+            severity = "critical" if len(destructive_commands) >= 2 or dropped_notes else "high"
+            if len(destructive_commands) >= 3 or (destructive_commands and dropped_notes):
+                severity = "critical"
+                confidence = max(confidence, 0.85)
 
             return SpecializedDetectionResult(
                 category="ransomware",

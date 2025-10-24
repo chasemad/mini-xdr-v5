@@ -710,6 +710,230 @@ class XDRMCPServer {
             },
           },
 
+          // === AGENT EXECUTION - IAM, EDR, DLP (NEW!) ===
+          {
+            name: "execute_iam_action",
+            description: "Execute IAM (Identity & Access Management) actions on Active Directory",
+            inputSchema: {
+              type: "object",
+              properties: {
+                action_name: {
+                  type: "string",
+                  enum: [
+                    "disable_user_account",
+                    "reset_user_password",
+                    "remove_user_from_group",
+                    "revoke_user_sessions",
+                    "lock_user_account",
+                    "enable_user_account"
+                  ],
+                  description: "IAM action to execute"
+                },
+                params: {
+                  type: "object",
+                  properties: {
+                    username: {
+                      type: "string",
+                      description: "Target username (e.g., 'john.doe@domain.local')"
+                    },
+                    reason: {
+                      type: "string",
+                      description: "Reason for the action (required for audit trail)"
+                    },
+                    group_name: {
+                      type: "string",
+                      description: "Group name (for remove_user_from_group action)"
+                    },
+                    new_password: {
+                      type: "string",
+                      description: "New password (for reset_user_password action)"
+                    },
+                    force_change: {
+                      type: "boolean",
+                      description: "Force password change at next login (default: true)"
+                    }
+                  },
+                  required: ["username", "reason"]
+                },
+                incident_id: {
+                  type: "number",
+                  description: "Associated incident ID for tracking"
+                }
+              },
+              required: ["action_name", "params", "incident_id"],
+            },
+          },
+          {
+            name: "execute_edr_action",
+            description: "Execute EDR (Endpoint Detection & Response) actions on Windows endpoints",
+            inputSchema: {
+              type: "object",
+              properties: {
+                action_name: {
+                  type: "string",
+                  enum: [
+                    "kill_process",
+                    "quarantine_file",
+                    "collect_memory_dump",
+                    "isolate_host",
+                    "delete_registry_key",
+                    "disable_scheduled_task",
+                    "unisolate_host"
+                  ],
+                  description: "EDR action to execute"
+                },
+                params: {
+                  type: "object",
+                  properties: {
+                    hostname: {
+                      type: "string",
+                      description: "Target Windows hostname"
+                    },
+                    process_name: {
+                      type: "string",
+                      description: "Process name (for kill_process)"
+                    },
+                    pid: {
+                      type: "number",
+                      description: "Process ID (for kill_process)"
+                    },
+                    file_path: {
+                      type: "string",
+                      description: "File path (for quarantine_file)"
+                    },
+                    isolation_level: {
+                      type: "string",
+                      enum: ["full", "partial"],
+                      description: "Isolation level for isolate_host (full blocks all, partial allows domain)"
+                    },
+                    registry_key: {
+                      type: "string",
+                      description: "Registry key path (for delete_registry_key)"
+                    },
+                    task_name: {
+                      type: "string",
+                      description: "Scheduled task name (for disable_scheduled_task)"
+                    },
+                    reason: {
+                      type: "string",
+                      description: "Reason for the action (required for audit trail)"
+                    }
+                  },
+                  required: ["hostname", "reason"]
+                },
+                incident_id: {
+                  type: "number",
+                  description: "Associated incident ID for tracking"
+                }
+              },
+              required: ["action_name", "params", "incident_id"],
+            },
+          },
+          {
+            name: "execute_dlp_action",
+            description: "Execute DLP (Data Loss Prevention) actions to protect sensitive data",
+            inputSchema: {
+              type: "object",
+              properties: {
+                action_name: {
+                  type: "string",
+                  enum: [
+                    "scan_file_for_sensitive_data",
+                    "block_upload",
+                    "quarantine_sensitive_file"
+                  ],
+                  description: "DLP action to execute"
+                },
+                params: {
+                  type: "object",
+                  properties: {
+                    file_path: {
+                      type: "string",
+                      description: "File path to scan or quarantine"
+                    },
+                    upload_id: {
+                      type: "string",
+                      description: "Upload ID to block (for block_upload)"
+                    },
+                    destination: {
+                      type: "string",
+                      description: "Upload destination (for block_upload)"
+                    },
+                    username: {
+                      type: "string",
+                      description: "User attempting the upload (for block_upload)"
+                    },
+                    reason: {
+                      type: "string",
+                      description: "Reason for the action (required for audit trail)"
+                    },
+                    pattern_types: {
+                      type: "array",
+                      items: {
+                        type: "string",
+                        enum: ["ssn", "credit_card", "email", "api_key", "phone", "ip_address", "aws_key", "private_key"]
+                      },
+                      description: "Specific patterns to scan for (default: all)"
+                    }
+                  },
+                  required: ["reason"]
+                },
+                incident_id: {
+                  type: "number",
+                  description: "Associated incident ID for tracking"
+                }
+              },
+              required: ["action_name", "params", "incident_id"],
+            },
+          },
+          {
+            name: "get_agent_actions",
+            description: "Query all agent actions (IAM, EDR, DLP) for an incident or globally",
+            inputSchema: {
+              type: "object",
+              properties: {
+                incident_id: {
+                  type: "number",
+                  description: "Filter by incident ID (omit for all actions)"
+                },
+                agent_type: {
+                  type: "string",
+                  enum: ["iam", "edr", "dlp"],
+                  description: "Filter by agent type"
+                },
+                status: {
+                  type: "string",
+                  enum: ["success", "failed", "rolled_back"],
+                  description: "Filter by action status"
+                },
+                limit: {
+                  type: "number",
+                  minimum: 1,
+                  maximum: 100,
+                  description: "Maximum number of actions to return (default: 50)"
+                }
+              },
+            },
+          },
+          {
+            name: "rollback_agent_action",
+            description: "Rollback a previously executed agent action (IAM, EDR, or DLP)",
+            inputSchema: {
+              type: "object",
+              properties: {
+                rollback_id: {
+                  type: "string",
+                  description: "Unique rollback ID from the original action"
+                },
+                reason: {
+                  type: "string",
+                  description: "Reason for rollback (required for audit trail)"
+                }
+              },
+              required: ["rollback_id"],
+            },
+          },
+
           // === LEGACY TOOLS (MAINTAINED FOR COMPATIBILITY) ===
           {
             name: "contain_incident",
@@ -967,6 +1191,34 @@ class XDRMCPServer {
             }
             return await this.executeTPotCommand(args);
 
+          // === AGENT EXECUTION - IAM, EDR, DLP ===
+          case "execute_iam_action":
+            if (!args || typeof args !== 'object' || !('action_name' in args) || !('params' in args) || !('incident_id' in args)) {
+              throw new Error('Missing required parameters: action_name, params, and incident_id are required');
+            }
+            return await this.executeIAMAction(args);
+
+          case "execute_edr_action":
+            if (!args || typeof args !== 'object' || !('action_name' in args) || !('params' in args) || !('incident_id' in args)) {
+              throw new Error('Missing required parameters: action_name, params, and incident_id are required');
+            }
+            return await this.executeEDRAction(args);
+
+          case "execute_dlp_action":
+            if (!args || typeof args !== 'object' || !('action_name' in args) || !('params' in args) || !('incident_id' in args)) {
+              throw new Error('Missing required parameters: action_name, params, and incident_id are required');
+            }
+            return await this.executeDLPAction(args);
+
+          case "get_agent_actions":
+            return await this.getAgentActions(args);
+
+          case "rollback_agent_action":
+            if (!args || typeof args !== 'object' || !('rollback_id' in args)) {
+              throw new Error('Missing required parameter: rollback_id');
+            }
+            return await this.rollbackAgentAction(args);
+
           // === LEGACY TOOLS ===
           case "contain_incident":
             if (!args || typeof args !== 'object' || !('incident_id' in args)) {
@@ -1069,6 +1321,272 @@ class XDRMCPServer {
         },
       ],
     };
+  }
+
+  // === NEW AGENT EXECUTION METHODS ===
+  
+  private async executeIAMAction(args: any) {
+    const { action_name, params, incident_id } = args;
+    
+    try {
+      const result = await apiRequest("/api/agents/iam/execute", {
+        method: "POST",
+        body: { action_name, params, incident_id }
+      }) as any;
+      
+      return {
+        content: [
+          {
+            type: "text",
+            text: `👤 IAM ACTION EXECUTED\n\n` +
+              `Action: ${action_name}\n` +
+              `Incident: #${incident_id}\n` +
+              `Status: ${result.status === 'success' ? '✅ SUCCESS' : '❌ FAILED'}\n` +
+              `Agent ID: ${result.agent_id}\n` +
+              `Action ID: ${result.action_id}\n` +
+              `Rollback ID: ${result.rollback_id || 'N/A'}\n\n` +
+              `Parameters:\n${JSON.stringify(params, null, 2)}\n\n` +
+              `Result:\n${JSON.stringify(result.result, null, 2)}\n\n` +
+              `Executed At: ${result.executed_at}\n\n` +
+              `${result.rollback_id ? '🔄 This action can be rolled back using rollback_id: ' + result.rollback_id : '⚠️ This action cannot be rolled back'}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `❌ IAM action failed: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+
+  private async executeEDRAction(args: any) {
+    const { action_name, params, incident_id } = args;
+    
+    try {
+      const result = await apiRequest("/api/agents/edr/execute", {
+        method: "POST",
+        body: { action_name, params, incident_id }
+      }) as any;
+      
+      return {
+        content: [
+          {
+            type: "text",
+            text: `🖥️ EDR ACTION EXECUTED\n\n` +
+              `Action: ${action_name}\n` +
+              `Incident: #${incident_id}\n` +
+              `Hostname: ${params.hostname}\n` +
+              `Status: ${result.status === 'success' ? '✅ SUCCESS' : '❌ FAILED'}\n` +
+              `Agent ID: ${result.agent_id}\n` +
+              `Action ID: ${result.action_id}\n` +
+              `Rollback ID: ${result.rollback_id || 'N/A'}\n\n` +
+              `Parameters:\n${JSON.stringify(params, null, 2)}\n\n` +
+              `Result:\n${JSON.stringify(result.result, null, 2)}\n\n` +
+              `Executed At: ${result.executed_at}\n\n` +
+              `${result.rollback_id ? '🔄 This action can be rolled back using rollback_id: ' + result.rollback_id : '⚠️ This action cannot be rolled back'}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `❌ EDR action failed: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+
+  private async executeDLPAction(args: any) {
+    const { action_name, params, incident_id } = args;
+    
+    try {
+      const result = await apiRequest("/api/agents/dlp/execute", {
+        method: "POST",
+        body: { action_name, params, incident_id }
+      }) as any;
+      
+      return {
+        content: [
+          {
+            type: "text",
+            text: `🔒 DLP ACTION EXECUTED\n\n` +
+              `Action: ${action_name}\n` +
+              `Incident: #${incident_id}\n` +
+              `Status: ${result.status === 'success' ? '✅ SUCCESS' : '❌ FAILED'}\n` +
+              `Agent ID: ${result.agent_id}\n` +
+              `Action ID: ${result.action_id}\n` +
+              `Rollback ID: ${result.rollback_id || 'N/A'}\n\n` +
+              `Parameters:\n${JSON.stringify(params, null, 2)}\n\n` +
+              `Result:\n${JSON.stringify(result.result, null, 2)}\n\n` +
+              `${result.sensitive_data_found ? 
+                `⚠️ SENSITIVE DATA DETECTED:\n` +
+                `${result.sensitive_data_found.map((item: any) => 
+                  `  • ${item.pattern_type}: ${item.count} match(es)`
+                ).join('\n')}\n\n`
+                : ''
+              }` +
+              `Executed At: ${result.executed_at}\n\n` +
+              `${result.rollback_id ? '🔄 This action can be rolled back using rollback_id: ' + result.rollback_id : '⚠️ This action cannot be rolled back'}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `❌ DLP action failed: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+
+  private async getAgentActions(args: any) {
+    const { incident_id, agent_type, status, limit = 50 } = args || {};
+    
+    try {
+      let endpoint = "/api/agents/actions";
+      if (incident_id) {
+        endpoint = `/api/agents/actions/${incident_id}`;
+      }
+      
+      const params = new URLSearchParams();
+      if (agent_type) params.append("agent_type", agent_type);
+      if (status) params.append("status", status);
+      if (limit) params.append("limit", limit.toString());
+      
+      const queryString = params.toString();
+      if (queryString) {
+        endpoint += `?${queryString}`;
+      }
+      
+      const actions = await apiRequest(endpoint, { method: "GET" }) as any[];
+      
+      if (!actions || actions.length === 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `📋 No agent actions found matching the criteria.`,
+            },
+          ],
+        };
+      }
+      
+      const actionsByAgent = {
+        iam: actions.filter(a => a.agent_type === 'iam'),
+        edr: actions.filter(a => a.agent_type === 'edr'),
+        dlp: actions.filter(a => a.agent_type === 'dlp'),
+      };
+      
+      let summary = `📋 AGENT ACTIONS SUMMARY\n\n`;
+      summary += `Total Actions: ${actions.length}\n`;
+      summary += `• IAM Actions: ${actionsByAgent.iam.length}\n`;
+      summary += `• EDR Actions: ${actionsByAgent.edr.length}\n`;
+      summary += `• DLP Actions: ${actionsByAgent.dlp.length}\n\n`;
+      
+      if (incident_id) {
+        summary += `Filtered by Incident: #${incident_id}\n`;
+      }
+      if (agent_type) {
+        summary += `Filtered by Agent Type: ${agent_type.toUpperCase()}\n`;
+      }
+      if (status) {
+        summary += `Filtered by Status: ${status.toUpperCase()}\n`;
+      }
+      
+      summary += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      
+      for (const action of actions.slice(0, 20)) {  // Show first 20
+        const agentIcon = action.agent_type === 'iam' ? '👤' : action.agent_type === 'edr' ? '🖥️' : '🔒';
+        const statusIcon = action.status === 'success' ? '✅' : action.status === 'failed' ? '❌' : '🔄';
+        
+        summary += `${agentIcon} ${statusIcon} ${action.action_name}\n`;
+        summary += `   Agent: ${action.agent_type.toUpperCase()} | Incident: #${action.incident_id}\n`;
+        summary += `   Action ID: ${action.action_id}\n`;
+        summary += `   Executed: ${action.executed_at}\n`;
+        if (action.rollback_id && !action.rollback_executed) {
+          summary += `   🔄 Rollback Available: ${action.rollback_id}\n`;
+        } else if (action.rollback_executed) {
+          summary += `   ↩️ Rolled Back: ${action.rollback_timestamp}\n`;
+        }
+        summary += `\n`;
+      }
+      
+      if (actions.length > 20) {
+        summary += `\n... and ${actions.length - 20} more actions\n`;
+      }
+      
+      return {
+        content: [
+          {
+            type: "text",
+            text: summary,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `❌ Failed to retrieve agent actions: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+
+  private async rollbackAgentAction(args: any) {
+    const { rollback_id, reason } = args;
+    
+    try {
+      const result = await apiRequest(`/api/agents/rollback/${rollback_id}`, {
+        method: "POST",
+        body: { reason }
+      }) as any;
+      
+      return {
+        content: [
+          {
+            type: "text",
+            text: `🔄 AGENT ACTION ROLLBACK\n\n` +
+              `Rollback ID: ${rollback_id}\n` +
+              `Status: ${result.status === 'success' ? '✅ SUCCESS' : '❌ FAILED'}\n` +
+              `Original Action: ${result.original_action?.action_name}\n` +
+              `Agent Type: ${result.original_action?.agent_type?.toUpperCase()}\n` +
+              `Incident: #${result.original_action?.incident_id}\n\n` +
+              `Rollback Result:\n${JSON.stringify(result.rollback_result, null, 2)}\n\n` +
+              `${reason ? `Reason: ${reason}\n\n` : ''}` +
+              `Rolled Back At: ${result.rollback_timestamp}\n\n` +
+              `✅ Original action has been successfully reversed.`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `❌ Rollback failed: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+        isError: true,
+      };
+    }
   }
 
   private async containIncident(incidentId: number) {

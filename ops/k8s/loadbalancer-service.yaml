@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mini-xdr-loadbalancer
+  namespace: mini-xdr
+  labels:
+    app: mini-xdr
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /health
+spec:
+  type: LoadBalancer
+  # SECURITY: Restrict access to your IP only
+  loadBalancerSourceRanges:
+  - 24.11.0.176/32
+  selector:
+    app: mini-xdr-frontend
+  ports:
+  - name: http
+    port: 80
+    targetPort: 3000
+    protocol: TCP
+  - name: https
+    port: 443
+    targetPort: 3000
+    protocol: TCP
+  sessionAffinity: ClientIP
+  externalTrafficPolicy: Local

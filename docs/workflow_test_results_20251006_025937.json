@@ -1,0 +1,401 @@
+{
+  "timestamp": "2025-10-06T02:59:20.218767",
+  "workflows_tested": [
+    {
+      "name": "SSH Brute Force Detection",
+      "status": "pass",
+      "auto_execute": true,
+      "priority": "high",
+      "conditions": {
+        "event_type": "cowrie.login.failed",
+        "threshold": 6,
+        "window_seconds": 60,
+        "source": "honeypot"
+      },
+      "workflow_steps": 4
+    },
+    {
+      "name": "SQL Injection Detection",
+      "status": "pass",
+      "auto_execute": false,
+      "priority": "high",
+      "conditions": {
+        "event_type": "webhoneypot.request",
+        "pattern_match": "(union|select|insert|update|delete|drop).*from",
+        "source": "honeypot"
+      },
+      "workflow_steps": 4
+    },
+    {
+      "name": "Malware Payload Detection",
+      "status": "pass",
+      "auto_execute": true,
+      "priority": "critical",
+      "conditions": {
+        "event_type": "file.upload.detected",
+        "risk_score_min": 0.8,
+        "source": "honeypot"
+      },
+      "workflow_steps": 4
+    },
+    {
+      "name": "T-Pot: SSH Brute Force Attack",
+      "status": "pass",
+      "auto_execute": true,
+      "priority": "high",
+      "conditions": {
+        "event_type": "cowrie.login.failed",
+        "threshold": 5,
+        "window_seconds": 60,
+        "source": "honeypot"
+      },
+      "workflow_steps": 4
+    },
+    {
+      "name": "T-Pot: Successful SSH Compromise",
+      "status": "pass",
+      "auto_execute": true,
+      "priority": "critical",
+      "conditions": {
+        "event_type": "cowrie.login.success",
+        "source": "honeypot"
+      },
+      "workflow_steps": 4
+    },
+    {
+      "name": "T-Pot: Malicious Command Execution",
+      "status": "pass",
+      "auto_execute": true,
+      "priority": "high",
+      "conditions": {
+        "event_type": "cowrie.command.input",
+        "threshold": 3,
+        "window_seconds": 120,
+        "source": "honeypot"
+      },
+      "workflow_steps": 3
+    },
+    {
+      "name": "T-Pot: Malware Upload Detection (Dionaea)",
+      "status": "pass",
+      "auto_execute": true,
+      "priority": "critical",
+      "conditions": {
+        "event_type": "dionaea.connection.protocol.smb",
+        "pattern_match": "upload",
+        "source": "honeypot"
+      },
+      "workflow_steps": 4
+    },
+    {
+      "name": "T-Pot: SMB/CIFS Exploit Attempt",
+      "status": "pass",
+      "auto_execute": true,
+      "priority": "high",
+      "conditions": {
+        "event_type": "dionaea.connection.protocol.smb",
+        "threshold": 3,
+        "window_seconds": 120,
+        "source": "honeypot"
+      },
+      "workflow_steps": 3
+    },
+    {
+      "name": "T-Pot: Suricata IDS Alert (High Severity)",
+      "status": "pass",
+      "auto_execute": true,
+      "priority": "high",
+      "conditions": {
+        "event_type": "suricata.alert",
+        "risk_score_min": 0.7,
+        "source": "honeypot"
+      },
+      "workflow_steps": 3
+    },
+    {
+      "name": "T-Pot: Elasticsearch Exploit Attempt",
+      "status": "pass",
+      "auto_execute": true,
+      "priority": "high",
+      "conditions": {
+        "event_type": "elasticpot.attack",
+        "source": "honeypot"
+      },
+      "workflow_steps": 3
+    },
+    {
+      "name": "T-Pot: Network Service Scan",
+      "status": "pass",
+      "auto_execute": false,
+      "priority": "medium",
+      "conditions": {
+        "event_type": "honeytrap.connection",
+        "threshold": 10,
+        "window_seconds": 60,
+        "source": "honeypot"
+      },
+      "workflow_steps": 2
+    },
+    {
+      "name": "T-Pot: Cryptomining Detection",
+      "status": "pass",
+      "auto_execute": true,
+      "priority": "high",
+      "conditions": {
+        "pattern_match": "cryptomining",
+        "source": "honeypot"
+      },
+      "workflow_steps": 4
+    },
+    {
+      "name": "T-Pot: Data Exfiltration Attempt",
+      "status": "pass",
+      "auto_execute": true,
+      "priority": "critical",
+      "conditions": {
+        "pattern_match": "data_exfiltration",
+        "source": "honeypot"
+      },
+      "workflow_steps": 7
+    },
+    {
+      "name": "T-Pot: Ransomware Indicators",
+      "status": "pass",
+      "auto_execute": true,
+      "priority": "critical",
+      "conditions": {
+        "pattern_match": "ransomware",
+        "source": "honeypot"
+      },
+      "workflow_steps": 7
+    },
+    {
+      "name": "T-Pot: IoT Botnet Activity",
+      "status": "pass",
+      "auto_execute": true,
+      "priority": "high",
+      "conditions": {
+        "pattern_match": "iot_botnet",
+        "source": "honeypot"
+      },
+      "workflow_steps": 3
+    },
+    {
+      "name": "T-Pot: DDoS Attack Detection",
+      "status": "pass",
+      "auto_execute": true,
+      "priority": "critical",
+      "conditions": {
+        "threshold": 100,
+        "window_seconds": 10,
+        "source": "honeypot"
+      },
+      "workflow_steps": 6
+    },
+    {
+      "name": "T-Pot: SQL Injection Attempt",
+      "status": "pass",
+      "auto_execute": false,
+      "priority": "high",
+      "conditions": {
+        "pattern_match": "sql_injection",
+        "source": "honeypot"
+      },
+      "workflow_steps": 3
+    },
+    {
+      "name": "T-Pot: XSS Attack Attempt",
+      "status": "pass",
+      "auto_execute": false,
+      "priority": "medium",
+      "conditions": {
+        "pattern_match": "xss",
+        "source": "honeypot"
+      },
+      "workflow_steps": 2
+    },
+    {
+      "name": "Mini Corp: Ransomware Containment",
+      "status": "pass",
+      "auto_execute": true,
+      "priority": "critical",
+      "conditions": {
+        "threat_category": "ransomware",
+        "escalation_level_min": "high",
+        "risk_score_min": 0.55
+      },
+      "workflow_steps": 7
+    },
+    {
+      "name": "Mini Corp: Data Exfiltration Response",
+      "status": "pass",
+      "auto_execute": true,
+      "priority": "critical",
+      "conditions": {
+        "threat_category": "data_exfiltration",
+        "escalation_level_min": "high",
+        "risk_score_min": 0.6
+      },
+      "workflow_steps": 7
+    },
+    {
+      "name": "Mini Corp: Privilege Escalation Investigation",
+      "status": "pass",
+      "auto_execute": false,
+      "priority": "high",
+      "conditions": {
+        "pattern_match": "privilege escalation",
+        "risk_score_min": 0.55
+      },
+      "workflow_steps": 4
+    },
+    {
+      "name": "Mini Corp: Lateral Movement Containment",
+      "status": "pass",
+      "auto_execute": true,
+      "priority": "high",
+      "conditions": {
+        "pattern_match": "lateral movement",
+        "risk_score_min": 0.5
+      },
+      "workflow_steps": 5
+    },
+    {
+      "name": "Mini Corp: Web Application Attack",
+      "status": "pass",
+      "auto_execute": true,
+      "priority": "high",
+      "conditions": {
+        "pattern_match": "sql injection",
+        "risk_score_min": 0.5
+      },
+      "workflow_steps": 5
+    },
+    {
+      "name": "Mini Corp: Credential Compromise",
+      "status": "pass",
+      "auto_execute": false,
+      "priority": "high",
+      "conditions": {
+        "pattern_match": "credential",
+        "risk_score_min": 0.45
+      },
+      "workflow_steps": 4
+    },
+    {
+      "name": "Mini Corp: DDoS Mitigation",
+      "status": "pass",
+      "auto_execute": true,
+      "priority": "critical",
+      "conditions": {
+        "threat_category": "ddos",
+        "escalation_level_min": "high"
+      },
+      "workflow_steps": 4
+    }
+  ],
+  "actions_tested": [
+    {
+      "agent": "containment",
+      "action": "block_ip",
+      "status": "pass",
+      "description": "Block IP address"
+    },
+    {
+      "agent": "containment",
+      "action": "isolate_host",
+      "status": "pass",
+      "description": "Isolate compromised host"
+    },
+    {
+      "agent": "containment",
+      "action": "deploy_firewall",
+      "status": "pass",
+      "description": "Deploy firewall rules"
+    },
+    {
+      "agent": "forensics",
+      "action": "collect_evidence",
+      "status": "pass",
+      "description": "Collect forensic evidence"
+    },
+    {
+      "agent": "forensics",
+      "action": "analyze_malware",
+      "status": "pass",
+      "description": "Analyze malware samples"
+    },
+    {
+      "agent": "forensics",
+      "action": "capture_traffic",
+      "status": "pass",
+      "description": "Capture network traffic"
+    },
+    {
+      "agent": "attribution",
+      "action": "profile_threat_actor",
+      "status": "pass",
+      "description": "Profile threat actor"
+    },
+    {
+      "agent": "attribution",
+      "action": "identify_campaign",
+      "status": "pass",
+      "description": "Identify attack campaign"
+    },
+    {
+      "agent": "attribution",
+      "action": "track_c2",
+      "status": "pass",
+      "description": "Track C2 infrastructure"
+    },
+    {
+      "agent": "threat_hunting",
+      "action": "hunt_similar_attacks",
+      "status": "pass",
+      "description": "Hunt for similar attacks"
+    },
+    {
+      "agent": "threat_hunting",
+      "action": "analyze_patterns",
+      "status": "pass",
+      "description": "Analyze behavioral patterns"
+    },
+    {
+      "agent": "threat_hunting",
+      "action": "proactive_search",
+      "status": "pass",
+      "description": "Proactive threat search"
+    },
+    {
+      "agent": "deception",
+      "action": "deploy_honeypot",
+      "status": "pass",
+      "description": "Deploy decoy honeypot"
+    },
+    {
+      "agent": "deception",
+      "action": "track_attacker",
+      "status": "pass",
+      "description": "Track attacker behavior"
+    }
+  ],
+  "agents_tested": [
+    {
+      "component": "azure_ssh_access",
+      "status": "pass",
+      "details": "SSH connection verified"
+    },
+    {
+      "component": "iptables_access",
+      "status": "pass",
+      "details": "Can read iptables rules"
+    }
+  ],
+  "summary": {
+    "total_tests": 47,
+    "passed": 42,
+    "failed": 1,
+    "warnings": 5
+  }
+}

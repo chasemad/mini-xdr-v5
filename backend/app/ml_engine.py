@@ -91,8 +91,8 @@ class BaseMLDetector:
             'command_diversity', 'download_attempts', 'upload_attempts'
         ]
         self.scaler = StandardScaler()
-        # Fix path to models directory (relative to project root, not backend dir)
-        self.model_dir = Path(__file__).parent.parent.parent / "models"
+        # Fix path to models directory - use /app/models in container
+        self.model_dir = Path(__file__).parent.parent / "models"
         self.model_dir.mkdir(exist_ok=True)
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
     

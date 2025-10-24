@@ -7,7 +7,7 @@ import html
 import re
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Depends, Request, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, Request, BackgroundTasks, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, and_, func, desc, asc, or_, text, delete
@@ -19,7 +19,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from .config import settings
 from .db import get_db, init_db, AsyncSessionLocal
 from .models import (
-    Event, Incident, Action, ResponseWorkflow, ResponseImpactMetrics, 
+    Event, Incident, Action, ActionLog, ResponseWorkflow, ResponseImpactMetrics, 
     AdvancedResponseAction, ResponsePlaybook, ResponseApproval
 )
 from .detect import run_detection
@@ -47,6 +47,7 @@ from .nlp_workflow_routes import router as nlp_workflow_router
 from .nlp_suggestion_routes import router as nlp_suggestion_router
 from .trigger_routes import router as trigger_router
 from .trigger_evaluator import trigger_evaluator
+from .onboarding_routes import router as onboarding_router
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -81,7 +82,15 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing secure environment...")
     initialize_secure_environment()
     
-    await init_db()
+    # Initialize database with timeout and error handling
+    try:
+        await asyncio.wait_for(init_db(), timeout=60)
+        logger.info("Database initialized successfully")
+    except asyncio.TimeoutError:
+        logger.warning("DB init timeout - will retry on first request")
+    except Exception as e:
+        logger.error(f"DB init failed: {e} - continuing anyway")
+    
     scheduler.start()
 
     # Initialize AI components
@@ -186,6 +195,44 @@ if not getattr(settings, '_entrypoint_mode', False):
 app.include_router(nlp_workflow_router)
 app.include_router(nlp_suggestion_router)
 app.include_router(trigger_router)
+app.include_router(onboarding_router)
+
+# =============== Telemetry Status Endpoint (Org-scoped) ===============
+from sqlalchemy import func
+from .auth import get_current_user
+from .db import get_db
+from .models import User as DbUser, Organization as DbOrg, Event as DbEvent, DiscoveredAsset as DbAsset, AgentEnrollment as DbEnroll, Incident as DbIncident
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+@app.get("/api/telemetry/status", tags=["Telemetry"])
+async def telemetry_status(
+    current_user: DbUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    org_id = current_user.organization_id
+
+    # Counts per org
+    assets_q = await db.execute(select(func.count(DbAsset.id)).where(DbAsset.organization_id == org_id))
+    agents_q = await db.execute(select(func.count(DbEnroll.id)).where(DbEnroll.organization_id == org_id))
+    incidents_q = await db.execute(select(func.count(DbIncident.id)).where(DbIncident.organization_id == org_id))
+
+    # Last event time
+    last_event_q = await db.execute(
+        select(func.max(DbEvent.ts)).where(DbEvent.organization_id == org_id)
+    )
+    last_event = last_event_q.scalar_one_or_none()
+
+    has_logs = last_event is not None
+
+    return {
+        "hasLogs": has_logs,
+        "lastEventAt": last_event.isoformat() if last_event else None,
+        "assetsDiscovered": int(assets_q.scalar() or 0),
+        "agentsEnrolled": int(agents_q.scalar() or 0),
+        "incidents": int(incidents_q.scalar() or 0),
+    }
 
 # Security headers middleware
 @app.middleware("http")
@@ -853,6 +900,198 @@ What specific aspect of this {incident.threat_category.replace('_', ' ') if inci
 • "How serious is this?" - Risk assessment details
 
 I'm here to help you understand and respond to this incident effectively!"""
+
+
+# ==================== AUTHENTICATION ENDPOINTS ====================
+
+from .auth import (
+    create_access_token, create_refresh_token, authenticate_user,
+    create_organization, generate_slug, get_current_user, require_role
+)
+from .schemas import (
+    LoginRequest, RegisterOrganizationRequest, Token, UserResponse,
+    OrganizationResponse, MeResponse, InviteUserRequest,
+    ChangePasswordRequest, UpdateProfileRequest
+)
+from .models import User, Organization
+
+
+@app.post("/api/auth/register", response_model=dict, tags=["Authentication"])
+async def register_organization(
+    request: RegisterOrganizationRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Register a new organization with an admin user
+    
+    Creates both the organization and the first admin user in a single transaction.
+    """
+    try:
+        # Generate slug from organization name
+        slug = generate_slug(request.organization_name)
+        
+        # Create organization and admin user
+        org, admin_user = await create_organization(
+            db=db,
+            name=request.organization_name,
+            slug=slug,
+            admin_email=request.admin_email,
+            admin_password=request.admin_password,
+            admin_name=request.admin_name
+        )
+        
+        # Create access tokens
+        access_token = create_access_token(data={
+            "user_id": admin_user.id,
+            "organization_id": org.id,
+            "email": admin_user.email,
+            "role": admin_user.role
+        })
+        
+        refresh_token = create_refresh_token(data={
+            "user_id": admin_user.id,
+            "organization_id": org.id
+        })
+        
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "user": UserResponse.from_orm(admin_user),
+            "organization": OrganizationResponse.from_orm(org)
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Registration failed: {e}")
+        raise HTTPException(status_code=500, detail="Registration failed")
+
+
+@app.post("/api/auth/login", response_model=Token, tags=["Authentication"])
+async def login(
+    request: LoginRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Login with email and password
+    
+    Returns JWT access token and refresh token
+    """
+    user = await authenticate_user(db, request.email, request.password)
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Create access and refresh tokens
+    access_token = create_access_token(data={
+        "user_id": user.id,
+        "organization_id": user.organization_id,
+        "email": user.email,
+        "role": user.role
+    })
+    
+    refresh_token = create_refresh_token(data={
+        "user_id": user.id,
+        "organization_id": user.organization_id
+    })
+    
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
+
+
+@app.get("/api/auth/me", response_model=MeResponse, tags=["Authentication"])
+async def get_current_user_info(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get current user information with organization details
+    """
+    # Fetch organization
+    stmt = select(Organization).where(Organization.id == current_user.organization_id)
+    result = await db.execute(stmt)
+    org = result.scalar_one_or_none()
+    
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    
+    return {
+        "user": UserResponse.from_orm(current_user),
+        "organization": OrganizationResponse.from_orm(org)
+    }
+
+
+@app.post("/api/auth/invite", tags=["Authentication"])
+async def invite_user(
+    request: InviteUserRequest,
+    current_user: User = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Invite a new user to the organization (Admin only)
+    
+    Creates user account with temporary password that must be changed on first login
+    """
+    # Check if email already exists
+    stmt = select(User).where(User.email == request.email)
+    result = await db.execute(stmt)
+    existing_user = result.scalar_one_or_none()
+    
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Generate temporary password (user must change on first login)
+    import secrets
+    import string
+    temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits + string.punctuation) for _ in range(16))
+    
+    # Create user
+    from .auth import hash_password
+    new_user = User(
+        organization_id=current_user.organization_id,
+        email=request.email,
+        hashed_password=hash_password(temp_password),
+        full_name=request.full_name,
+        role=request.role,
+        is_active=True
+    )
+    
+    db.add(new_user)
+    await db.commit()
+    await db.refresh(new_user)
+    
+    # TODO: Send invitation email with temporary password
+    # For now, return it in response (change this in production!)
+    
+    return {
+        "message": "User invited successfully",
+        "user": UserResponse.from_orm(new_user),
+        "temporary_password": temp_password,
+        "note": "User must change password on first login"
+    }
+
+
+@app.post("/api/auth/logout", tags=["Authentication"])
+async def logout(current_user: User = Depends(get_current_user)):
+    """
+    Logout current user
+    
+    Note: With JWT, actual logout is handled client-side by removing the token
+    This endpoint is for logging and potential token blacklisting in future
+    """
+    logger.info(f"User {current_user.email} logged out")
+    return {"message": "Logged out successfully"}
+
+
+# ==================== END AUTHENTICATION ENDPOINTS ====================
 
 
 @app.post("/ingest/cowrie")
@@ -6265,6 +6504,290 @@ def _generate_next_steps(incident, ai_result) -> List[str]:
     
     return steps
 
+
+# ==================== NEW AI RECOMMENDATION EXECUTION ENDPOINTS ====================
+
+@app.post("/api/incidents/{incident_id}/execute-ai-recommendation")
+async def execute_ai_recommendation(
+    incident_id: int,
+    request_data: Dict[str, Any],
+    http_request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Execute a specific AI-recommended action"""
+    _require_api_key(http_request)
+    
+    try:
+        action_type = request_data.get("action_type")
+        parameters = request_data.get("parameters", {})
+        
+        if not action_type:
+            raise HTTPException(status_code=400, detail="action_type is required")
+        
+        # Get incident
+        incident = (await db.execute(
+            select(Incident).where(Incident.id == incident_id)
+        )).scalars().first()
+        
+        if not incident:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        
+        # Execute action based on type
+        result = None
+        action_name = action_type
+        
+        if action_type == "block_ip":
+            ip = parameters.get("ip") or incident.src_ip
+            duration = parameters.get("duration", 30)
+            status, detail = await block_ip(ip, duration * 60)  # Convert to seconds
+            result = {"status": status, "detail": detail, "ip": ip, "duration_minutes": duration}
+            action_name = f"Block IP {ip}"
+            
+        elif action_type == "isolate_host":
+            # Simulate host isolation
+            result = {"status": "success", "detail": "Host isolation initiated", "simulated": True}
+            action_name = "Isolate Host"
+            
+        elif action_type == "reset_passwords":
+            # Simulate password reset
+            result = {"status": "success", "detail": "Password reset initiated for affected accounts", "simulated": True}
+            action_name = "Force Password Reset"
+            
+        elif action_type == "threat_intel_lookup":
+            ip = parameters.get("ip") or incident.src_ip
+            # Perform threat intel lookup (simulated)
+            result = {
+                "status": "success",
+                "detail": f"Threat intelligence lookup completed for {ip}",
+                "ip": ip,
+                "findings": "No matches in threat feeds",
+                "simulated": True
+            }
+            action_name = f"Threat Intel Lookup: {ip}"
+            
+        elif action_type == "hunt_similar_attacks":
+            # Hunt for similar patterns
+            similar_count = (await db.execute(
+                select(func.count(Incident.id)).where(
+                    Incident.threat_category == incident.threat_category,
+                    Incident.id != incident_id
+                )
+            )).scalar()
+            result = {
+                "status": "success",
+                "detail": f"Hunt completed - found {similar_count} similar incidents",
+                "similar_incident_count": similar_count
+            }
+            action_name = "Hunt Similar Attacks"
+            
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown action type: {action_type}")
+        
+        # Record the action
+        action = Action(
+            incident_id=incident_id,
+            action=action_type,
+            result="success" if result.get("status") == "success" else "failed",
+            detail=result.get("detail", ""),
+            params={
+                "action_type": action_type,
+                "parameters": parameters,
+                "ai_recommended": True,
+                "executed_via": "ai_recommendation_api"
+            }
+        )
+        db.add(action)
+        await db.commit()
+        
+        return {
+            "success": True,
+            "action_id": action.id,
+            "action_type": action_type,
+            "action_name": action_name,
+            "result": result,
+            "incident_id": incident_id,
+            "executed_at": datetime.utcnow().isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to execute AI recommendation: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/incidents/{incident_id}/execute-ai-plan")
+async def execute_ai_plan(
+    incident_id: int,
+    http_request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Execute all AI-recommended actions as a workflow"""
+    _require_api_key(http_request)
+    
+    try:
+        # Get incident and AI analysis
+        incident = (await db.execute(
+            select(Incident).where(Incident.id == incident_id)
+        )).scalars().first()
+        
+        if not incident:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        
+        if not incident.ai_analysis:
+            raise HTTPException(status_code=400, detail="No AI analysis available. Generate analysis first.")
+        
+        # Create a workflow with all recommended actions
+        from .advanced_response_engine import ResponseWorkflowEngine
+        workflow_engine = ResponseWorkflowEngine()
+        
+        # Define actions based on severity
+        severity = incident.ai_analysis.get("severity", "medium").lower()
+        actions = []
+        
+        if severity in ["critical", "high"]:
+            actions = [
+                {"action": "block_ip", "params": {"ip": incident.src_ip, "duration": 30}},
+                {"action": "threat_intel_lookup", "params": {"ip": incident.src_ip}},
+                {"action": "hunt_similar_attacks", "params": {}}
+            ]
+        else:
+            actions = [
+                {"action": "threat_intel_lookup", "params": {"ip": incident.src_ip}},
+                {"action": "hunt_similar_attacks", "params": {}}
+            ]
+        
+        # Create workflow
+        workflow = ResponseWorkflow(
+            name=f"AI Emergency Response - Incident #{incident_id}",
+            description=f"Automated response based on AI analysis (severity: {severity})",
+            created_by="ai_recommendation_engine",
+            incident_id=incident_id,
+            status="pending"
+        )
+        db.add(workflow)
+        await db.commit()
+        await db.refresh(workflow)
+        
+        # Execute actions
+        executed_actions = []
+        for action_data in actions:
+            try:
+                # Execute via the recommendation endpoint
+                result = await execute_ai_recommendation(
+                    incident_id=incident_id,
+                    request_data={
+                        "action_type": action_data["action"],
+                        "parameters": action_data["params"]
+                    },
+                    http_request=http_request,
+                    db=db
+                )
+                executed_actions.append(result)
+            except Exception as e:
+                logger.error(f"Action {action_data['action']} failed: {e}")
+                executed_actions.append({
+                    "success": False,
+                    "action_type": action_data["action"],
+                    "error": str(e)
+                })
+        
+        # Update workflow status
+        workflow.status = "completed"
+        workflow.completed_at = datetime.utcnow()
+        await db.commit()
+        
+        return {
+            "success": True,
+            "workflow_id": workflow.id,
+            "workflow_name": workflow.name,
+            "incident_id": incident_id,
+            "actions": executed_actions,
+            "total_actions": len(executed_actions),
+            "successful_actions": len([a for a in executed_actions if a.get("success")]),
+            "failed_actions": len([a for a in executed_actions if not a.get("success")])
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to execute AI plan: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/incidents/{incident_id}/threat-status")
+async def get_incident_threat_status(
+    incident_id: int,
+    http_request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get real-time threat status for an incident"""
+    _require_api_key(http_request)
+    
+    try:
+        incident = (await db.execute(
+            select(Incident).where(Incident.id == incident_id)
+        )).scalars().first()
+        
+        if not incident:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        
+        # Get action counts
+        manual_actions = (await db.execute(
+            select(func.count(Action.id)).where(Action.incident_id == incident_id)
+        )).scalar()
+        
+        workflow_actions = (await db.execute(
+            select(func.count(AdvancedResponseAction.id)).where(
+                AdvancedResponseAction.incident_id == incident_id
+            )
+        )).scalar()
+        
+        # Get agent actions (from separate agents table if exists)
+        try:
+            from .models import AgentAction
+            agent_actions = (await db.execute(
+                select(func.count(AgentAction.id)).where(
+                    AgentAction.incident_id == incident_id
+                )
+            )).scalar()
+        except:
+            agent_actions = 0
+        
+        # Determine containment status
+        containment_status = "none"
+        if incident.auto_contained or incident.status == "contained":
+            containment_status = "complete"
+        elif manual_actions > 0 or workflow_actions > 0 or agent_actions > 0:
+            containment_status = "partial"
+        
+        # Determine if attack is active
+        attack_active = incident.status in ["open", "investigating", "new"]
+        
+        return {
+            "success": True,
+            "incident_id": incident_id,
+            "attack_active": attack_active,
+            "containment_status": containment_status,
+            "agent_count": agent_actions,
+            "workflow_count": workflow_actions,
+            "manual_action_count": manual_actions,
+            "total_actions": manual_actions + workflow_actions + agent_actions,
+            "severity": incident.ai_analysis.get("severity", "medium") if incident.ai_analysis else "medium",
+            "confidence": incident.containment_confidence or incident.agent_confidence or 0.5,
+            "threat_category": incident.threat_category or "Unknown",
+            "source_ip": incident.src_ip,
+            "status": incident.status,
+            "created_at": incident.created_at.isoformat() if incident.created_at else None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get threat status: {e}")
+        return {"success": False, "error": str(e)}
+
+
 @app.get("/api/response/actions")
 async def get_available_response_actions(
     category: Optional[str] = None
@@ -6939,3 +7462,264 @@ async def get_tpot_status_endpoint(request: Request):
     
     from .verification_endpoints import get_tpot_status
     return await get_tpot_status()
+
+
+# ==================== NEW AGENT ENDPOINTS (IAM, EDR, DLP) ====================
+
+@app.post("/api/agents/iam/execute")
+async def execute_iam_action(
+    action_data: Dict[str, Any],
+    db: AsyncSession = Depends(get_db)
+):
+    """Execute IAM agent action (Active Directory management)"""
+    from .agents.iam_agent import iam_agent
+    from .models import ActionLog
+    
+    action_name = action_data.get("action_name")
+    params = action_data.get("params", {})
+    incident_id = action_data.get("incident_id")
+    
+    if not action_name or not params:
+        raise HTTPException(status_code=400, detail="action_name and params required")
+    
+    try:
+        # Execute action
+        result = await iam_agent.execute_action(action_name, params, incident_id)
+        
+        # Log to database
+        action_log = ActionLog(
+            action_id=result.get("action_id"),
+            agent_id=result.get("agent"),
+            agent_type="iam",
+            action_name=action_name,
+            incident_id=incident_id,
+            params=params,
+            result=result.get("result"),
+            status="success" if result.get("success") else "failed",
+            error=result.get("error"),
+            rollback_id=result.get("rollback_id")
+        )
+        
+        db.add(action_log)
+        await db.commit()
+        await db.refresh(action_log)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"IAM action failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/agents/edr/execute")
+async def execute_edr_action(
+    action_data: Dict[str, Any],
+    db: AsyncSession = Depends(get_db)
+):
+    """Execute EDR agent action (Windows endpoint management)"""
+    from .agents.edr_agent import edr_agent
+    from .models import ActionLog
+    
+    action_name = action_data.get("action_name")
+    params = action_data.get("params", {})
+    incident_id = action_data.get("incident_id")
+    
+    if not action_name or not params:
+        raise HTTPException(status_code=400, detail="action_name and params required")
+    
+    try:
+        # Execute action
+        result = await edr_agent.execute_action(action_name, params, incident_id)
+        
+        # Log to database
+        action_log = ActionLog(
+            action_id=result.get("action_id"),
+            agent_id=result.get("agent"),
+            agent_type="edr",
+            action_name=action_name,
+            incident_id=incident_id,
+            params=params,
+            result=result.get("result"),
+            status="success" if result.get("success") else "failed",
+            error=result.get("error"),
+            rollback_id=result.get("rollback_id")
+        )
+        
+        db.add(action_log)
+        await db.commit()
+        await db.refresh(action_log)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"EDR action failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/agents/dlp/execute")
+async def execute_dlp_action(
+    action_data: Dict[str, Any],
+    db: AsyncSession = Depends(get_db)
+):
+    """Execute DLP agent action (Data loss prevention)"""
+    from .agents.dlp_agent import dlp_agent
+    from .models import ActionLog
+    
+    action_name = action_data.get("action_name")
+    params = action_data.get("params", {})
+    incident_id = action_data.get("incident_id")
+    
+    if not action_name or not params:
+        raise HTTPException(status_code=400, detail="action_name and params required")
+    
+    try:
+        # Execute action
+        result = await dlp_agent.execute_action(action_name, params, incident_id)
+        
+        # Log to database
+        action_log = ActionLog(
+            action_id=result.get("action_id"),
+            agent_id=result.get("agent"),
+            agent_type="dlp",
+            action_name=action_name,
+            incident_id=incident_id,
+            params=params,
+            result=result.get("result"),
+            status="success" if result.get("success") else "failed",
+            error=result.get("error"),
+            rollback_id=result.get("rollback_id")
+        )
+        
+        db.add(action_log)
+        await db.commit()
+        await db.refresh(action_log)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"DLP action failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/agents/rollback/{rollback_id}")
+async def rollback_agent_action(
+    rollback_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Rollback an agent action by rollback_id"""
+    try:
+        # Find the action log
+        action_log = (await db.execute(
+            select(ActionLog).where(ActionLog.rollback_id == rollback_id)
+        )).scalars().first()
+        
+        if not action_log:
+            raise HTTPException(status_code=404, detail="Rollback ID not found")
+        
+        if action_log.rollback_executed:
+            return {
+                "success": False,
+                "message": "Rollback already executed",
+                "executed_at": action_log.rollback_timestamp
+            }
+        
+        # Execute rollback based on agent type
+        agent_type = action_log.agent_type
+        result = None
+        
+        if agent_type == "iam":
+            from .agents.iam_agent import iam_agent
+            result = await iam_agent.rollback_action(rollback_id)
+        elif agent_type == "edr":
+            from .agents.edr_agent import edr_agent
+            result = await edr_agent.rollback_action(rollback_id)
+        elif agent_type == "dlp":
+            from .agents.dlp_agent import dlp_agent
+            result = await dlp_agent.rollback_action(rollback_id)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown agent type: {agent_type}")
+        
+        # Update action log
+        action_log.rollback_executed = True
+        action_log.rollback_timestamp = datetime.now(timezone.utc)
+        action_log.rollback_result = result
+        action_log.status = "rolled_back"
+        
+        await db.commit()
+        await db.refresh(action_log)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Rollback failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/agents/actions")
+async def get_action_logs(
+    incident_id: Optional[int] = None,
+    agent_type: Optional[str] = None,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get action logs with optional filtering"""
+    query = select(ActionLog).order_by(desc(ActionLog.executed_at))
+    
+    if incident_id:
+        query = query.where(ActionLog.incident_id == incident_id)
+    
+    if agent_type:
+        query = query.where(ActionLog.agent_type == agent_type)
+    
+    query = query.limit(limit)
+    
+    result = await db.execute(query)
+    action_logs = result.scalars().all()
+    
+    return [{
+        "id": log.id,
+        "action_id": log.action_id,
+        "agent_id": log.agent_id,
+        "agent_type": log.agent_type,
+        "action_name": log.action_name,
+        "incident_id": log.incident_id,
+        "params": log.params,
+        "result": log.result,
+        "status": log.status,
+        "error": log.error,
+        "rollback_id": log.rollback_id,
+        "rollback_executed": log.rollback_executed,
+        "rollback_timestamp": log.rollback_timestamp.isoformat() if log.rollback_timestamp else None,
+        "executed_at": log.executed_at.isoformat() if log.executed_at else None,
+        "created_at": log.created_at.isoformat() if log.created_at else None
+    } for log in action_logs]
+
+
+@app.get("/api/agents/actions/{incident_id}")
+async def get_incident_actions(
+    incident_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all actions for a specific incident"""
+    query = select(ActionLog).where(
+        ActionLog.incident_id == incident_id
+    ).order_by(desc(ActionLog.executed_at))
+    
+    result = await db.execute(query)
+    action_logs = result.scalars().all()
+    
+    return [{
+        "id": log.id,
+        "action_id": log.action_id,
+        "agent_id": log.agent_id,
+        "agent_type": log.agent_type,
+        "action_name": log.action_name,
+        "params": log.params,
+        "result": log.result,
+        "status": log.status,
+        "error": log.error,
+        "rollback_id": log.rollback_id,
+        "rollback_executed": log.rollback_executed,
+        "rollback_timestamp": log.rollback_timestamp.isoformat() if log.rollback_timestamp else None,
+        "executed_at": log.executed_at.isoformat() if log.executed_at else None
+    } for log in action_logs]

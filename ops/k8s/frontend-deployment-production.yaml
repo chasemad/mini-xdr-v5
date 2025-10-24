@@ -1,0 +1,242 @@
+# ============================================================================
+# Mini-XDR Frontend Deployment - Production (Optimized)
+# ============================================================================
+# Optimized for AWS EKS with resource constraints
+# - 2 replicas for high availability
+# - Lightweight Next.js standalone server
+# - Minimal resource footprint
+# ============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mini-xdr-frontend
+  namespace: mini-xdr
+  labels:
+    app: mini-xdr-frontend
+    component: frontend
+    version: v1.0.0
+    environment: production
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0  # Ensure zero downtime
+  selector:
+    matchLabels:
+      app: mini-xdr-frontend
+  template:
+    metadata:
+      labels:
+        app: mini-xdr-frontend
+        component: frontend
+        version: v1.0.0
+    spec:
+      # Security context for the pod
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+      - name: frontend
+        image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/mini-xdr-frontend:latest
+        imagePullPolicy: Always
+
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+
+        # Environment variables
+        env:
+        - name: NEXT_PUBLIC_API_URL
+          value: "http://mini-xdr-backend-service:8000"
+        - name: NODE_ENV
+          value: "production"
+        - name: NEXT_TELEMETRY_DISABLED
+          value: "1"
+        - name: PORT
+          value: "3000"
+        - name: HOSTNAME
+          value: "0.0.0.0"
+
+        # Resource limits (lightweight frontend)
+        resources:
+          requests:
+            memory: "256Mi"   # Sufficient for Next.js standalone
+            cpu: "100m"       # 0.1 CPU per pod
+          limits:
+            memory: "512Mi"   # Cap at 512Mi
+            cpu: "250m"       # 0.25 CPU max
+
+        # Liveness probe
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 3000
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+
+        # Readiness probe
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3000
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+
+        # Startup probe
+        startupProbe:
+          httpGet:
+            path: /
+            port: 3000
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 12  # 1 minute total
+
+        # Security context for container
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+
+        # Volume mounts for writable directories
+        volumeMounts:
+        - name: nextjs-cache
+          mountPath: /app/.next/cache
+        - name: tmp
+          mountPath: /tmp
+
+      # Volumes
+      volumes:
+      - name: nextjs-cache
+        emptyDir:
+          sizeLimit: 100Mi
+      - name: tmp
+        emptyDir:
+          sizeLimit: 100Mi
+
+      # Pod anti-affinity - spread across nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - mini-xdr-frontend
+              topologyKey: kubernetes.io/hostname
+
+      # DNS policy
+      dnsPolicy: ClusterFirst
+
+      # Restart policy
+      restartPolicy: Always
+
+---
+# ============================================================================
+# Frontend Service - ClusterIP for internal communication
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: mini-xdr-frontend-service
+  namespace: mini-xdr
+  labels:
+    app: mini-xdr-frontend
+spec:
+  selector:
+    app: mini-xdr-frontend
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+    protocol: TCP
+  type: ClusterIP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600  # 1 hour
+
+---
+# ============================================================================
+# Horizontal Pod Autoscaler - Scale based on CPU/Memory
+# ============================================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: mini-xdr-frontend-hpa
+  namespace: mini-xdr
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mini-xdr-frontend
+  minReplicas: 2
+  maxReplicas: 4  # Lightweight, can scale more
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60
+      selectPolicy: Max
+
+---
+# ============================================================================
+# Pod Disruption Budget
+# ============================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mini-xdr-frontend-pdb
+  namespace: mini-xdr
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: mini-xdr-frontend

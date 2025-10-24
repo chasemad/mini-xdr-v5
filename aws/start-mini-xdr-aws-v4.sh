@@ -262,13 +262,46 @@ deploy_phase1_advanced_response() {
 # Deploy backend Phase 1 changes
 deploy_backend_phase1() {
     info "📦 Deploying backend Phase 1 changes..."
-    
+
     # Create deployment package
     local temp_dir=$(mktemp -d)
     info "Creating deployment package in $temp_dir"
-    
-    # Copy backend files
-    cp -r "$PROJECT_ROOT/backend" "$temp_dir/"
+
+    # Copy backend files excluding unnecessary files to reduce upload time
+    info "Creating optimized deployment package (excluding venv, __pycache__, logs, etc.)"
+    cd "$PROJECT_ROOT/backend"
+
+    # Use rsync to copy files while excluding unnecessary ones
+    rsync -a \
+        --exclude='venv/' \
+        --exclude='.venv/' \
+        --exclude='__pycache__/' \
+        --exclude='*.pyc' \
+        --exclude='*.pyo' \
+        --exclude='*.pyd' \
+        --exclude='node_modules/' \
+        --exclude='*.log' \
+        --exclude='*.db' \
+        --exclude='*.sqlite' \
+        --exclude='*.sqlite3' \
+        --exclude='.git/' \
+        --exclude='.pytest_cache/' \
+        --exclude='.mypy_cache/' \
+        --exclude='.coverage' \
+        --exclude='htmlcov/' \
+        --exclude='*.egg-info/' \
+        --exclude='dist/' \
+        --exclude='build/' \
+        --exclude='evidence/' \
+        --exclude='logs/' \
+        --exclude='frontend/' \
+        --exclude='backend_startup.log' \
+        --exclude='xdr.db' \
+        --exclude='*.bak' \
+        --exclude='*~' \
+        . "$temp_dir/backend/"
+
+    cd - > /dev/null
     
     # Create deployment script for remote execution
     cat > "$temp_dir/deploy_phase1_backend.sh" << 'EOF'
@@ -363,13 +396,30 @@ EOF
 # Deploy frontend Phase 1 changes
 deploy_frontend_phase1() {
     info "🎨 Deploying frontend Phase 1 changes..."
-    
+
     # Create deployment package
     local temp_dir=$(mktemp -d)
     info "Creating frontend deployment package in $temp_dir"
-    
-    # Copy frontend files
-    cp -r "$PROJECT_ROOT/frontend" "$temp_dir/"
+
+    # Copy frontend files excluding unnecessary files to reduce upload time
+    info "Creating optimized frontend deployment package (excluding node_modules, build artifacts, etc.)"
+    cd "$PROJECT_ROOT/frontend"
+
+    # Use rsync to copy files while excluding unnecessary ones
+    rsync -a \
+        --exclude='node_modules/' \
+        --exclude='.next/' \
+        --exclude='out/' \
+        --exclude='build/' \
+        --exclude='dist/' \
+        --exclude='.git/' \
+        --exclude='.DS_Store' \
+        --exclude='*.log' \
+        --exclude='.env*' \
+        --exclude='.vercel' \
+        . "$temp_dir/frontend/"
+
+    cd - > /dev/null
     
     # Create frontend deployment script
     cat > "$temp_dir/deploy_phase1_frontend.sh" << 'EOF'
