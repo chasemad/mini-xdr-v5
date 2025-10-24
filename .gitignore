@@ -18,6 +18,7 @@ backend/.env
 docs/secrets.md
 
 # SSH Keys and certificates
+.secure-keys/
 *.pem
 *.key
 *.crt
