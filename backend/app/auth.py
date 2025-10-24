@@ -18,7 +18,12 @@ from .db import get_db
 from .config import settings
 
 # JWT configuration
-SECRET_KEY = settings.JWT_SECRET_KEY or os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
+SECRET_KEY = settings.JWT_SECRET_KEY or os.getenv("JWT_SECRET_KEY")
+if not SECRET_KEY:
+    raise ValueError(
+        "JWT_SECRET_KEY is required but not set. "
+        "Please set JWT_SECRET_KEY environment variable or configure it in settings."
+    )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 8
 REFRESH_TOKEN_EXPIRE_DAYS = 30
