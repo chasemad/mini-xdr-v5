@@ -46,9 +46,12 @@ LABEL org.opencontainers.image.title="Mini-XDR Frontend" \
       org.opencontainers.image.source="https://github.com/chasemad/mini-xdr" \
       org.opencontainers.image.documentation="https://github.com/chasemad/mini-xdr/blob/main/README.md"
 
-# Security: Create non-root user
-RUN addgroup -g 1000 -S xdr && \
-    adduser -u 1000 -S xdr -G xdr
+# Security: Create non-root user with home directory
+# Handle case where group 1000 might already exist
+RUN addgroup -g 1000 -S xdr 2>/dev/null || true && \
+    adduser -u 1000 -S xdr -h /home/xdr 2>/dev/null || true && \
+    mkdir -p /home/xdr/.npm /home/xdr/.cache && \
+    chown -R xdr:xdr /home/xdr 2>/dev/null || chown -R 1000:1000 /home/xdr
 
 # Set working directory
 WORKDIR /app
@@ -56,8 +59,9 @@ WORKDIR /app
 # Copy package files
 COPY --chown=xdr:xdr package.json package-lock.json ./
 
-# Install production dependencies only
+# Install production dependencies + TypeScript (needed for next.config.ts)
 RUN npm ci --only=production --ignore-scripts && \
+    npm install --save-exact typescript@5.9.3 && \
     npm cache clean --force
 
 # Copy built application from builder (standalone mode)
@@ -71,7 +75,8 @@ COPY --from=builder --chown=xdr:xdr /app/next.config.ts ./next.config.ts
 ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME="0.0.0.0" \
-    NEXT_TELEMETRY_DISABLED=1
+    NEXT_TELEMETRY_DISABLED=1 \
+    HOME=/home/xdr
 
 # Expose port
 EXPOSE 3000
