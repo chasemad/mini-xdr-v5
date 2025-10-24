@@ -1,0 +1,161 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: mini-xdr-staging
+  ECR_BACKEND_REPO: mini-xdr-backend
+  ECR_FRONTEND_REPO: mini-xdr-frontend
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy to Staging
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: http://staging.mini-xdr.example.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Get short SHA
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Build and Push Backend Image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: staging-${{ steps.vars.outputs.sha_short }}
+        run: |
+          cd backend
+          docker buildx build \
+            --platform linux/amd64 \
+            --push \
+            --tag $ECR_REGISTRY/$ECR_BACKEND_REPO:$IMAGE_TAG \
+            --tag $ECR_REGISTRY/$ECR_BACKEND_REPO:staging-latest \
+            --cache-from type=registry,ref=$ECR_REGISTRY/$ECR_BACKEND_REPO:staging-buildcache \
+            --cache-to type=registry,ref=$ECR_REGISTRY/$ECR_BACKEND_REPO:staging-buildcache,mode=max \
+            .
+
+      - name: Build and Push Frontend Image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: staging-${{ steps.vars.outputs.sha_short }}
+        run: |
+          cd frontend
+          docker buildx build \
+            --platform linux/amd64 \
+            --push \
+            --tag $ECR_REGISTRY/$ECR_FRONTEND_REPO:$IMAGE_TAG \
+            --tag $ECR_REGISTRY/$ECR_FRONTEND_REPO:staging-latest \
+            --cache-from type=registry,ref=$ECR_REGISTRY/$ECR_FRONTEND_REPO:staging-buildcache \
+            --cache-to type=registry,ref=$ECR_REGISTRY/$ECR_FRONTEND_REPO:staging-buildcache,mode=max \
+            --build-arg NEXT_PUBLIC_API_BASE=${{ secrets.STAGING_API_URL }} \
+            --build-arg NEXT_PUBLIC_API_URL=${{ secrets.STAGING_API_URL }} \
+            .
+
+      - name: Scan Backend Image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_BACKEND_REPO }}:staging-latest
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Scan Frontend Image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_FRONTEND_REPO }}:staging-latest
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER_NAME }}
+
+      - name: Install Kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Deploy to Staging with Kustomize
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: staging-${{ steps.vars.outputs.sha_short }}
+        run: |
+          cd k8s/overlays/staging
+          kustomize edit set image \
+            backend-image=$ECR_REGISTRY/$ECR_BACKEND_REPO:$IMAGE_TAG \
+            frontend-image=$ECR_REGISTRY/$ECR_FRONTEND_REPO:$IMAGE_TAG
+          kustomize build . | kubectl apply -f -
+
+      - name: Wait for rollout to complete
+        run: |
+          kubectl rollout status deployment/mini-xdr-backend -n mini-xdr-staging --timeout=5m
+          kubectl rollout status deployment/mini-xdr-frontend -n mini-xdr-staging --timeout=5m
+
+      - name: Run smoke tests
+        run: |
+          echo "🧪 Running smoke tests..."
+          
+          # Get the staging service URL
+          BACKEND_URL=${{ secrets.STAGING_API_URL }}
+          
+          # Health check
+          echo "Checking backend health..."
+          curl -f $BACKEND_URL/health || exit 1
+          
+          echo "✅ Smoke tests passed!"
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          echo "## Staging Deployment Summary 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Backend Image:** ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_BACKEND_REPO }}:staging-${{ steps.vars.outputs.sha_short }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Frontend Image:** ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_FRONTEND_REPO }}:staging-${{ steps.vars.outputs.sha_short }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🌐 **Staging URL:** ${{ secrets.STAGING_API_URL }}" >> $GITHUB_STEP_SUMMARY
+
+  notify:
+    name: Notify Deployment Status
+    runs-on: ubuntu-latest
+    needs: [build-and-deploy]
+    if: always()
+    steps:
+      - name: Deployment Status
+        run: |
+          if [ "${{ needs.build-and-deploy.result }}" == "success" ]; then
+            echo "✅ Staging deployment successful!"
+          else
+            echo "❌ Staging deployment failed!"
+            exit 1
+          fi
+
