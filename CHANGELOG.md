@@ -7,24 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2025-10-24
+
+### Fixed
+- **Backend security middleware now allows JWT authentication for `/api/onboarding` endpoints**
+  - Updated SIMPLE_AUTH_PREFIXES to include /api/onboarding
+  - Onboarding wizard endpoints now work with Bearer tokens
+  - Fixes 401 errors on onboarding status/start/profile endpoints
+- Frontend build issues resolved via GitHub Actions AMD64 builds
+- Proper environment variable injection during Docker builds
+
 ### Added
+- **Complete onboarding wizard (4 steps: Profile, Network Scan, Agents, Validation)**
+- Network discovery service for asset scanning
+- Agent enrollment service with token generation
 - Enterprise-grade CI/CD pipeline with GitHub Actions
+  - PR validation with linting and security scans
+  - Staging deployment automation
+  - Production blue/green deployment with auto-rollback
+  - Weekly security audits
 - Multi-environment infrastructure (staging + production)
 - Kubernetes Kustomize-based deployments
 - AWS Secrets Manager integration (code ready, deployment pending)
-- Comprehensive monitoring stack (Prometheus, Grafana, Loki) - planned
-- Network policies for pod-to-pod security - planned
-- Automated security scanning in CI/CD
+- Automated security scanning in CI/CD (Trivy, TruffleHog, CodeQL)
 - Operational runbooks for deployment, rollback, and incident response
 - **SECURITY.md** - Comprehensive security policy and vulnerability reporting
 - **SECURITY_AUDIT_REPORT.md** - Complete security assessment documentation
 - **VERIFICATION_COMPLETE.md** - Production readiness verification
+- OIDC federation documentation for GitHub Actions
 
 ### Changed
 - Migrated from ConfigMap workaround to immutable Docker images
 - Reorganized Kubernetes manifests into base and overlays structure
 - Updated Dockerfiles with multi-stage builds for smaller images
-- Improved health checks and resource limits
+- Improved health checks and resource limits (90s startup for ML models)
 - Enhanced documentation structure with operational guides
 
 ### Security
@@ -33,15 +49,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Completed comprehensive security audit (Score: 75/100)
 - Verified authentication working in production
 - AWS Secrets Manager infrastructure configured
+- Container images built with security scanning (Trivy)
 - Added Trivy container scanning in CI/CD
 - Enabled pod security standards
 - Regular automated security audits scheduled
 - Added security policy documentation (SECURITY.md)
 - Added vulnerability reporting process
 
-### Fixed
-- Removed dangerous hardcoded "your-secret-key-change-in-production" fallback
-- Application now fails fast if JWT_SECRET_KEY not configured properly
+### Infrastructure
+- Deployed to AWS EKS cluster (mini-xdr-cluster, us-east-1)
+- RDS PostgreSQL with all migrations applied (5093d5f3c7d4)
+- Redis cluster for session management
+- Application Load Balancer with health checks and IP whitelisting
+- ECR repositories with multi-tag strategy (version, minor, major, latest)
 
 ## [1.0.0-auth-fix] - 2025-10-24
 
