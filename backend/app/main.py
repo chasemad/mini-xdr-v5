@@ -58,7 +58,7 @@ from .multi_ingestion import multi_ingestor
 from .nlp_suggestion_routes import router as nlp_suggestion_router
 from .nlp_workflow_routes import router as nlp_workflow_router
 from .onboarding_routes import router as onboarding_router
-from .onboarding_v2.routes import router as onboarding_v2_router
+# from .onboarding_v2.routes import router as onboarding_v2_router  # TODO: Fix CloudAsset import issue
 from .policy_engine import policy_engine
 from .responder import block_ip, unblock_ip
 from .response_optimizer import get_response_optimizer
@@ -239,7 +239,7 @@ app.include_router(nlp_workflow_router)
 app.include_router(nlp_suggestion_router)
 app.include_router(trigger_router)
 app.include_router(onboarding_router)  # Legacy onboarding
-app.include_router(onboarding_v2_router)  # Seamless onboarding v2
+# app.include_router(onboarding_v2_router)  # TODO: Fix CloudAsset import issue
 
 from fastapi import Depends
 
