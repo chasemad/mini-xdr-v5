@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { ActionButton } from "../../components/ui/ActionButton";
 import { StatusChip } from "../../components/ui/StatusChip";
-import { onboardingV2API, CloudCredentials } from "../../../lib/api/onboardingV2";
+import { onboardingV2API, CloudCredentials } from "../../lib/api/onboardingV2";
 
 interface QuickStartOnboardingProps {
   onComplete?: () => void;
