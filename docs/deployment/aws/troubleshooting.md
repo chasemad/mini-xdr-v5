@@ -312,6 +312,151 @@ kubectl get configmap mini-xdr-config -n mini-xdr -o yaml | grep DATABASE_URL
 
 ---
 
+### Backend Pod: "cannot import name 'CloudAsset' from 'app.models'"
+
+**Symptom:**
+```
+ImportError: cannot import name 'CloudAsset' from 'app.models'
+Pod Status: CrashLoopBackOff
+```
+
+**Cause:**
+The CloudAsset model was added to the codebase but the deployed container image is from an older version that doesn't include this model.
+
+**Resolution:**
+
+1. **Check if CloudAsset exists in current code:**
+```bash
+grep -r "class CloudAsset" backend/app/models.py
+```
+
+2. **Rebuild backend image with latest code:**
+```bash
+cd /home/ec2-user/mini-xdr-v2/backend
+docker build --build-arg VERSION="1.1.8" -t mini-xdr-backend:1.1.8 .
+docker push 116912495274.dkr.ecr.us-east-1.amazonaws.com/mini-xdr-backend:1.1.8
+```
+
+3. **Update deployment:**
+```bash
+kubectl set image deployment/mini-xdr-backend backend=116912495274.dkr.ecr.us-east-1.amazonaws.com/mini-xdr-backend:1.1.8 -n mini-xdr
+```
+
+**Prevention:** Always ensure container images are rebuilt and redeployed after adding new models.
+
+---
+
+### Backend Pod: "column organizations.onboarding_flow_version does not exist"
+
+**Symptom:**
+```
+sqlalchemy.exc.ProgrammingError: column organizations.onboarding_flow_version does not exist
+Pod Status: CrashLoopBackOff or 500 Internal Server Error
+```
+
+**Cause:**
+Database migrations haven't been applied to the AWS RDS instance. The code expects database schema changes that were added locally but never migrated to production.
+
+**Resolution:**
+
+1. **Run database migrations:**
+```bash
+kubectl exec -it deployment/mini-xdr-backend -n mini-xdr -- alembic upgrade head
+```
+
+2. **Verify migration success:**
+```bash
+kubectl logs deployment/mini-xdr-backend -n mini-xdr --tail=10 | grep -i migration
+```
+
+3. **Restart pods if needed:**
+```bash
+kubectl rollout restart deployment/mini-xdr-backend -n mini-xdr
+```
+
+**Prevention:** Always run `alembic upgrade head` after deploying code changes that include database schema modifications.
+
+---
+
+### ALB Target Group: Zero Healthy Targets
+
+**Symptom:**
+```
+ALB returns 503 Service Temporarily Unavailable
+Target group shows zero healthy targets
+Backend pods are Running but not accessible
+```
+
+**Cause:**
+ALB Load Balancer Controller may have deregistered targets after pod restarts or deployments.
+
+**Resolution:**
+
+1. **Check ALB controller logs:**
+```bash
+kubectl logs -n kube-system deployment/aws-load-balancer-controller --tail=50
+```
+
+2. **Verify target group health:**
+```bash
+aws elbv2 describe-target-health --target-group-arn <arn> --region us-east-1
+```
+
+3. **Restart ALB controller if needed:**
+```bash
+kubectl rollout restart deployment/aws-load-balancer-controller -n kube-system
+```
+
+4. **Force ingress reconciliation:**
+```bash
+kubectl delete pod -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+```
+
+**Prevention:** Monitor ALB controller logs during deployments and ensure target groups have healthy targets before completing rollouts.
+
+---
+
+### ALB Access: Connection Timeout (Security Group)
+
+**Symptom:**
+```
+Failed to connect to ALB hostname port 80: Timeout was reached
+curl: (28) Connection timeout
+```
+
+**Cause:**
+Security group attached to ALB only allows specific IP addresses, and current client IP is not permitted.
+
+**Resolution:**
+
+1. **Check current client IP:**
+```bash
+curl -s https://httpbin.org/ip | jq -r '.origin'
+```
+
+2. **Check ALB security group rules:**
+```bash
+aws ec2 describe-security-groups --group-ids <alb-sg-id> --region us-east-1
+```
+
+3. **Update security group to allow current IP:**
+```bash
+# Remove old rule
+aws ec2 revoke-security-group-ingress --group-id <sg-id> --protocol tcp --port 80 --cidr <old-ip>/32 --region us-east-1
+
+# Add new rule
+aws ec2 authorize-security-group-ingress --group-id <sg-id> --protocol tcp --port 80 --cidr <new-ip>/32 --region us-east-1
+```
+
+4. **Verify ingress annotation matches security group:**
+```bash
+kubectl get ingress mini-xdr-ingress -n mini-xdr -o jsonpath='{.metadata.annotations.alb\.ingress\.kubernetes\.io/inbound-cidrs}'
+```
+
+**Prevention:** Keep ingress annotations and security group rules synchronized. Use dynamic IP detection for development access.
+
+---
+
 ## General Debugging Commands
 
 ### Check Pod Events

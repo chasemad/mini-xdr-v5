@@ -351,6 +351,40 @@ docker run --rm -p 3000:3000 mini-xdr-frontend:latest
 curl http://localhost:3000
 ```
 
+## Recent Production Fixes (v1.1.8)
+
+### Code Import Errors in Production
+
+**Issue:** Backend pods crashed with import errors despite successful local testing.
+
+**Root Cause:** Missing imports in production code that were added during development.
+
+**Examples Fixed:**
+1. **CloudIntegration Import:**
+   ```python
+   # Added to backend/app/integrations/manager.py
+   from .base import CloudIntegration
+   ```
+
+2. **Optional Type Import:**
+   ```python
+   # Added to backend/app/onboarding_v2/auto_discovery.py
+   from typing import Dict, List, Any, Optional
+   ```
+
+**Prevention:** Always verify imports after adding new models or integrations. Test container builds locally before pushing to production.
+
+### Database Schema Synchronization
+
+**Issue:** Production database missing columns added in development.
+
+**Fix:** Always run database migrations in production:
+```bash
+kubectl exec -it deployment/mini-xdr-backend -n mini-xdr -- alembic upgrade head
+```
+
+**Added to deployment checklist:** Database migration step is now mandatory after code deployments.
+
 ## Related Documentation
 
 - [AWS Deployment Overview](overview.md) - Current EKS architecture
