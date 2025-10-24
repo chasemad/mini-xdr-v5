@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.1.0] - 2025-10-24
+## [1.1.0] - 2025-10-24 (v1.1.0)
 
 ### Fixed
 - **Backend security middleware now allows JWT authentication for `/api/onboarding` endpoints**
