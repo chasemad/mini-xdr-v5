@@ -12,10 +12,12 @@ Container Registry).
 | **Namespace** | `mini-xdr` |
 | **Load Balancer** | Application Load Balancer (ALB) managed by AWS Load Balancer Controller |
 | **ALB URL** | `http://k8s-minixdr-minixdri-dc5fc1df8b-1132128475.us-east-1.elb.amazonaws.com` |
+| **Current Version** | `v1.1.8` (CloudAsset model + seamless onboarding) |
 | **ECR Repositories** | `mini-xdr-backend`, `mini-xdr-frontend` |
-| **Build Instance** | EC2 t3.medium (Amazon Linux 2023) with Docker for linux/amd64 builds |
-| **Database** | RDS PostgreSQL (referenced in k8s ConfigMap) |
+| **Build Instance** | EC2 t3.medium (54.82.186.21, Amazon Linux 2023) |
+| **Database** | RDS PostgreSQL with Alembic migrations |
 | **Secrets** | AWS Secrets Manager integration |
+| **Security** | IP-restricted access (configured via ingress annotations) |
 
 ## Architecture
 
@@ -85,6 +87,31 @@ locally because:
 2. **Avoid ARM64/AMD64 Issues**: Local M1/M2 Macs produce ARM64 images that may have compatibility issues
 3. **Build Speed**: EC2 instance has faster network connectivity to ECR
 4. **ML Models**: Backend image includes large ML models (~10GB total), faster to build in AWS
+
+## Deployment Considerations
+
+### ⚠️ Critical Deployment Steps
+
+**Always perform these steps after code deployment:**
+
+1. **Rebuild Docker Images**: Ensure container images include latest code changes
+2. **Run Database Migrations**: Execute `alembic upgrade head` for schema changes
+3. **Verify Security Groups**: Ensure ALB security groups match ingress annotations
+4. **Check Target Health**: Confirm ALB targets are healthy before considering deployment complete
+
+### Recent Architecture Updates
+
+- **Version 1.1.8**: Added CloudAsset model for seamless onboarding workflow
+- **Database Schema**: Extended organizations table with onboarding flow tracking
+- **Security**: IP-restricted ALB access with dynamic security group management
+- **Monitoring**: Enhanced health checks and readiness probes for ML model loading
+
+### Common Failure Points
+
+- **Database Schema Drift**: Local SQLite ≠ AWS RDS PostgreSQL
+- **Image Version Mismatch**: Deployed containers running outdated code
+- **Security Group Sync**: Ingress annotations ≠ ALB security group rules
+- **ALB Target Registration**: Controller may deregister targets during rollouts
 
 Refer to [operations](operations.md) for detailed deployment commands and
 [troubleshooting](troubleshooting.md) for common issues.

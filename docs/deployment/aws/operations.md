@@ -222,6 +222,28 @@ kubectl exec -it deployment/mini-xdr-backend -n mini-xdr -- \
   alembic upgrade head
 ```
 
+### Critical: Run Database Migrations After Code Deployment
+
+**⚠️ IMPORTANT:** Always run database migrations after deploying code that includes database schema changes.
+
+```bash
+# After deploying new backend code with schema changes
+kubectl exec -it deployment/mini-xdr-backend -n mini-xdr -- alembic upgrade head
+
+# Check migration status
+kubectl logs deployment/mini-xdr-backend -n mini-xdr --tail=10 | grep -i migration
+
+# Restart pods if needed
+kubectl rollout restart deployment/mini-xdr-backend -n mini-xdr
+```
+
+**Symptoms of missing migrations:**
+- 500 Internal Server Error on API endpoints
+- `column X does not exist` errors in logs
+- Authentication endpoints failing
+
+**Prevention:** Include `alembic upgrade head` in your deployment checklist.
+
 ## 5. Secrets Management
 
 ### Access AWS Secrets Manager
