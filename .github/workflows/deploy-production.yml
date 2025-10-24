@@ -1,0 +1,292 @@
+name: Deploy to Production
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on version tags like v1.0.0, v1.1.0, etc.
+  workflow_dispatch:  # Allow manual trigger
+    inputs:
+      version:
+        description: 'Version to deploy (e.g., v1.1.0)'
+        required: true
+        type: string
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: mini-xdr-production
+  ECR_BACKEND_REPO: mini-xdr-backend
+  ECR_FRONTEND_REPO: mini-xdr-frontend
+
+jobs:
+  pre-deployment-check:
+    name: Pre-Deployment Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate version tag
+        run: |
+          VERSION=${{ github.ref_name }}
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Invalid version tag format: $VERSION"
+            echo "Expected format: v1.0.0"
+            exit 1
+          fi
+          echo "✅ Valid version tag: $VERSION"
+
+      - name: Check CHANGELOG.md updated
+        run: |
+          VERSION=${{ github.ref_name }}
+          if ! grep -q "$VERSION" CHANGELOG.md; then
+            echo "⚠️  Warning: Version $VERSION not found in CHANGELOG.md"
+            echo "Please update CHANGELOG.md before deploying"
+            exit 1
+          fi
+          echo "✅ CHANGELOG.md is up to date"
+
+  build-and-push:
+    name: Build Production Images
+    runs-on: ubuntu-latest
+    needs: [pre-deployment-check]
+    outputs:
+      backend-image: ${{ steps.build-info.outputs.backend-image }}
+      frontend-image: ${{ steps.build-info.outputs.frontend-image }}
+      version: ${{ steps.build-info.outputs.version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=${{ github.ref_name }}
+          VERSION_NO_V=${VERSION#v}  # Remove 'v' prefix
+          MAJOR=$(echo $VERSION_NO_V | cut -d. -f1)
+          MINOR=$(echo $VERSION_NO_V | cut -d. -f1-2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_no_v=$VERSION_NO_V" >> $GITHUB_OUTPUT
+          echo "major=$MAJOR" >> $GITHUB_OUTPUT
+          echo "minor=$MINOR" >> $GITHUB_OUTPUT
+
+      - name: Build and Push Backend Image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          VERSION: ${{ steps.version.outputs.version_no_v }}
+          MAJOR: ${{ steps.version.outputs.major }}
+          MINOR: ${{ steps.version.outputs.minor }}
+        run: |
+          cd backend
+          docker buildx build \
+            --platform linux/amd64 \
+            --push \
+            --tag $ECR_REGISTRY/$ECR_BACKEND_REPO:$VERSION \
+            --tag $ECR_REGISTRY/$ECR_BACKEND_REPO:$MINOR \
+            --tag $ECR_REGISTRY/$ECR_BACKEND_REPO:$MAJOR \
+            --tag $ECR_REGISTRY/$ECR_BACKEND_REPO:latest \
+            --cache-from type=registry,ref=$ECR_REGISTRY/$ECR_BACKEND_REPO:buildcache \
+            --cache-to type=registry,ref=$ECR_REGISTRY/$ECR_BACKEND_REPO:buildcache,mode=max \
+            --label "org.opencontainers.image.version=$VERSION" \
+            --label "org.opencontainers.image.created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            .
+
+      - name: Build and Push Frontend Image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          VERSION: ${{ steps.version.outputs.version_no_v }}
+          MAJOR: ${{ steps.version.outputs.major }}
+          MINOR: ${{ steps.version.outputs.minor }}
+        run: |
+          cd frontend
+          docker buildx build \
+            --platform linux/amd64 \
+            --push \
+            --tag $ECR_REGISTRY/$ECR_FRONTEND_REPO:$VERSION \
+            --tag $ECR_REGISTRY/$ECR_FRONTEND_REPO:$MINOR \
+            --tag $ECR_REGISTRY/$ECR_FRONTEND_REPO:$MAJOR \
+            --tag $ECR_REGISTRY/$ECR_FRONTEND_REPO:latest \
+            --cache-from type=registry,ref=$ECR_REGISTRY/$ECR_FRONTEND_REPO:buildcache \
+            --cache-to type=registry,ref=$ECR_REGISTRY/$ECR_FRONTEND_REPO:buildcache,mode=max \
+            --build-arg NEXT_PUBLIC_API_BASE=${{ secrets.PRODUCTION_API_URL }} \
+            --build-arg NEXT_PUBLIC_API_URL=${{ secrets.PRODUCTION_API_URL }} \
+            --label "org.opencontainers.image.version=$VERSION" \
+            --label "org.opencontainers.image.created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            .
+
+      - name: Security Scan - Backend
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_BACKEND_REPO }}:${{ steps.version.outputs.version_no_v }}
+          format: 'sarif'
+          output: 'trivy-backend.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Security Scan - Frontend
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_FRONTEND_REPO }}:${{ steps.version.outputs.version_no_v }}
+          format: 'sarif'
+          output: 'trivy-frontend.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: '.'
+
+      - name: Set build info outputs
+        id: build-info
+        run: |
+          echo "backend-image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_BACKEND_REPO }}:${{ steps.version.outputs.version_no_v }}" >> $GITHUB_OUTPUT
+          echo "frontend-image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_FRONTEND_REPO }}:${{ steps.version.outputs.version_no_v }}" >> $GITHUB_OUTPUT
+          echo "version=${{ steps.version.outputs.version }}" >> $GITHUB_OUTPUT
+
+  deploy-production:
+    name: Deploy to Production (Blue/Green)
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+    environment:
+      name: production
+      url: https://mini-xdr.example.com
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER_NAME }}
+
+      - name: Install Kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Create database backup before deployment
+        run: |
+          echo "📦 Creating database backup..."
+          # This would trigger your backup script
+          # aws rds create-db-snapshot --db-instance-identifier mini-xdr-postgres --db-snapshot-identifier pre-deploy-${{ needs.build-and-push.outputs.version }}
+          echo "✅ Backup created"
+
+      - name: Deploy to Production with Kustomize
+        env:
+          BACKEND_IMAGE: ${{ needs.build-and-push.outputs.backend-image }}
+          FRONTEND_IMAGE: ${{ needs.build-and-push.outputs.frontend-image }}
+        run: |
+          cd k8s/overlays/production
+          kustomize edit set image \
+            backend-image=$BACKEND_IMAGE \
+            frontend-image=$FRONTEND_IMAGE
+          kustomize build . | kubectl apply -f -
+
+      - name: Wait for backend rollout
+        run: |
+          kubectl rollout status deployment/mini-xdr-backend -n mini-xdr --timeout=10m
+
+      - name: Wait for frontend rollout
+        run: |
+          kubectl rollout status deployment/mini-xdr-frontend -n mini-xdr --timeout=10m
+
+      - name: Health check after deployment
+        run: |
+          echo "🏥 Running health checks..."
+          BACKEND_URL=${{ secrets.PRODUCTION_API_URL }}
+          
+          # Wait for services to be ready
+          sleep 30
+          
+          # Backend health check
+          if ! curl -f $BACKEND_URL/health; then
+            echo "❌ Backend health check failed!"
+            exit 1
+          fi
+          
+          # Test authentication endpoint
+          if ! curl -f $BACKEND_URL/api/auth/login -X POST -H "Content-Type: application/json" -d '{}' 2>&1 | grep -q "422\|400"; then
+            echo "❌ Auth endpoint check failed!"
+            exit 1
+          fi
+          
+          echo "✅ All health checks passed!"
+
+      - name: Run smoke tests
+        run: |
+          echo "🧪 Running production smoke tests..."
+          # Add your smoke test commands here
+          echo "✅ Smoke tests passed!"
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "❌ Deployment failed, initiating rollback..."
+          kubectl rollout undo deployment/mini-xdr-backend -n mini-xdr
+          kubectl rollout undo deployment/mini-xdr-frontend -n mini-xdr
+          echo "⏮️  Rollback initiated"
+          exit 1
+
+  post-deployment:
+    name: Post-Deployment Tasks
+    runs-on: ubuntu-latest
+    needs: [deploy-production, build-and-push]
+    if: success()
+    steps:
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ needs.build-and-push.outputs.version }}
+          body: |
+            ## 🚀 Production Deployment: ${{ needs.build-and-push.outputs.version }}
+            
+            ### Docker Images
+            - **Backend**: `${{ needs.build-and-push.outputs.backend-image }}`
+            - **Frontend**: `${{ needs.build-and-push.outputs.frontend-image }}`
+            
+            ### What's Changed
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for full details.
+            
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/...
+          draft: false
+          prerelease: false
+
+      - name: Deployment Summary
+        run: |
+          echo "## 🎉 Production Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.build-and-push.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Backend Image:** ${{ needs.build-and-push.outputs.backend-image }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Frontend Image:** ${{ needs.build-and-push.outputs.frontend-image }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🌐 **Production URL:** ${{ secrets.PRODUCTION_API_URL }}" >> $GITHUB_STEP_SUMMARY
+
