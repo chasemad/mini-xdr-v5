@@ -1,0 +1,197 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mini-xdr-backend
+  namespace: mini-xdr
+  labels:
+    app: mini-xdr-backend
+    version: v1.1-bcrypt-fix
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: mini-xdr-backend
+  template:
+    metadata:
+      labels:
+        app: mini-xdr-backend
+        version: v1.1-bcrypt-fix
+      annotations:
+        config-hash: "auth-py-patched-bcrypt5"
+    spec:
+      serviceAccountName: mini-xdr-backend
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: backend
+        image: 116912495274.dkr.ecr.us-east-1.amazonaws.com/mini-xdr-backend:v1.0.1
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: false
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: mini-xdr-secrets
+              key: DATABASE_URL
+        - name: AGENT_HMAC_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mini-xdr-secrets-new
+              key: AGENT_HMAC_KEY
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mini-xdr-secrets-new
+              key: API_KEY
+        - name: ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mini-xdr-secrets-new
+              key: ENCRYPTION_KEY
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mini-xdr-secrets-new
+              key: JWT_SECRET_KEY
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: mini-xdr-secrets
+              key: REDIS_URL
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: mini-xdr-config
+              key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: mini-xdr-config
+              key: REDIS_PORT
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mini-xdr-secrets
+              key: OPENAI_API_KEY
+        - name: ABUSEIPDB_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mini-xdr-secrets
+              key: ABUSEIPDB_API_KEY
+        - name: VIRUSTOTAL_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mini-xdr-secrets
+              key: VIRUSTOTAL_API_KEY
+        - name: API_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: mini-xdr-config
+              key: API_HOST
+        - name: API_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: mini-xdr-config
+              key: API_PORT
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: mini-xdr-config
+              key: LOG_LEVEL
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: mini-xdr-config
+              key: ENVIRONMENT
+        - name: MPLCONFIGDIR
+          value: "/tmp/matplotlib"
+        - name: HOME
+          value: "/app"
+        - name: TMPDIR
+          value: "/tmp"
+        - name: UVICORN_WORKERS
+          value: "1"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "3Gi"
+            cpu: "1500m"
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: models
+          mountPath: /app/models
+        - name: data
+          mountPath: /app/data
+        - name: auth-py-patch
+          mountPath: /app/app/auth.py
+          subPath: auth.py
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 120
+          periodSeconds: 15
+          timeoutSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 90
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 15
+      volumes:
+      - name: tmp
+        emptyDir:
+          sizeLimit: 1Gi
+      - name: models
+        persistentVolumeClaim:
+          claimName: mini-xdr-models-pvc
+      - name: data
+        persistentVolumeClaim:
+          claimName: mini-xdr-data-pvc
+      - name: auth-py-patch
+        configMap:
+          name: auth-py-patch
+
