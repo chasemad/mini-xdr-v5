@@ -59,14 +59,14 @@ check_aws_auth() {
 check_concurrency() {
     echo ""
     echo -e "${BLUE}━━━ Checking CodeBuild Concurrency Quota ━━━${NC}"
-    
+
     QUOTA=$(aws service-quotas get-service-quota \
         --service-code codebuild \
         --quota-code L-ACCF6C0D \
         --region $AWS_REGION \
         --query 'Quota.Value' \
         --output text 2>/dev/null || echo "0")
-    
+
     if [ "$QUOTA" == "0" ] || [ "$QUOTA" == "0.0" ]; then
         echo -e "${RED}✗ CodeBuild concurrency limit is 0${NC}"
         echo ""
@@ -159,7 +159,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
         --query 'build.id' \
         --output text)
     echo -e "${GREEN}✓ Backend build started: $BACKEND_BUILD_ID${NC}"
-    
+
     echo "Starting frontend build..."
     FRONTEND_BUILD_ID=$(aws codebuild start-build \
         --project-name mini-xdr-frontend-build \
@@ -168,7 +168,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
         --query 'build.id' \
         --output text)
     echo -e "${GREEN}✓ Frontend build started: $FRONTEND_BUILD_ID${NC}"
-    
+
     echo ""
     echo "Monitor builds at:"
     echo "  https://console.aws.amazon.com/codesuite/codebuild/projects?region=$AWS_REGION"
@@ -176,7 +176,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
     echo "Or check status:"
     echo "  aws codebuild batch-get-builds --ids $BACKEND_BUILD_ID --region $AWS_REGION"
     echo "  aws codebuild batch-get-builds --ids $FRONTEND_BUILD_ID --region $AWS_REGION"
-    
+
     # Wait for builds
     echo ""
     read -p "Wait for builds to complete? (Y/n) " -n 1 -r
@@ -189,7 +189,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
                 --region $AWS_REGION \
                 --query 'builds[0].buildStatus' \
                 --output text)
-            
+
             if [ "$STATUS" == "SUCCEEDED" ]; then
                 echo -e "${GREEN}✓ Backend build succeeded${NC}"
                 break
@@ -198,11 +198,11 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
                 echo "Check logs at: https://console.aws.amazon.com/codesuite/codebuild/projects/mini-xdr-backend-build/build/$BACKEND_BUILD_ID"
                 exit 1
             fi
-            
+
             echo "  Status: $STATUS (waiting...)"
             sleep 10
         done
-        
+
         echo "Waiting for frontend build..."
         while true; do
             STATUS=$(aws codebuild batch-get-builds \
@@ -210,7 +210,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
                 --region $AWS_REGION \
                 --query 'builds[0].buildStatus' \
                 --output text)
-            
+
             if [ "$STATUS" == "SUCCEEDED" ]; then
                 echo -e "${GREEN}✓ Frontend build succeeded${NC}"
                 break
@@ -219,7 +219,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
                 echo "Check logs at: https://console.aws.amazon.com/codesuite/codebuild/projects/mini-xdr-frontend-build/build/$FRONTEND_BUILD_ID"
                 exit 1
             fi
-            
+
             echo "  Status: $STATUS (waiting...)"
             sleep 10
         done
@@ -280,17 +280,17 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
     kubectl set image deployment/mini-xdr-backend \
         backend=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/mini-xdr-backend:$VERSION \
         -n $NAMESPACE
-    
+
     echo "Deploying frontend..."
     kubectl set image deployment/mini-xdr-frontend \
         frontend=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/mini-xdr-frontend:$VERSION \
         -n $NAMESPACE
-    
+
     echo ""
     echo "Waiting for rollouts to complete..."
     kubectl rollout status deployment/mini-xdr-backend -n $NAMESPACE --timeout=300s
     kubectl rollout status deployment/mini-xdr-frontend -n $NAMESPACE --timeout=300s
-    
+
     echo -e "${GREEN}✓ Deployments complete${NC}"
 else
     echo -e "${YELLOW}⚠ Skipping EKS deployment${NC}"
@@ -307,30 +307,30 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
     echo "Checking deployed image versions..."
     BACKEND_IMAGE_DEPLOYED=$(kubectl get deployment mini-xdr-backend -n $NAMESPACE -o jsonpath='{.spec.template.spec.containers[0].image}')
     FRONTEND_IMAGE_DEPLOYED=$(kubectl get deployment mini-xdr-frontend -n $NAMESPACE -o jsonpath='{.spec.template.spec.containers[0].image}')
-    
+
     echo "  Backend:  $BACKEND_IMAGE_DEPLOYED"
     echo "  Frontend: $FRONTEND_IMAGE_DEPLOYED"
-    
+
     if [[ $BACKEND_IMAGE_DEPLOYED == *":$VERSION"* ]] && [[ $FRONTEND_IMAGE_DEPLOYED == *":$VERSION"* ]]; then
         echo -e "${GREEN}✓ Correct image versions deployed${NC}"
     else
         echo -e "${RED}✗ Image versions don't match expected $VERSION${NC}"
     fi
-    
+
     echo ""
     echo "Testing authentication..."
     TOKEN=$(curl -s -X POST "$ALB_URL/api/auth/login" \
         -H "Content-Type: application/json" \
         -d '{"email":"chasemadrian@protonmail.com","password":"demo-tpot-api-key"}' \
         | jq -r '.access_token' 2>/dev/null || echo "")
-    
+
     if [ -n "$TOKEN" ] && [ "$TOKEN" != "null" ]; then
         echo -e "${GREEN}✓ Authentication successful${NC}"
-        
+
         echo ""
         echo "Testing onboarding endpoints (v1.1.0 fix)..."
         ONBOARDING_STATUS=$(curl -s -H "Authorization: Bearer $TOKEN" "$ALB_URL/api/onboarding/status" | jq -r '.detail' 2>/dev/null || echo "")
-        
+
         if [ "$ONBOARDING_STATUS" == "Unauthorized" ] || [ -z "$ONBOARDING_STATUS" ]; then
             echo -e "${RED}✗ Onboarding endpoint returned 401 - JWT fix may not be deployed${NC}"
         else
@@ -358,4 +358,3 @@ echo "  2. Monitor logs: kubectl logs -f deployment/mini-xdr-backend -n $NAMESPA
 echo "  3. Update documentation to mark deployment complete"
 echo ""
 echo -e "${GREEN}All systems operational!${NC}"
-
