@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Slider } from "@/components/ui/slider";
+import { DashboardLayout } from "@/components/DashboardLayout";
 
 interface SystemSetting {
   key: string;
@@ -134,7 +135,7 @@ export default function SettingsPage() {
       });
 
       if (response.ok) {
-        setSettings(prev => prev.map(setting => 
+        setSettings(prev => prev.map(setting =>
           setting.key === key ? { ...setting, value } : setting
         ));
       }
@@ -150,7 +151,7 @@ export default function SettingsPage() {
       });
 
       if (response.ok) {
-        setRules(prev => prev.map(rule => 
+        setRules(prev => prev.map(rule =>
           rule.id === ruleId ? { ...rule, enabled: !rule.enabled } : rule
         ));
       }
@@ -234,8 +235,8 @@ export default function SettingsPage() {
         );
       case "select":
         return (
-          <Select 
-            value={String(setting.value)} 
+          <Select
+            value={String(setting.value)}
             onValueChange={(value) => updateSetting(setting.key, value)}
           >
             <SelectTrigger className="w-32">
@@ -289,16 +290,17 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">System Settings</h1>
-          <p className="text-gray-600">Configure system behavior, rules, and integrations</p>
+    <DashboardLayout breadcrumbs={[{ label: "Settings" }]}>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-white">System Settings</h1>
+            <p className="text-gray-400 mt-1">Configure system behavior, rules, and integrations</p>
+          </div>
+          <Button>
+            Save All Changes
+          </Button>
         </div>
-        <Button>
-          💾 Save All Changes
-        </Button>
-      </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="grid w-full grid-cols-5">
@@ -366,8 +368,8 @@ export default function SettingsPage() {
                         <Button size="sm" variant="outline">
                           Edit
                         </Button>
-                        <Button 
-                          size="sm" 
+                        <Button
+                          size="sm"
                           variant={rule.enabled ? "destructive" : "default"}
                           onClick={() => toggleRule(rule.id)}
                         >
@@ -442,7 +444,7 @@ export default function SettingsPage() {
                           <div key={key} className="flex justify-between">
                             <span className="font-medium">{key}:</span>
                             <span className="font-mono">
-                              {key.toLowerCase().includes("key") || key.toLowerCase().includes("password") ? 
+                              {key.toLowerCase().includes("key") || key.toLowerCase().includes("password") ?
                                 "***************" : String(value)
                               }
                             </span>
@@ -539,8 +541,8 @@ export default function SettingsPage() {
 
                   <div className="space-y-2">
                     <Label>Role</Label>
-                    <Select 
-                      value={newUser.role} 
+                    <Select
+                      value={newUser.role}
                       onValueChange={(value: "admin" | "analyst" | "viewer") => setNewUser({...newUser, role: value})}
                     >
                       <SelectTrigger>
@@ -560,12 +562,12 @@ export default function SettingsPage() {
                     <p><strong>Admin:</strong> Full system access</p>
                   </div>
 
-                  <Button 
-                    onClick={addUser} 
+                  <Button
+                    onClick={addUser}
                     disabled={!newUser.username.trim() || !newUser.email.trim()}
                     className="w-full"
                   >
-                    ➕ Add User
+                    Add User
                   </Button>
                 </CardContent>
               </Card>
@@ -599,10 +601,10 @@ export default function SettingsPage() {
 
                 <div className="space-y-2">
                   <Button className="w-full">
-                    🔄 Create Backup Now
+                    Create Backup Now
                   </Button>
                   <Button variant="outline" className="w-full">
-                    📁 View Backup History
+                    View Backup History
                   </Button>
                 </div>
               </CardContent>
@@ -635,10 +637,10 @@ export default function SettingsPage() {
 
                 <div className="space-y-2">
                   <Button variant="destructive" className="w-full">
-                    🔄 Restore System
+                    Restore System
                   </Button>
                   <Button variant="outline" className="w-full">
-                    💾 Export Configuration
+                    Export Configuration
                   </Button>
                 </div>
               </CardContent>
@@ -679,6 +681,7 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
       </Tabs>
-    </div>
+      </div>
+    </DashboardLayout>
   );
 }

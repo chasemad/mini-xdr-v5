@@ -1,0 +1,58 @@
+# Mini-XDR Documentation Enforcement Rules
+# This file contains Cursor rules to ensure all code changes are properly documented
+
+# Rule 1: Documentation Update Requirement
+files: ["backend/**/*.py", "frontend/**/*.tsx", "frontend/**/*.ts", "infrastructure/**/*.yaml", "infrastructure/**/*.tf", "k8s/**/*.yaml", "scripts/**/*.sh", "scripts/**/*.py"]
+rule: "require_docs_update"
+description: "Any changes to production code must be accompanied by documentation updates"
+condition: "git diff --name-only | grep -E '\.(py|tsx|ts|yaml|tf|sh)$' | head -1"
+action: "validate_and_prompt_docs_update"
+
+# Rule 2: API Changes Require API Reference Updates
+files: ["backend/app/**/*.py"]
+rule: "api_docs_sync"
+description: "API endpoint changes must update docs/api/reference.md"
+condition: "git diff --name-only | grep 'backend/app/' | xargs grep -l '@app\.'"
+action: "check_api_docs_updated"
+
+# Rule 3: Model Changes Require Architecture Updates
+files: ["backend/app/models.py", "backend/app/**/*.py"]
+rule: "model_docs_sync"
+description: "Database model changes must update architecture documentation"
+condition: "git diff --name-only | grep -E '(models\.py|db\.py)'"
+action: "check_architecture_docs_updated"
+
+# Rule 4: Configuration Changes Require Environment Config Updates
+files: ["backend/app/config.py", "backend/env.example", "backend/app/main.py"]
+rule: "config_docs_sync"
+description: "Configuration changes must update docs/getting-started/environment-config.md"
+condition: "git diff --name-only | grep -E '(config\.py|env\.example|main\.py)'"
+action: "check_config_docs_updated"
+
+# Rule 5: Frontend Component Changes Require UI Documentation Updates
+files: ["frontend/app/**/*.tsx", "frontend/app/**/*.ts"]
+rule: "ui_docs_sync"
+description: "UI component changes must update docs/ui/ directory"
+condition: "git diff --name-only | grep 'frontend/app/'"
+action: "check_ui_docs_updated"
+
+# Rule 6: Deployment Changes Require Deployment Documentation Updates
+files: ["infrastructure/**/*.tf", "infrastructure/**/*.yaml", "k8s/**/*.yaml", "scripts/**/*.sh"]
+rule: "deployment_docs_sync"
+description: "Infrastructure changes must update deployment documentation"
+condition: "git diff --name-only | grep -E '(infrastructure/|k8s/|scripts/.*\.sh)'"
+action: "check_deployment_docs_updated"
+
+# Rule 7: Security Changes Require Security Documentation Updates
+files: ["backend/app/security.py", "backend/app/auth.py", "policies/**/*.yaml"]
+rule: "security_docs_sync"
+description: "Security-related changes must update security compliance documentation"
+condition: "git diff --name-only | grep -E '(security\.py|auth\.py|policies/)'"
+action: "check_security_docs_updated"
+
+# Rule 8: ML/Model Changes Require ML Documentation Updates
+files: ["backend/app/ml_engine.py", "backend/app/enhanced_threat_detector.py", "models/**/*", "scripts/ml-training/**/*.py"]
+rule: "ml_docs_sync"
+description: "ML model changes must update docs/ml/ directory"
+condition: "git diff --name-only | grep -E '(ml_engine\.py|enhanced_threat_detector\.py|models/|ml-training/)'"
+action: "check_ml_docs_updated"

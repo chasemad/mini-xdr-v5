@@ -3,14 +3,15 @@
 import { useEffect, useState, useCallback } from "react";
 import { getIncidents, agentOrchestrate } from "../lib/api";
 import Link from "next/link";
-import { 
-  Shield, AlertTriangle, Bot, Zap, 
-  Search, Filter, RefreshCw, Settings, Bell, User,
-  ChevronDown, ChevronRight, Eye, MessageSquare,
-  BarChart3, Activity, Target, Globe, Workflow,
+import {
+  Shield, AlertTriangle, Bot,
+  Search, Filter, RefreshCw,
+  ChevronDown, Eye, MessageSquare,
+  BarChart3, Activity,
   MoreHorizontal,
   ArrowUpRight, ArrowDownRight, Minus
 } from "lucide-react";
+import { DashboardLayout } from "@/components/DashboardLayout";
 
 interface Incident {
   id: number;
@@ -65,7 +66,6 @@ export default function SOCAnalystDashboard() {
   ]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [filterSeverity, setFilterSeverity] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -111,18 +111,18 @@ export default function SOCAnalystDashboard() {
   // Chat functionality
   const sendChatMessage = async () => {
     if (!chatInput.trim() || chatLoading) return;
-    
+
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       type: 'user',
       content: chatInput.trim(),
       timestamp: new Date()
     };
-    
+
     setChatMessages(prev => [...prev, userMessage]);
     setChatInput('');
     setChatLoading(true);
-    
+
     // Add loading message
     const loadingMessage: ChatMessage = {
       id: (Date.now() + 1).toString(),
@@ -131,24 +131,24 @@ export default function SOCAnalystDashboard() {
       timestamp: new Date(),
       loading: true
     };
-    
+
     setChatMessages(prev => [...prev, loadingMessage]);
-    
+
     try {
       const response = await agentOrchestrate(userMessage.content, selectedIncident?.id, {
         incident_data: selectedIncident,
         chat_history: chatMessages.slice(-5)
       });
-      
+
       const aiMessage: ChatMessage = {
         id: (Date.now() + 2).toString(),
         type: 'ai',
         content: response.message || response.analysis || "I've analyzed your query. How can I help further?",
         timestamp: new Date()
       };
-      
+
       setChatMessages(prev => prev.slice(0, -1).concat(aiMessage));
-      
+
     } catch (error) {
       setChatMessages(prev => prev.slice(0, -1));
       console.error('AI response failed:', error);
@@ -170,7 +170,7 @@ export default function SOCAnalystDashboard() {
     const date = new Date(dateString);
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
-    
+
     if (diffMins < 1) return 'just now';
     if (diffMins < 60) return `${diffMins}m ago`;
     const diffHours = Math.floor(diffMins / 60);
@@ -209,263 +209,54 @@ export default function SOCAnalystDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white flex">
-      {/* Sidebar */}
-      <div className={`${sidebarCollapsed ? 'w-16' : 'w-80'} bg-gray-900 border-r border-gray-800 transition-all duration-300 flex flex-col`}>
-        {/* Header */}
-        <div className="p-4 border-b border-gray-800">
-          <div className="flex items-center justify-between">
-            {!sidebarCollapsed && (
-              <div>
-                <h1 className="text-xl font-bold text-white">SOC Command</h1>
-                <p className="text-xs text-gray-400">Enterprise Security Center</p>
-              </div>
-            )}
-            <button
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
-            >
-              {sidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
-          </div>
+    <DashboardLayout breadcrumbs={[{ label: "Incidents" }]}>
+      {/* Filters and Search */}
+      <div className="mb-6 flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          <Filter className="w-4 h-4 text-gray-400" />
+          <select
+            value={filterSeverity}
+            onChange={(e) => setFilterSeverity(e.target.value)}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+          >
+            <option value="all">All Severities</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+          >
+            <option value="all">All Statuses</option>
+            <option value="open">Open</option>
+            <option value="contained">Contained</option>
+            <option value="dismissed">Dismissed</option>
+          </select>
         </div>
-
-        {!sidebarCollapsed && (
-          <>
-            {/* Navigation */}
-            <div className="p-4">
-              <nav className="space-y-2">
-                {[
-                  { id: 'overview', label: 'Threat Overview', icon: BarChart3, href: '/' },
-                  { id: 'incidents', label: 'Active Incidents', icon: AlertTriangle, href: '/incidents', active: true },
-                  { id: 'intelligence', label: 'Threat Intel', icon: Globe, href: '/intelligence' },
-                  { id: 'hunting', label: 'Threat Hunting', icon: Target, href: '/hunt' },
-                  { id: 'forensics', label: 'Forensics', icon: Search, href: '/investigations' },
-                  { id: 'response', label: 'Response Actions', icon: Shield, href: '/' },
-                  { id: 'workflows', label: 'Workflow Automation', icon: Workflow, href: '/workflows' },
-                  { id: 'visualizations', label: '3D Visualization', icon: Activity, href: '/visualizations' }
-                ].map(({ id, label, icon: Icon, href, active }) => (
-                  <Link
-                    key={id}
-                    href={href}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
-                      active ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30' : 'hover:bg-gray-700/50 text-gray-300 hover:text-white'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                    <span className="text-sm font-medium">{label}</span>
-                  </Link>
-                ))}
-              </nav>
-            </div>
-
-            {/* Quick Stats */}
-            <div className="p-4 border-t border-gray-800">
-              <h3 className="text-sm font-semibold text-gray-300 mb-3">System Status</h3>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">Active Threats</span>
-                  <span className="text-sm font-bold text-red-400">{metrics.high_priority}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">Contained</span>
-                  <span className="text-sm font-bold text-green-400">{metrics.contained}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">AI Detected</span>
-                  <span className="text-sm font-bold text-blue-400">{metrics.ml_detected}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">Avg Response</span>
-                  <span className="text-sm font-bold text-purple-400">{metrics.avg_response_time}m</span>
-                </div>
-              </div>
-            </div>
-          </>
+        <div className="flex items-center gap-2 ml-auto">
+          <Search className="w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search incidents..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 w-64"
+          />
+        </div>
+        {autoRefreshing && (
+          <div className="flex items-center gap-2 px-3 py-1 bg-blue-500/20 border border-blue-500/50 rounded-full">
+            <RefreshCw className="w-3 h-3 text-blue-400 animate-spin" />
+            <span className="text-xs text-blue-300 font-medium">Live</span>
+          </div>
         )}
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col">
-        {/* Top Bar */}
-        <div className="bg-gray-900/50 border-b border-gray-800 p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <h2 className="text-2xl font-bold text-white">
-                {activeTab === 'overview' && '📊 Threat Overview'}
-                {activeTab === 'incidents' && '🚨 Active Incidents'}
-                {activeTab === 'intelligence' && '🌐 Threat Intelligence'}
-                {activeTab === 'hunting' && '🎯 Threat Hunting'}
-                {activeTab === 'forensics' && '🔍 Digital Forensics'}
-                {activeTab === 'response' && '🛡️ Response Actions'}
-              </h2>
-              {autoRefreshing && (
-                <div className="flex items-center gap-2 px-3 py-1 bg-blue-500/20 border border-blue-500/50 rounded-full">
-                  <RefreshCw className="w-3 h-3 text-blue-400 animate-spin" />
-                  <span className="text-xs text-blue-300 font-medium">Live</span>
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Search className="w-4 h-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search incidents..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-gray-700/50 border border-gray-600/50 rounded-lg px-3 py-1 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500/50 w-64"
-                />
-              </div>
-              <button className="p-2 hover:bg-gray-700 rounded-lg transition-colors">
-                <Bell className="w-4 h-4 text-gray-400" />
-              </button>
-              <button className="p-2 hover:bg-gray-700 rounded-lg transition-colors">
-                <Settings className="w-4 h-4 text-gray-400" />
-              </button>
-              <button className="p-2 hover:bg-gray-700 rounded-lg transition-colors">
-                <User className="w-4 h-4 text-gray-400" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Content Area */}
-        <div className="flex-1 flex">
-          {/* Main Panel */}
-          <div className="flex-1 p-6 overflow-y-auto">
-            {activeTab === 'overview' && (
-              <div className="space-y-6">
-                {/* Metrics Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  <div className="bg-gray-900 border border-red-500/30 rounded-xl p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="p-3 bg-red-500/20 rounded-lg">
-                        <AlertTriangle className="w-6 h-6 text-red-400" />
-                      </div>
-                      <div className="text-right">
-                        <div className="text-2xl font-bold text-red-300">{metrics.total_incidents}</div>
-                        <div className="text-xs text-red-400/70">Total Incidents</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <ArrowUpRight className="w-3 h-3 text-red-400" />
-                      <span className="text-red-400">+12% from yesterday</span>
-                    </div>
-                  </div>
-
-                  <div className="bg-gray-900 border border-orange-500/30 rounded-xl p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="p-3 bg-orange-500/20 rounded-lg">
-                        <Zap className="w-6 h-6 text-orange-400" />
-                      </div>
-                      <div className="text-right">
-                        <div className="text-2xl font-bold text-orange-300">{metrics.high_priority}</div>
-                        <div className="text-xs text-orange-400/70">High Priority</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <ArrowDownRight className="w-3 h-3 text-green-400" />
-                      <span className="text-green-400">-8% from yesterday</span>
-                    </div>
-                  </div>
-
-                  <div className="bg-gray-900 border border-green-500/30 rounded-xl p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="p-3 bg-green-500/20 rounded-lg">
-                        <Shield className="w-6 h-6 text-green-400" />
-                      </div>
-                      <div className="text-right">
-                        <div className="text-2xl font-bold text-green-300">{metrics.contained}</div>
-                        <div className="text-xs text-green-400/70">Contained</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <ArrowUpRight className="w-3 h-3 text-green-400" />
-                      <span className="text-green-400">+23% effectiveness</span>
-                    </div>
-                  </div>
-
-                  <div className="bg-gray-900 border border-blue-500/30 rounded-xl p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="p-3 bg-blue-500/20 rounded-lg">
-                        <Bot className="w-6 h-6 text-blue-400" />
-                      </div>
-                      <div className="text-right">
-                        <div className="text-2xl font-bold text-blue-300">{metrics.ml_detected}</div>
-                        <div className="text-xs text-blue-400/70">AI Detected</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <Minus className="w-3 h-3 text-gray-400" />
-                      <span className="text-gray-400">Stable detection rate</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Recent Activity */}
-                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-                  <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                    <Activity className="w-5 h-5 text-green-400" />
-                    Recent Activity
-                  </h3>
-                  <div className="space-y-3">
-                    {incidents.slice(0, 5).map((incident) => (
-                      <div key={incident.id} className="flex items-center gap-4 p-3 bg-gray-700/30 rounded-lg">
-                        <div className={`w-3 h-3 rounded-full ${
-                          incident.triage_note?.severity === 'high' ? 'bg-red-500' :
-                          incident.triage_note?.severity === 'medium' ? 'bg-orange-500' : 'bg-green-500'
-                        }`}></div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-white">Incident #{incident.id}</span>
-                            <span className="text-xs text-gray-400">from {incident.src_ip}</span>
-                          </div>
-                          <p className="text-xs text-gray-400 truncate">{incident.reason}</p>
-                        </div>
-                        <div className="text-xs text-gray-500">{formatTimeAgo(incident.created_at)}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'incidents' && (
-              <div className="space-y-6">
-                {/* Filters */}
-                <div className="flex items-center gap-4 p-4 bg-gray-900 border border-gray-800 rounded-xl">
-                  <div className="flex items-center gap-2">
-                    <Filter className="w-4 h-4 text-gray-400" />
-                    <span className="text-sm text-gray-300">Filters:</span>
-                  </div>
-                  <select
-                    value={filterSeverity}
-                    onChange={(e) => setFilterSeverity(e.target.value)}
-                    className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-1 text-sm text-white"
-                  >
-                    <option value="all">All Severities</option>
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
-                  </select>
-                  <select
-                    value={filterStatus}
-                    onChange={(e) => setFilterStatus(e.target.value)}
-                    className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-1 text-sm text-white"
-                  >
-                    <option value="all">All Statuses</option>
-                    <option value="open">Open</option>
-                    <option value="contained">Contained</option>
-                    <option value="dismissed">Dismissed</option>
-                  </select>
-                  <div className="ml-auto text-sm text-gray-400">
-                    {filteredIncidents.length} of {incidents.length} incidents
-                  </div>
-                </div>
-
-                {/* Incidents List */}
+      {/* Main Content Layout: Incidents List + Chat */}
+      <div className="flex gap-6">{/* Two-column layout starts here */}
+        {/* Main Panel: Incidents List */}
+        <div className="flex-1 space-y-6">
                 <div className="space-y-4">
                   {filteredIncidents.map((incident) => (
                     <div
@@ -584,8 +375,6 @@ export default function SOCAnalystDashboard() {
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
 
             {/* Other tabs would go here */}
           </div>
@@ -617,7 +406,7 @@ export default function SOCAnalystDashboard() {
                       <Bot className="w-4 h-4 text-white" />
                     </div>
                   )}
-                  
+
                   <div className={`max-w-[80%] p-3 rounded-lg ${
                     message.type === 'user'
                       ? 'bg-blue-600/20 border border-blue-500/30 text-blue-100'
@@ -661,8 +450,7 @@ export default function SOCAnalystDashboard() {
               </div>
             </div>
           </div>
-        </div>
       </div>
-    </div>
+    </DashboardLayout>
   );
 }

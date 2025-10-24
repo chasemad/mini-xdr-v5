@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import Link from "next/link";
+import { FileText, Folder, Globe, Image, FileEdit, Clipboard, AlertTriangle, Search, Zap } from "lucide-react";
+import { DashboardLayout } from "@/components/DashboardLayout";
 
 interface Investigation {
   id: string;
@@ -197,37 +199,40 @@ export default function InvestigationsPage() {
   };
 
   const getEvidenceIcon = (type: string) => {
+    const iconClass = "w-4 h-4";
     switch (type) {
-      case "log": return "📄";
-      case "file": return "📁";
-      case "network": return "🌐";
-      case "screenshot": return "📸";
-      case "note": return "📝";
-      default: return "📋";
+      case "log": return <FileText className={iconClass} />;
+      case "file": return <Folder className={iconClass} />;
+      case "network": return <Globe className={iconClass} />;
+      case "screenshot": return <Image className={iconClass} />;
+      case "note": return <FileEdit className={iconClass} />;
+      default: return <Clipboard className={iconClass} />;
     }
   };
 
   const getTimelineIcon = (type: string) => {
+    const iconClass = "w-4 h-4";
     switch (type) {
-      case "incident": return "🚨";
-      case "evidence": return "🔍";
-      case "action": return "⚡";
-      case "note": return "📝";
-      default: return "📋";
+      case "incident": return <AlertTriangle className={iconClass} />;
+      case "evidence": return <Search className={iconClass} />;
+      case "action": return <Zap className={iconClass} />;
+      case "note": return <FileEdit className={iconClass} />;
+      default: return <Clipboard className={iconClass} />;
     }
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Investigations</h1>
-          <p className="text-gray-600">Case management and collaborative investigation workspace</p>
+    <DashboardLayout breadcrumbs={[{ label: "Investigations" }]}>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-white">Investigations</h1>
+            <p className="text-gray-400 mt-1">Case management and collaborative investigation workspace</p>
+          </div>
+          <Button onClick={() => setActiveTab("create")}>
+            New Investigation
+          </Button>
         </div>
-        <Button onClick={() => setActiveTab("create")}>
-          ➕ New Investigation
-        </Button>
-      </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="grid w-full grid-cols-4">
@@ -254,8 +259,8 @@ export default function InvestigationsPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-gray-600">ID: {investigation.id}</span>
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         onClick={() => {
                           setSelectedInvestigation(investigation);
                           setActiveTab("details");
@@ -485,8 +490,8 @@ export default function InvestigationsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Priority</Label>
-                  <Select 
-                    value={newInvestigation.priority} 
+                  <Select
+                    value={newInvestigation.priority}
                     onValueChange={(value: "low" | "medium" | "high" | "critical") => setNewInvestigation({...newInvestigation, priority: value})}
                   >
                     <SelectTrigger>
@@ -564,7 +569,7 @@ export default function InvestigationsPage() {
                         <span className="text-sm capitalize">{status}</span>
                         <div className="flex items-center gap-2">
                           <div className="w-16 h-2 bg-gray-200 rounded">
-                            <div 
+                            <div
                               className={`h-full rounded ${getStatusColor(status).split(' ')[0]}`}
                               style={{ width: `${(count / investigations.length) * 100}%` }}
                             />
@@ -608,6 +613,7 @@ export default function InvestigationsPage() {
           </div>
         </TabsContent>
       </Tabs>
-    </div>
+      </div>
+    </DashboardLayout>
   );
 }
