@@ -1,16 +1,15 @@
 version: 0.2
 
-# AWS CodeBuild Specification for Mini-XDR Backend
-# Builds Docker image and pushes to ECR
+# AWS CodeBuild Specification for Mini-XDR Frontend
+# Builds Next.js Docker image and pushes to ECR
 
 env:
   variables:
     AWS_DEFAULT_REGION: us-east-1
     AWS_ACCOUNT_ID: "116912495274"
-    ECR_REPOSITORY: mini-xdr-backend
-  parameter-store:
-    # Optional: Store sensitive build args in Parameter Store
-    # JWT_SECRET_KEY: /mini-xdr/jwt-secret
+    ECR_REPOSITORY: mini-xdr-frontend
+    # Frontend build-time environment variables
+    NEXT_PUBLIC_API_URL: "http://mini-xdr-backend-service:8000"
 
 phases:
   pre_build:
@@ -37,13 +36,15 @@ phases:
   build:
     commands:
       - echo "=== Build Phase ==="
-      - echo "Building backend Docker image..."
-      - cd backend
+      - echo "Building frontend Docker image..."
+      - cd frontend
       - |
         if [ ! -z "$VERSION_NUMBER" ]; then
           # Build with version tags
           docker buildx build \
             --platform linux/amd64 \
+            --build-arg NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_URL \
+            --build-arg NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
             --build-arg BUILD_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
             --build-arg VCS_REF="$COMMIT_HASH" \
             --build-arg VERSION="$VERSION_NUMBER" \
@@ -56,6 +57,8 @@ phases:
           # Build with commit hash only
           docker buildx build \
             --platform linux/amd64 \
+            --build-arg NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_URL \
+            --build-arg NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
             --build-arg BUILD_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
             --build-arg VCS_REF="$COMMIT_HASH" \
             -t $REPOSITORY_URI:$IMAGE_TAG \
@@ -63,7 +66,7 @@ phases:
             --load \
             .
         fi
-      - echo "Backend image built successfully"
+      - echo "Frontend image built successfully"
 
   post_build:
     commands:
@@ -78,15 +81,16 @@ phases:
           echo "Pushed version tag: $VERSION_NUMBER"
         fi
       - echo "Writing image definitions file..."
-      - printf '[{"name":"backend","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > ../imagedefinitions-backend.json
-      - echo "Backend build and push complete!"
+      - printf '[{"name":"frontend","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > ../imagedefinitions-frontend.json
+      - echo "Frontend build and push complete!"
 
 artifacts:
   files:
-    - imagedefinitions-backend.json
-  name: backend-build-artifacts
+    - imagedefinitions-frontend.json
+  name: frontend-build-artifacts
 
 cache:
   paths:
-    - '/root/.cache/pip/**/*'
-    - 'backend/venv/**/*'
+    - 'frontend/node_modules/**/*'
+    - 'frontend/.next/cache/**/*'
+
