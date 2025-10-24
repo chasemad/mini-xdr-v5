@@ -6,12 +6,13 @@ Handles agent token generation, enrollment tracking, and heartbeat monitoring.
 import logging
 import secrets
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
 
-from .models import AgentEnrollment, Organization, DiscoveredAsset
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from .models import AgentEnrollment, DiscoveredAsset, Organization
 
 logger = logging.getLogger(__name__)
 
@@ -19,34 +20,66 @@ logger = logging.getLogger(__name__)
 class AgentEnrollmentService:
     """
     Tenant-scoped agent enrollment service
-    
+
     Manages agent tokens, registration, and lifecycle tracking per organization.
     """
-    
+
     def __init__(self, organization_id: int, db: AsyncSession):
         self.organization_id = organization_id
         self.db = db
-    
+        self._cached_backend_url = None
+
+    async def _get_backend_url(self) -> str:
+        """
+        Get backend URL from organization settings or fallback to default
+
+        Returns:
+            Backend URL for agent communication
+        """
+        if self._cached_backend_url:
+            return self._cached_backend_url
+
+        # Query organization to get integration_settings
+        stmt = select(Organization).where(Organization.id == self.organization_id)
+        result = await self.db.execute(stmt)
+        org = result.scalars().first()
+
+        if org and org.integration_settings:
+            # Check if agent_public_base_url is configured
+            backend_url = org.integration_settings.get("agent_public_base_url")
+            if backend_url:
+                logger.info(f"Using configured agent_public_base_url: {backend_url}")
+                self._cached_backend_url = backend_url
+                return backend_url
+
+        # Fallback to environment variable or default
+        import os
+
+        backend_url = os.getenv("AGENT_PUBLIC_BASE_URL", "http://backend-service:8000")
+        logger.info(f"Using fallback backend URL: {backend_url}")
+        self._cached_backend_url = backend_url
+        return backend_url
+
     async def generate_agent_token(
         self,
         platform: str = "linux",
         discovered_asset_id: Optional[int] = None,
-        hostname: Optional[str] = None
+        hostname: Optional[str] = None,
     ) -> Dict:
         """
         Generate a new agent enrollment token
-        
+
         Args:
             platform: Target platform (windows|linux|macos|docker)
             discovered_asset_id: Optional link to discovered asset
             hostname: Optional target hostname
-            
+
         Returns:
             Token details including token, install scripts, and enrollment info
         """
         # Generate cryptographically secure token
         token = f"xdr-{self.organization_id}-{secrets.token_urlsafe(32)}"
-        
+
         # Create enrollment record
         enrollment = AgentEnrollment(
             organization_id=self.organization_id,
@@ -55,21 +88,24 @@ class AgentEnrollmentService:
             hostname=hostname,
             status="pending",
             enrollment_source="onboarding_wizard",
-            discovered_asset_id=discovered_asset_id
+            discovered_asset_id=discovered_asset_id,
         )
-        
+
         self.db.add(enrollment)
         await self.db.commit()
         await self.db.refresh(enrollment)
-        
+
         logger.info(
             f"Generated agent token for org {self.organization_id}, "
             f"platform {platform}, enrollment_id {enrollment.id}"
         )
-        
+
+        # Get backend URL for this organization
+        backend_url = await self._get_backend_url()
+
         # Generate install scripts
-        install_scripts = self._generate_install_scripts(token, platform)
-        
+        install_scripts = self._generate_install_scripts(token, platform, backend_url)
+
         return {
             "enrollment_id": enrollment.id,
             "agent_token": token,
@@ -77,27 +113,32 @@ class AgentEnrollmentService:
             "hostname": hostname,
             "status": "pending",
             "install_scripts": install_scripts,
-            "created_at": enrollment.created_at.isoformat()
+            "backend_url": backend_url,
+            "created_at": enrollment.created_at.isoformat(),
         }
-    
-    def _generate_install_scripts(self, token: str, platform: str) -> Dict[str, str]:
+
+    def _generate_install_scripts(
+        self, token: str, platform: str, backend_url: str
+    ) -> Dict[str, str]:
         """
         Generate platform-specific install scripts
-        
+
         Args:
             token: Agent enrollment token
             platform: Target platform
-            
+            backend_url: Backend URL for agent communication
+
         Returns:
             Dictionary of script types to script content
         """
-        # Backend API endpoint (should be configurable in production)
-        backend_url = "http://backend-service:8000"  # K8s internal service
-        
+        # Backend URL is now passed as parameter from organization settings
+
         scripts = {}
-        
+
         if platform == "linux":
-            scripts["bash"] = f"""#!/bin/bash
+            scripts[
+                "bash"
+            ] = f"""#!/bin/bash
 # Mini-XDR Agent Installation Script - Linux
 set -e
 
@@ -144,9 +185,11 @@ sudo systemctl start minixdr-agent
 echo "✅ Mini-XDR Agent installed and started"
 echo "Token: {token[:20]}..."
 """
-            
+
         elif platform == "windows":
-            scripts["powershell"] = f"""# Mini-XDR Agent Installation Script - Windows
+            scripts[
+                "powershell"
+            ] = f"""# Mini-XDR Agent Installation Script - Windows
 # Run as Administrator
 
 Write-Host "Installing Mini-XDR Agent..." -ForegroundColor Green
@@ -180,9 +223,11 @@ Start-Service -Name "MiniXDRAgent"
 Write-Host "✅ Mini-XDR Agent installed and started" -ForegroundColor Green
 Write-Host "Token: {token[:20]}..." -ForegroundColor Yellow
 """
-            
+
         elif platform == "macos":
-            scripts["bash"] = f"""#!/bin/bash
+            scripts[
+                "bash"
+            ] = f"""#!/bin/bash
 # Mini-XDR Agent Installation Script - macOS
 set -e
 
@@ -233,8 +278,10 @@ sudo launchctl load /Library/LaunchDaemons/com.minixdr.agent.plist
 echo "✅ Mini-XDR Agent installed and started"
 echo "Token: {token[:20]}..."
 """
-        
-        scripts["docker"] = f"""# Mini-XDR Agent - Docker Compose
+
+        scripts[
+            "docker"
+        ] = f"""# Mini-XDR Agent - Docker Compose
 version: '3.8'
 
 services:
@@ -253,9 +300,9 @@ services:
     network_mode: host
     privileged: true
 """
-        
+
         return scripts
-    
+
     async def register_agent(
         self,
         agent_token: str,
@@ -263,11 +310,11 @@ services:
         hostname: str,
         platform: str,
         ip_address: Optional[str] = None,
-        metadata: Optional[Dict] = None
+        metadata: Optional[Dict] = None,
     ) -> Dict:
         """
         Register an agent after first check-in
-        
+
         Args:
             agent_token: Enrollment token
             agent_id: Agent's self-reported ID
@@ -275,24 +322,24 @@ services:
             platform: Agent platform
             ip_address: Agent IP address
             metadata: Additional metadata (OS version, agent version, etc.)
-            
+
         Returns:
             Registration confirmation
         """
         # Find enrollment by token
         stmt = select(AgentEnrollment).where(
             AgentEnrollment.agent_token == agent_token,
-            AgentEnrollment.organization_id == self.organization_id
+            AgentEnrollment.organization_id == self.organization_id,
         )
         result = await self.db.execute(stmt)
         enrollment = result.scalar_one_or_none()
-        
+
         if not enrollment:
             raise ValueError(f"Invalid enrollment token for org {self.organization_id}")
-        
+
         if enrollment.status == "revoked":
             raise ValueError("Enrollment token has been revoked")
-        
+
         # Update enrollment with agent details
         enrollment.agent_id = agent_id
         enrollment.hostname = hostname
@@ -302,35 +349,31 @@ services:
         enrollment.status = "active"
         enrollment.first_checkin = datetime.now(timezone.utc)
         enrollment.last_heartbeat = datetime.now(timezone.utc)
-        
+
         await self.db.commit()
         await self.db.refresh(enrollment)
-        
+
         logger.info(
             f"Agent registered: {agent_id} ({hostname}) for org {self.organization_id}"
         )
-        
+
         return {
             "enrollment_id": enrollment.id,
             "agent_id": agent_id,
             "hostname": hostname,
             "platform": platform,
             "status": "active",
-            "registered_at": enrollment.first_checkin.isoformat()
+            "registered_at": enrollment.first_checkin.isoformat(),
         }
-    
-    async def update_heartbeat(
-        self,
-        agent_token: str,
-        agent_id: str
-    ) -> bool:
+
+    async def update_heartbeat(self, agent_token: str, agent_id: str) -> bool:
         """
         Update agent heartbeat timestamp
-        
+
         Args:
             agent_token: Enrollment token
             agent_id: Agent ID
-            
+
         Returns:
             True if successful
         """
@@ -338,107 +381,114 @@ services:
             and_(
                 AgentEnrollment.agent_token == agent_token,
                 AgentEnrollment.agent_id == agent_id,
-                AgentEnrollment.organization_id == self.organization_id
+                AgentEnrollment.organization_id == self.organization_id,
             )
         )
         result = await self.db.execute(stmt)
         enrollment = result.scalar_one_or_none()
-        
+
         if not enrollment:
             return False
-        
+
         enrollment.last_heartbeat = datetime.now(timezone.utc)
-        
+
         # Update status if currently inactive
         if enrollment.status == "inactive":
             enrollment.status = "active"
             logger.info(f"Agent {agent_id} reactivated for org {self.organization_id}")
-        
+
         await self.db.commit()
         return True
-    
+
     async def get_enrolled_agents(
-        self,
-        status: Optional[str] = None,
-        limit: int = 100
+        self, status: Optional[str] = None, limit: int = 100
     ) -> List[Dict]:
         """
         Get list of enrolled agents for this organization
-        
+
         Args:
             status: Optional status filter (pending|active|inactive|revoked)
             limit: Maximum number of results
-            
+
         Returns:
             List of agent enrollment dictionaries
         """
         query = select(AgentEnrollment).where(
             AgentEnrollment.organization_id == self.organization_id
         )
-        
+
         if status:
             query = query.where(AgentEnrollment.status == status)
-        
+
         query = query.order_by(AgentEnrollment.created_at.desc()).limit(limit)
-        
+
         result = await self.db.execute(query)
         enrollments = result.scalars().all()
-        
+
         # Mark agents as inactive if no heartbeat in last 5 minutes
         current_time = datetime.now(timezone.utc)
         inactive_threshold = current_time - timedelta(minutes=5)
-        
+
         return [
             {
                 "enrollment_id": e.id,
                 "agent_id": e.agent_id,
-                "agent_token": e.agent_token[:20] + "..." if e.agent_token else None,  # Truncate for security
+                "agent_token": e.agent_token[:20] + "..."
+                if e.agent_token
+                else None,  # Truncate for security
                 "hostname": e.hostname,
                 "platform": e.platform,
                 "ip_address": e.ip_address,
-                "status": "inactive" if (e.last_heartbeat and e.last_heartbeat < inactive_threshold and e.status == "active") else e.status,
-                "first_checkin": e.first_checkin.isoformat() if e.first_checkin else None,
-                "last_heartbeat": e.last_heartbeat.isoformat() if e.last_heartbeat else None,
+                "status": "inactive"
+                if (
+                    e.last_heartbeat
+                    and e.last_heartbeat < inactive_threshold
+                    and e.status == "active"
+                )
+                else e.status,
+                "first_checkin": e.first_checkin.isoformat()
+                if e.first_checkin
+                else None,
+                "last_heartbeat": e.last_heartbeat.isoformat()
+                if e.last_heartbeat
+                else None,
                 "agent_metadata": e.agent_metadata,
-                "created_at": e.created_at.isoformat()
+                "created_at": e.created_at.isoformat(),
             }
             for e in enrollments
         ]
-    
+
     async def revoke_agent(self, enrollment_id: int, reason: str) -> bool:
         """
         Revoke an agent enrollment
-        
+
         Args:
             enrollment_id: Enrollment ID to revoke
             reason: Revocation reason
-            
+
         Returns:
             True if successful
         """
         stmt = select(AgentEnrollment).where(
             and_(
                 AgentEnrollment.id == enrollment_id,
-                AgentEnrollment.organization_id == self.organization_id
+                AgentEnrollment.organization_id == self.organization_id,
             )
         )
         result = await self.db.execute(stmt)
         enrollment = result.scalar_one_or_none()
-        
+
         if not enrollment:
             return False
-        
+
         enrollment.status = "revoked"
         enrollment.revoked_at = datetime.now(timezone.utc)
         enrollment.revoked_reason = reason
-        
+
         await self.db.commit()
-        
+
         logger.info(
             f"Agent enrollment {enrollment_id} revoked for org {self.organization_id}: {reason}"
         )
-        
+
         return True
-
-
-
