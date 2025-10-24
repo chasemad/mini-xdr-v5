@@ -9,10 +9,11 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
+import {
   Target, Search, Globe, AlertTriangle, Shield, Workflow, Activity, BarChart3,
   ChevronRight, ChevronDown, RefreshCw, Sparkles, Database, Clock, TrendingUp
 } from "lucide-react";
+import { DashboardLayout } from "@/components/DashboardLayout";
 
 interface HuntResult {
   id: string;
@@ -35,12 +36,12 @@ export default function ThreatHuntingPage() {
 
   const runHunt = async () => {
     if (!huntQuery.trim()) return;
-    
+
     setLoading(true);
     try {
       // Simulate hunt execution (replace with real API call)
       await new Promise(resolve => setTimeout(resolve, 1500));
-      
+
       // Mock results (replace with real API response)
       setHuntResults([
         {
@@ -69,85 +70,8 @@ export default function ThreatHuntingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black text-white flex">
-      {/* Sidebar */}
-      <div className={`${sidebarCollapsed ? 'w-16' : 'w-80'} bg-gray-900 border-r border-gray-800 transition-all duration-300 flex flex-col`}>
-        {/* Header */}
-        <div className="p-4 border-b border-gray-800">
-          <div className="flex items-center justify-between">
-            {!sidebarCollapsed && (
-              <div>
-                <h1 className="text-xl font-bold text-white">SOC Command</h1>
-                <p className="text-xs text-gray-400">Enterprise Security Center</p>
-              </div>
-            )}
-            <button
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
-            >
-              {sidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
-          </div>
-        </div>
-
-        {!sidebarCollapsed && (
-          <>
-            {/* Navigation */}
-            <div className="p-4">
-              <nav className="space-y-2">
-                {[
-                  { id: 'overview', label: 'Threat Overview', icon: BarChart3, href: '/' },
-                  { id: 'incidents', label: 'Active Incidents', icon: AlertTriangle, href: '/incidents' },
-                  { id: 'intelligence', label: 'Threat Intel', icon: Globe, href: '/intelligence' },
-                  { id: 'hunting', label: 'Threat Hunting', icon: Target, href: '/hunt', active: true },
-                  { id: 'forensics', label: 'Forensics', icon: Search, href: '/investigations' },
-                  { id: 'response', label: 'Response Actions', icon: Shield, href: '/' },
-                  { id: 'workflows', label: 'Workflow Automation', icon: Workflow, href: '/workflows' },
-                  { id: 'visualizations', label: '3D Visualization', icon: Activity, href: '/visualizations' }
-                ].map(({ id, label, icon: Icon, href, active }) => (
-                  <Link
-                    key={id}
-                    href={href}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
-                      active ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30' : 'hover:bg-gray-700/50 text-gray-300 hover:text-white'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                    <span className="text-sm font-medium">{label}</span>
-                  </Link>
-                ))}
-              </nav>
-            </div>
-
-            {/* System Status */}
-            <div className="p-4 border-t border-gray-800">
-              <h3 className="text-sm font-semibold text-gray-300 mb-3">System Status</h3>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">Active Threats</span>
-                  <span className="text-sm font-bold text-red-400">2</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">Contained</span>
-                  <span className="text-sm font-bold text-green-400">1</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">Hunt Queries</span>
-                  <span className="text-sm font-bold text-blue-400">15</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">IOCs Tracked</span>
-                  <span className="text-sm font-bold text-purple-400">42</span>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+    <DashboardLayout breadcrumbs={[{ label: "Threat Hunting" }]}>
+      <div className="space-y-6">
           {/* Header Section */}
           <Card className="bg-gray-900 border-gray-800">
             <CardContent className="p-6">
@@ -193,28 +117,28 @@ export default function ThreatHuntingPage() {
           {/* Main Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
             <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 bg-gray-900 border border-gray-800 p-1">
-              <TabsTrigger 
+              <TabsTrigger
                 value="hunt"
                 className="flex items-center gap-2 data-[state=active]:bg-green-600 data-[state=active]:text-white text-gray-400"
               >
                 <Target className="h-4 w-4" />
                 <span className="hidden md:inline">Interactive Hunt</span>
               </TabsTrigger>
-              <TabsTrigger 
+              <TabsTrigger
                 value="queries"
                 className="flex items-center gap-2 data-[state=active]:bg-green-600 data-[state=active]:text-white text-gray-400"
               >
                 <Database className="h-4 w-4" />
                 <span className="hidden md:inline">Saved Queries</span>
               </TabsTrigger>
-              <TabsTrigger 
+              <TabsTrigger
                 value="iocs"
                 className="flex items-center gap-2 data-[state=active]:bg-green-600 data-[state=active]:text-white text-gray-400"
               >
                 <AlertTriangle className="h-4 w-4" />
                 <span className="hidden md:inline">IOCs</span>
               </TabsTrigger>
-              <TabsTrigger 
+              <TabsTrigger
                 value="analytics"
                 className="flex items-center gap-2 data-[state=active]:bg-green-600 data-[state=active]:text-white text-gray-400"
               >
@@ -244,22 +168,22 @@ export default function ThreatHuntingPage() {
                           className="w-full h-32 p-3 bg-gray-800 border border-gray-700 rounded-lg text-sm font-mono text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500/50"
                         />
                       </div>
-                      
+
                       <div className="flex gap-2">
-                        <Button 
-                          onClick={runHunt} 
+                        <Button
+                          onClick={runHunt}
                           disabled={loading || !huntQuery.trim()}
                           className="bg-green-600 hover:bg-green-700 text-white"
                         >
                           {loading ? (
                             <><RefreshCw className="w-4 h-4 animate-spin mr-2" />Hunting...</>
                           ) : (
-                            <>🔍 Run Hunt</>
+                            <>Run Hunt</>
                           )}
                         </Button>
-                        
-                        <Button 
-                          variant="outline" 
+
+                        <Button
+                          variant="outline"
                           onClick={() => setHuntQuery("")}
                           className="border-gray-700 text-gray-300 hover:bg-gray-800"
                         >
@@ -309,7 +233,7 @@ export default function ThreatHuntingPage() {
                           className="bg-gray-800 border-gray-700 text-white placeholder-gray-500"
                         />
                       </div>
-                      
+
                       <div className="space-y-2">
                         <Label className="text-gray-300">Description</Label>
                         <textarea
@@ -319,13 +243,13 @@ export default function ThreatHuntingPage() {
                           className="w-full h-20 p-2 bg-gray-800 border border-gray-700 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500/50"
                         />
                       </div>
-                      
-                      <Button 
-                        onClick={() => alert('Query saved!')} 
+
+                      <Button
+                        onClick={() => alert('Query saved!')}
                         disabled={!queryName.trim() || !huntQuery.trim()}
                         className="w-full bg-green-600 hover:bg-green-700 text-white"
                       >
-                        💾 Save Query
+                        Save Query
                       </Button>
                     </CardContent>
                   </Card>
@@ -356,9 +280,9 @@ export default function ThreatHuntingPage() {
                               {new Date(result.timestamp).toLocaleString()}
                             </span>
                           </div>
-                          
+
                           <p className="text-gray-300 mb-2">{result.description}</p>
-                          
+
                           <div className="text-xs text-gray-400 bg-gray-900/50 border border-gray-700 p-2 rounded">
                             <strong className="text-gray-300">Matches:</strong> {JSON.stringify(result.matches)}
                           </div>
@@ -460,9 +384,7 @@ export default function ThreatHuntingPage() {
               </Card>
             </TabsContent>
           </Tabs>
-        </div>
       </div>
-    </div>
+    </DashboardLayout>
   );
 }
-

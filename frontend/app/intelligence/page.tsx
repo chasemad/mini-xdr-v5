@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
+import { DashboardLayout } from "@/components/DashboardLayout";
 
 interface IOC {
   id: string;
@@ -229,17 +230,18 @@ export default function ThreatIntelligencePage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Threat Intelligence</h1>
-          <p className="text-gray-600">Centralized threat intelligence management and analysis</p>
+    <DashboardLayout breadcrumbs={[{ label: "Threat Intelligence" }]}>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-white">Threat Intelligence</h1>
+            <p className="text-gray-400 mt-1">Centralized threat intelligence management and analysis</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
+            <span className="text-sm text-gray-300">Intel Feeds Active</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="h-2 w-2 bg-green-500 rounded-full"></div>
-          <span className="text-sm text-gray-600">Intel Feeds Active</span>
-        </div>
-      </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="grid w-full grid-cols-5">
@@ -360,8 +362,8 @@ export default function ThreatIntelligencePage() {
                 <CardContent className="space-y-3">
                   <div className="space-y-2">
                     <Label>Type</Label>
-                    <Select 
-                      value={newIOC.type} 
+                    <Select
+                      value={newIOC.type}
                       onValueChange={(value: "ip" | "domain" | "hash" | "url" | "email" | "user_agent") => setNewIOC({...newIOC, type: value})}
                     >
                       <SelectTrigger>
@@ -389,8 +391,8 @@ export default function ThreatIntelligencePage() {
 
                   <div className="space-y-2">
                     <Label>Threat Level</Label>
-                    <Select 
-                      value={newIOC.threat_level} 
+                    <Select
+                      value={newIOC.threat_level}
                       onValueChange={(value: "low" | "medium" | "high" | "critical") => setNewIOC({...newIOC, threat_level: value})}
                     >
                       <SelectTrigger>
@@ -446,7 +448,7 @@ export default function ThreatIntelligencePage() {
                   </div>
 
                   <Button onClick={addIOC} disabled={!newIOC.value.trim()} className="w-full">
-                    ➕ Add IOC
+                    Add IOC
                   </Button>
                 </CardContent>
               </Card>
@@ -480,7 +482,7 @@ export default function ThreatIntelligencePage() {
                         </Button>
                       </div>
                     </div>
-                    
+
                     <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
                       <div>
                         <span className="font-medium">URL:</span> {feed.url}
@@ -613,7 +615,7 @@ export default function ThreatIntelligencePage() {
                     <div>
                       <span className="font-medium text-gray-700">Duration:</span>
                       <p className="text-gray-600">
-                        {campaign.end_date ? 
+                        {campaign.end_date ?
                           `${Math.ceil((new Date(campaign.end_date).getTime() - new Date(campaign.start_date).getTime()) / (1000 * 60 * 60 * 24))} days` :
                           `${Math.ceil((new Date().getTime() - new Date(campaign.start_date).getTime()) / (1000 * 60 * 60 * 24))} days (ongoing)`
                         }
@@ -739,6 +741,7 @@ export default function ThreatIntelligencePage() {
           </div>
         </TabsContent>
       </Tabs>
-    </div>
+      </div>
+    </DashboardLayout>
   );
 }
