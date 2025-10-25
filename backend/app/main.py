@@ -32,6 +32,7 @@ from .advanced_response_engine import (
     get_response_engine,
 )
 from .agent_orchestrator import get_orchestrator
+from .agent_routes import router as agent_router
 from .agents.containment_agent import ContainmentAgent
 from .ai_response_advisor import get_ai_advisor
 from .baseline_engine import baseline_engine
@@ -240,6 +241,7 @@ app.include_router(nlp_suggestion_router)
 app.include_router(trigger_router)
 app.include_router(onboarding_router)  # Legacy onboarding
 app.include_router(onboarding_v2_router)  # Seamless onboarding v2
+app.include_router(agent_router)  # Agent communication endpoints
 
 from fastapi import Depends
 
