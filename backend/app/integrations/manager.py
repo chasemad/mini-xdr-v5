@@ -118,7 +118,12 @@ class IntegrationManager:
 
         # Authenticate the integration
         try:
+            print(f"DEBUG: About to authenticate {provider} integration")
             auth_result = await integration.authenticate()
+            print(
+                f"DEBUG: Auth result: {auth_result}, "
+                f"session_credentials: {integration.session_credentials is not None}"
+            )
             if not auth_result:
                 logger.error(
                     f"Failed to authenticate {provider} integration - authentication returned False"
