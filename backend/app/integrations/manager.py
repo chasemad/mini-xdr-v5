@@ -100,6 +100,7 @@ class IntegrationManager:
         Returns:
             CloudIntegration instance or None if not configured
         """
+        print(f"DEBUG: get_integration called for provider: {provider}")
         if provider not in self.integrations:
             logger.error(f"Unknown provider: {provider}")
             return None
