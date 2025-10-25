@@ -75,8 +75,11 @@ class SmartDeploymentEngine:
             logger.info(f"Deploying to {len(deployable_assets)} compatible assets")
             self.deployment_status["progress"] = 20
 
-            # Deploy agents
-            deployment_results = await integration.deploy_agents(deployable_assets)
+            # Deploy agents with enrollment tokens
+            tokens = self.deployment_status.get("tokens", {})
+            deployment_results = await integration.deploy_agents(
+                deployable_assets, tokens
+            )
             self.deployment_status["agents_deployed"] = deployment_results.get(
                 "success", 0
             )
@@ -115,6 +118,7 @@ class SmartDeploymentEngine:
                 )
                 .values(
                     agent_status="deploying" if status == "success" else "failed",
+                    agent_deployed=status == "success",
                     deployment_method="ssm",
                     deployment_error=detail.get("error")
                     if status != "success"
@@ -123,8 +127,52 @@ class SmartDeploymentEngine:
             )
             await self.db.execute(stmt)
 
+            # If deployment succeeded, create enrollment token
+            if status == "success":
+                await self._create_enrollment_token(asset_id)
+
         await self.db.commit()
         logger.info("Updated deployment status in database")
+
+    async def _create_enrollment_token(self, asset_id: str):
+        """Create enrollment token for successfully deployed agent"""
+        import secrets
+
+        from ..agent_enrollment_service import AgentEnrollmentService
+        from ..models import AgentEnrollment
+
+        try:
+            # Generate token
+            token = f"aws-{self.organization_id}-{asset_id}-{secrets.token_urlsafe(16)}"
+
+            # Create enrollment service
+            enrollment_service = AgentEnrollmentService(self.organization_id, self.db)
+
+            # Create enrollment record
+            enrollment = AgentEnrollment(
+                organization_id=self.organization_id,
+                agent_token=token,
+                agent_id=asset_id,
+                status="pending",
+                enrollment_source="seamless_onboarding",
+            )
+
+            self.db.add(enrollment)
+            await self.db.commit()
+            await self.db.refresh(enrollment)
+
+            logger.info(
+                f"Created enrollment token for asset {asset_id}: {token[:20]}..."
+            )
+
+            # Store token in deployment results so it can be used by the agent script
+            # This is a bit of a hack, but allows the integration to access the token
+            if "tokens" not in self.deployment_status:
+                self.deployment_status["tokens"] = {}
+            self.deployment_status["tokens"][asset_id] = token
+
+        except Exception as e:
+            logger.error(f"Failed to create enrollment token for {asset_id}: {e}")
 
     async def get_status(self) -> Dict[str, Any]:
         """Get current deployment status"""

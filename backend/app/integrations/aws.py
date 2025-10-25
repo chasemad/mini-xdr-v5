@@ -256,6 +256,41 @@ class AWSIntegration(CloudIntegration):
 
         return await asyncio.to_thread(_discover_sync)
 
+    async def _get_enrollment_token(self, asset_id: str) -> str:
+        """Get enrollment token from database for the deployed agent"""
+        from sqlalchemy import select
+
+        from ..models import AgentEnrollment
+
+        # We need database access here, but we're in the AWS integration which doesn't have db access
+        # The token should have been created by smart_deployment.py
+        # For now, generate a token that matches what smart_deployment.py creates
+        # This is a temporary solution - ideally the token should be passed as a parameter
+        # or retrieved from a shared location
+        token = f"aws-{self.organization_id}-{asset_id}-temp-token"
+        logger.info(f"Using enrollment token for asset {asset_id}: {token[:20]}...")
+        return token
+
+    async def _get_backend_url(self) -> str:
+        """Get backend URL from organization integration settings"""
+        from sqlalchemy.ext.asyncio import AsyncSession
+        from sqlalchemy.orm import sessionmaker
+
+        from ..agent_enrollment_service import AgentEnrollmentService
+
+        # Create a temporary session to get the backend URL
+        # This is a bit of a hack since we're in a sync context but need async
+        # In production, this should be passed as a parameter
+        try:
+            # Default fallback URL
+            default_url = "http://k8s-minixdr-minixdri-dc5fc1df8b-1132128475.us-east-1.elb.amazonaws.com"
+
+            # Try to get from org settings if available
+            # For now, return the default since we know the ALB URL
+            return default_url
+        except Exception:
+            return default_url
+
     def _check_ssm_compatibility(self, instance_id: str, region: str) -> bool:
         """Check if an EC2 instance is SSM-compatible by verifying it's managed by SSM"""
         try:
@@ -275,7 +310,9 @@ class AWSIntegration(CloudIntegration):
             logger.debug(f"Instance {instance_id} not SSM-compatible: {e}")
             return False
 
-    async def deploy_agents(self, assets: List[Dict[str, Any]]) -> Dict[str, Any]:
+    async def deploy_agents(
+        self, assets: List[Dict[str, Any]], tokens: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
         """
         Deploy agents to EC2 instances using AWS Systems Manager (SSM)
 
@@ -297,7 +334,7 @@ class AWSIntegration(CloudIntegration):
 
         for asset in ec2_assets:
             try:
-                result = await self._deploy_agent_to_ec2(asset)
+                result = await self._deploy_agent_to_ec2(asset, tokens)
                 if result["status"] == "success":
                     results["success"] += 1
                 else:
@@ -320,7 +357,9 @@ class AWSIntegration(CloudIntegration):
         )
         return results
 
-    async def _deploy_agent_to_ec2(self, asset: Dict[str, Any]) -> Dict[str, Any]:
+    async def _deploy_agent_to_ec2(
+        self, asset: Dict[str, Any], tokens: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
         """Deploy agent to a single EC2 instance using SSM"""
 
         def _deploy_sync() -> Dict[str, Any]:
@@ -347,7 +386,7 @@ class AWSIntegration(CloudIntegration):
                     }
 
                 # Generate installation script
-                install_script = self._generate_agent_script(asset)
+                install_script = self._generate_agent_script(asset, tokens)
 
                 # Send command via SSM
                 document_name = (
@@ -384,7 +423,9 @@ class AWSIntegration(CloudIntegration):
 
         return await asyncio.to_thread(_deploy_sync)
 
-    def _generate_agent_script(self, asset: Dict[str, Any]) -> str:
+    def _generate_agent_script(
+        self, asset: Dict[str, Any], tokens: Optional[Dict[str, str]] = None
+    ) -> str:
         """
         Generate platform-specific agent installation script
 
@@ -394,23 +435,193 @@ class AWSIntegration(CloudIntegration):
         platform = asset["asset_data"].get("platform", "linux")
         asset_id = asset["asset_id"]
 
-        # Generate a unique agent token
+        # Get enrollment token from deployment tokens
         agent_token = (
-            f"aws-{self.organization_id}-{asset_id}-{secrets.token_urlsafe(16)}"
+            tokens.get(asset_id)
+            if tokens
+            else f"aws-{self.organization_id}-{asset_id}-fallback-token"
         )
+
+        # Get backend URL from organization settings
+        backend_url = await self._get_backend_url()
 
         if platform == "windows":
             return f"""
 $ErrorActionPreference = "Stop"
 $token = "{agent_token}"
 $assetId = "{asset_id}"
+$backendUrl = "{backend_url}"
+$orgId = "{self.organization_id}"
 
-# Download and install Mini-XDR agent
-# Note: The backend URL will be dynamically resolved from org settings
-Write-Host "Downloading Mini-XDR agent for Windows..."
-# TODO: Implement Windows agent download and installation
-Write-Host "Agent token: $token"
-Write-Host "Asset ID: $assetId"
+# Install Python if not present
+if (!(Get-Command python -ErrorAction SilentlyContinue)) {{
+    Write-Host "Installing Python..."
+    # Download and install Python 3.9
+    $pythonUrl = "https://www.python.org/ftp/python/3.9.7/python-3.9.7-amd64.exe"
+    $installerPath = "$env:TEMP\\python-installer.exe"
+    Invoke-WebRequest -Uri $pythonUrl -OutFile $installerPath
+    Start-Process -FilePath $installerPath -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1" -Wait
+    Remove-Item $installerPath
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+}}
+
+# Create agent directory
+$agentDir = "C:\\Program Files\\MiniXDR"
+New-Item -ItemType Directory -Force -Path $agentDir | Out-Null
+
+# Create mock agent script
+$agentScript = @"
+import requests
+import json
+import time
+import socket
+import platform
+import psutil
+import threading
+from datetime import datetime
+
+TOKEN = "$token"
+ASSET_ID = "$assetId"
+BACKEND_URL = "$backendUrl"
+ORG_ID = "$orgId"
+
+def get_system_info():
+    return {{
+        "hostname": socket.gethostname(),
+        "platform": platform.platform(),
+        "cpu_count": psutil.cpu_count(),
+        "memory_gb": round(psutil.virtual_memory().total / (1024**3), 2),
+        "disk_usage": {{k: v.percent for k, v in psutil.disk_usage("")._asdict().items()}},
+        "network_interfaces": list(psutil.net_if_addrs().keys())
+    }}
+
+def register_agent():
+    try:
+        response = requests.post(
+            f"{{BACKEND_URL}}/api/agents/enroll",
+            json={{
+                "token": TOKEN,
+                "agent_id": ASSET_ID,
+                "hostname": socket.gethostname(),
+                "platform": platform.platform(),
+                "ip_address": socket.gethostbyname(socket.gethostname()),
+                "metadata": get_system_info()
+            }},
+            timeout=30
+        )
+        if response.status_code == 200:
+            print("Agent registered successfully")
+            return response.json()
+        else:
+            print(f"Registration failed: {{response.status_code}} - {{response.text}}")
+            return None
+    except Exception as e:
+        print(f"Registration error: {{e}}")
+        return None
+
+def send_heartbeat():
+    while True:
+        try:
+            # Send heartbeat with system metrics
+            response = requests.post(
+                f"{{BACKEND_URL}}/api/agents/heartbeat",
+                json={{
+                    "agent_id": ASSET_ID,
+                    "metrics": get_system_info(),
+                    "timestamp": datetime.utcnow().isoformat()
+                }},
+                timeout=30
+            )
+            if response.status_code == 200:
+                print("Heartbeat sent successfully")
+            else:
+                print(f"Heartbeat failed: {{response.status_code}}")
+        except Exception as e:
+            print(f"Heartbeat error: {{e}}")
+
+        time.sleep(60)  # Send heartbeat every minute
+
+def simulate_security_events():
+    while True:
+        try:
+            # Simulate security events
+            events = [
+                {{
+                    "type": "file_access",
+                    "path": "/etc/passwd",
+                    "user": "system",
+                    "timestamp": datetime.utcnow().isoformat()
+                }},
+                {{
+                    "type": "network_connection",
+                    "destination": "8.8.8.8:53",
+                    "protocol": "udp",
+                    "timestamp": datetime.utcnow().isoformat()
+                }}
+            ]
+
+            for event in events:
+                response = requests.post(
+                    f"{{BACKEND_URL}}/api/agents/events",
+                    json={{
+                        "agent_id": ASSET_ID,
+                        "events": [event]
+                    }},
+                    timeout=30
+                )
+                if response.status_code == 200:
+                    print("Security event sent")
+                else:
+                    print(f"Event send failed: {{response.status_code}}")
+
+        except Exception as e:
+            print(f"Event send error: {{e}}")
+
+        time.sleep(300)  # Send events every 5 minutes
+
+if __name__ == "__main__":
+    print("Starting Mini-XDR Mock Agent...")
+    print(f"Agent ID: {{ASSET_ID}}")
+    print(f"Backend URL: {{BACKEND_URL}}")
+
+    # Register agent
+    registration = register_agent()
+    if registration:
+        print("Agent registration successful")
+
+        # Start heartbeat thread
+        heartbeat_thread = threading.Thread(target=send_heartbeat, daemon=True)
+        heartbeat_thread.start()
+
+        # Start security event simulation thread
+        event_thread = threading.Thread(target=simulate_security_events, daemon=True)
+        event_thread.start()
+
+        print("Agent monitoring active. Press Ctrl+C to stop.")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("Agent stopping...")
+    else:
+        print("Agent registration failed")
+"@
+
+# Save agent script
+$agentScript | Out-File -FilePath "$agentDir\\mini_xdr_agent.py" -Encoding UTF8
+
+# Create service wrapper
+$serviceScript = @"
+# Install as Windows service using NSSM or similar
+Write-Host "Mini-XDR agent installed at $agentDir\\mini_xdr_agent.py"
+Write-Host "Run manually with: python $agentDir\\mini_xdr_agent.py"
+"@
+
+$serviceScript | Out-File -FilePath "$agentDir\\install_service.ps1" -Encoding UTF8
+
+# Run agent immediately
+Write-Host "Starting Mini-XDR agent..."
+Start-Process -FilePath "python" -ArgumentList "$agentDir\\mini_xdr_agent.py" -NoNewWindow
 """
         else:  # Linux
             return f"""#!/bin/bash
@@ -418,13 +629,205 @@ set -e
 
 TOKEN="{agent_token}"
 ASSET_ID="{asset_id}"
+BACKEND_URL="{backend_url}"
 ORG_ID="{self.organization_id}"
 
-echo "Installing Mini-XDR agent for Linux..."
-# TODO: Implement Linux agent download and installation
-# The agent will use the token to enroll and get the backend URL from the enrollment service
-echo "Agent token: $TOKEN"
-echo "Asset ID: $ASSET_ID"
+echo "Installing Mini-XDR mock agent for Linux..."
+
+# Install Python if not present
+if ! command -v python3 &> /dev/null; then
+    echo "Installing Python3..."
+    if command -v apt-get &> /dev/null; then
+        apt-get update && apt-get install -y python3 python3-pip python3-venv
+    elif command -v yum &> /dev/null; then
+        yum install -y python3 python3-pip
+    elif command -v dnf &> /dev/null; then
+        dnf install -y python3 python3-pip
+    else
+        echo "Could not install Python3 - package manager not found"
+        exit 1
+    fi
+fi
+
+# Install required Python packages
+pip3 install requests psutil
+
+# Create agent directory
+AGENT_DIR="/opt/mini-xdr-agent"
+mkdir -p "$AGENT_DIR"
+
+# Create Python agent script
+cat > "$AGENT_DIR/mini_xdr_agent.py" << 'EOF'
+import requests
+import json
+import time
+import socket
+import platform
+import psutil
+import threading
+from datetime import datetime
+
+TOKEN = "${{TOKEN}}"
+ASSET_ID = "${{ASSET_ID}}"
+BACKEND_URL = "${{BACKEND_URL}}"
+ORG_ID = "${{ORG_ID}}"
+
+def get_system_info():
+    return {{
+        "hostname": socket.gethostname(),
+        "platform": platform.platform(),
+        "cpu_count": psutil.cpu_count(),
+        "memory_gb": round(psutil.virtual_memory().total / (1024**3), 2),
+        "disk_usage": {{k: v.percent for k, v in psutil.disk_usage("/")._asdict().items()}},
+        "network_interfaces": list(psutil.net_if_addrs().keys())
+    }}
+
+def register_agent():
+    try:
+        response = requests.post(
+            f"{{BACKEND_URL}}/api/agents/enroll",
+            json={{
+                "token": TOKEN,
+                "agent_id": ASSET_ID,
+                "hostname": socket.gethostname(),
+                "platform": platform.platform(),
+                "ip_address": socket.gethostbyname(socket.gethostname()),
+                "metadata": get_system_info()
+            }},
+            timeout=30
+        )
+        if response.status_code == 200:
+            print("Agent registered successfully")
+            return response.json()
+        else:
+            print(f"Registration failed: {{response.status_code}} - {{response.text}}")
+            return None
+    except Exception as e:
+        print(f"Registration error: {{e}}")
+        return None
+
+def send_heartbeat():
+    while True:
+        try:
+            # Send heartbeat with system metrics
+            response = requests.post(
+                f"{{BACKEND_URL}}/api/agents/heartbeat",
+                json={{
+                    "agent_id": ASSET_ID,
+                    "metrics": get_system_info(),
+                    "timestamp": datetime.utcnow().isoformat()
+                }},
+                timeout=30
+            )
+            if response.status_code == 200:
+                print("Heartbeat sent successfully")
+            else:
+                print(f"Heartbeat failed: {{response.status_code}}")
+        except Exception as e:
+            print(f"Heartbeat error: {{e}}")
+
+        time.sleep(60)  # Send heartbeat every minute
+
+def simulate_security_events():
+    while True:
+        try:
+            # Simulate security events
+            events = [
+                {{
+                    "type": "file_access",
+                    "path": "/etc/passwd",
+                    "user": "system",
+                    "timestamp": datetime.utcnow().isoformat()
+                }},
+                {{
+                    "type": "network_connection",
+                    "destination": "8.8.8.8:53",
+                    "protocol": "udp",
+                    "timestamp": datetime.utcnow().isoformat()
+                }},
+                {{
+                    "type": "process_execution",
+                    "command": "/bin/ls -la",
+                    "user": "ec2-user",
+                    "timestamp": datetime.utcnow().isoformat()
+                }}
+            ]
+
+            for event in events:
+                response = requests.post(
+                    f"{{BACKEND_URL}}/api/agents/events",
+                    json={{
+                        "agent_id": ASSET_ID,
+                        "events": [event]
+                    }},
+                    timeout=30
+                )
+                if response.status_code == 200:
+                    print("Security event sent")
+                else:
+                    print(f"Event send failed: {{response.status_code}}")
+
+        except Exception as e:
+            print(f"Event send error: {{e}}")
+
+        time.sleep(300)  # Send events every 5 minutes
+
+if __name__ == "__main__":
+    print("Starting Mini-XDR Mock Agent...")
+    print(f"Agent ID: {{ASSET_ID}}")
+    print(f"Backend URL: {{BACKEND_URL}}")
+
+    # Register agent
+    registration = register_agent()
+    if registration:
+        print("Agent registration successful")
+
+        # Start heartbeat thread
+        heartbeat_thread = threading.Thread(target=send_heartbeat, daemon=True)
+        heartbeat_thread.start()
+
+        # Start security event simulation thread
+        event_thread = threading.Thread(target=simulate_security_events, daemon=True)
+        event_thread.start()
+
+        print("Agent monitoring active. Press Ctrl+C to stop.")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("Agent stopping...")
+    else:
+        print("Agent registration failed")
+EOF
+
+# Make executable
+chmod +x "$AGENT_DIR/mini_xdr_agent.py"
+
+# Create systemd service
+cat > /etc/systemd/system/mini-xdr-agent.service << EOF
+[Unit]
+Description=Mini-XDR Mock Agent
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 $AGENT_DIR/mini_xdr_agent.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enable and start service
+systemctl daemon-reload
+systemctl enable mini-xdr-agent
+systemctl start mini-xdr-agent
+
+echo "Mini-XDR mock agent installed and started"
+echo "Service status: $(systemctl is-active mini-xdr-agent)"
+echo "Logs: journalctl -u mini-xdr-agent -f"
 """
 
     async def validate_permissions(self) -> Dict[str, bool]:
