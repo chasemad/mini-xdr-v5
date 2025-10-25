@@ -12,12 +12,12 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import IntegrationCredentials, Organization
+from ..models import IntegrationCredentials
 from ..secrets_manager import secrets_manager
 from .aws import AWSIntegration
 from .azure import AzureIntegration
-from .gcp import GCPIntegration
 from .base import CloudIntegration
+from .gcp import GCPIntegration
 
 logger = logging.getLogger(__name__)
 
@@ -112,9 +112,20 @@ class IntegrationManager:
             )
             return None
 
-        # Create integration instance
+        # Create and authenticate integration instance
         integration_class = self.integrations[provider]
-        return integration_class(self.organization_id, credentials)
+        integration = integration_class(self.organization_id, credentials)
+
+        # Authenticate the integration
+        try:
+            if not await integration.authenticate():
+                logger.error(f"Failed to authenticate {provider} integration")
+                return None
+        except Exception as e:
+            logger.error(f"Authentication error for {provider}: {e}")
+            return None
+
+        return integration
 
     async def list_integrations(self) -> List[Dict[str, Any]]:
         """
