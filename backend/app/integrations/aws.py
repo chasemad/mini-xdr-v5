@@ -5,7 +5,7 @@ AWS cloud integration for seamless onboarding
 import asyncio
 import logging
 import secrets
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import boto3
 import botocore.exceptions
@@ -193,8 +193,9 @@ class AWSIntegration(CloudIntegration):
                                             "IamInstanceProfile", {}
                                         ).get("Arn"),
                                     },
-                                    "agent_compatible": instance["State"]["Name"]
-                                    == "running",
+                                    "agent_compatible": self._check_ssm_compatibility(
+                                        instance["InstanceId"], region
+                                    ),
                                     "priority": self._get_asset_priority(
                                         {
                                             "asset_type": "ec2",
@@ -243,7 +244,7 @@ class AWSIntegration(CloudIntegration):
                                 "allocated_storage": db.get("AllocatedStorage"),
                                 "tags": db.get("TagList", []),
                             },
-                            "agent_compatible": False,  # RDS instances don't support agent deployment
+                            "agent_compatible": False,  # RDS doesn't support agents
                             "priority": "critical",  # Database servers are always critical
                         }
                     )
@@ -254,6 +255,25 @@ class AWSIntegration(CloudIntegration):
             return assets
 
         return await asyncio.to_thread(_discover_sync)
+
+    def _check_ssm_compatibility(self, instance_id: str, region: str) -> bool:
+        """Check if an EC2 instance is SSM-compatible by verifying it's managed by SSM"""
+        try:
+            # Create SSM client
+            ssm = boto3.client("ssm", region_name=region, **self.session_credentials)
+
+            # Check if instance is managed by SSM
+            response = ssm.describe_instance_information(
+                Filters=[{"Key": "InstanceIds", "Values": [instance_id]}]
+            )
+
+            # If we get instance info back, it's SSM-managed
+            return len(response.get("InstanceInformationList", [])) > 0
+
+        except Exception as e:
+            # If SSM query fails, instance is not SSM-compatible
+            logger.debug(f"Instance {instance_id} not SSM-compatible: {e}")
+            return False
 
     async def deploy_agents(self, assets: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
@@ -295,7 +315,8 @@ class AWSIntegration(CloudIntegration):
         results["skipped"] = len(assets) - len(ec2_assets)
 
         logger.info(
-            f"Agent deployment complete: {results['success']} succeeded, {results['failed']} failed, {results['skipped']} skipped"
+            f"Agent deployment complete: {results['success']} succeeded, "
+            f"{results['failed']} failed, {results['skipped']} skipped"
         )
         return results
 
