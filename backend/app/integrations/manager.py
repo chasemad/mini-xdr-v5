@@ -118,11 +118,18 @@ class IntegrationManager:
 
         # Authenticate the integration
         try:
-            if not await integration.authenticate():
-                logger.error(f"Failed to authenticate {provider} integration")
+            auth_result = await integration.authenticate()
+            if not auth_result:
+                logger.error(
+                    f"Failed to authenticate {provider} integration - authentication returned False"
+                )
                 return None
+            logger.info(f"Successfully authenticated {provider} integration")
         except Exception as e:
             logger.error(f"Authentication error for {provider}: {e}")
+            import traceback
+
+            logger.error(f"Authentication traceback: {traceback.format_exc()}")
             return None
 
         return integration
