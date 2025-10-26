@@ -5,7 +5,7 @@ AWS cloud integration for seamless onboarding
 import asyncio
 import logging
 import secrets
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import boto3
 import botocore.exceptions
@@ -325,6 +325,9 @@ class AWSIntegration(CloudIntegration):
         logger.info(f"Starting agent deployment to {len(assets)} assets")
         results = {"success": 0, "failed": 0, "skipped": 0, "details": []}
 
+        # Get backend URL for agent scripts
+        backend_url = await self._get_backend_url()
+
         # Filter for EC2 instances only (RDS doesn't support agents)
         ec2_assets = [
             a
@@ -334,7 +337,7 @@ class AWSIntegration(CloudIntegration):
 
         for asset in ec2_assets:
             try:
-                result = await self._deploy_agent_to_ec2(asset, tokens)
+                result = await self._deploy_agent_to_ec2(asset, tokens, backend_url)
                 if result["status"] == "success":
                     results["success"] += 1
                 else:
@@ -358,7 +361,10 @@ class AWSIntegration(CloudIntegration):
         return results
 
     async def _deploy_agent_to_ec2(
-        self, asset: Dict[str, Any], tokens: Optional[Dict[str, str]] = None
+        self,
+        asset: Dict[str, Any],
+        tokens: Optional[Dict[str, str]] = None,
+        backend_url: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Deploy agent to a single EC2 instance using SSM"""
 
@@ -386,7 +392,7 @@ class AWSIntegration(CloudIntegration):
                     }
 
                 # Generate installation script
-                install_script = self._generate_agent_script(asset, tokens)
+                install_script = self._generate_agent_script(asset, tokens, backend_url)
 
                 # Send command via SSM
                 document_name = (
@@ -424,7 +430,10 @@ class AWSIntegration(CloudIntegration):
         return await asyncio.to_thread(_deploy_sync)
 
     def _generate_agent_script(
-        self, asset: Dict[str, Any], tokens: Optional[Dict[str, str]] = None
+        self,
+        asset: Dict[str, Any],
+        tokens: Optional[Dict[str, str]] = None,
+        backend_url: Optional[str] = None,
     ) -> str:
         """
         Generate platform-specific agent installation script
@@ -442,8 +451,9 @@ class AWSIntegration(CloudIntegration):
             else f"aws-{self.organization_id}-{asset_id}-fallback-token"
         )
 
-        # Get backend URL from organization settings
-        backend_url = await self._get_backend_url()
+        # Use provided backend URL or fallback
+        if backend_url is None:
+            backend_url = f"https://mini-xdr-backend-{self.organization_id}.example.com"  # Fallback URL
 
         if platform == "windows":
             return f"""
