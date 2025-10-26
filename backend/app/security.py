@@ -24,7 +24,7 @@ SECURED_PREFIXES = ("/ingest", "/api")
 
 # Paths that bypass HMAC authentication (use simple API key instead or JWT)
 SIMPLE_AUTH_PREFIXES = [
-    "/api/auth",  # Authentication endpoints use JWT  
+    "/api/auth",  # Authentication endpoints use JWT
     "/api/onboarding",  # Onboarding wizard endpoints use JWT
     "/api/response",  # All response system endpoints use simple API key
     "/api/intelligence",  # Visualization endpoints
@@ -34,6 +34,7 @@ SIMPLE_AUTH_PREFIXES = [
     "/api/nlp-suggestions",  # NLP workflow suggestions
     "/api/triggers",  # Workflow trigger management endpoints
     "/api/agents",  # Agent orchestration and chat endpoints
+    "/api/telemetry",  # Telemetry status endpoint uses JWT
     "/ingest/multi"  # Multi-source ingestion (for testing - use HMAC in production)
 ]
 
