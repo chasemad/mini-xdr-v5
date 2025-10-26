@@ -14,7 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import IntegrationCredentials
 from ..secrets_manager import secrets_manager
-from .aws import AWSIntegration
+
+# from .aws import AWSIntegration  # Temporarily disabled due to syntax error
 from .azure import AzureIntegration
 from .base import CloudIntegration
 from .gcp import GCPIntegration
@@ -29,7 +30,7 @@ class IntegrationManager:
         self.organization_id = organization_id
         self.db = db
         self.integrations = {
-            "aws": AWSIntegration,
+            # "aws": AWSIntegration,  # Temporarily disabled due to syntax error
             "azure": AzureIntegration,
             "gcp": GCPIntegration,
         }
