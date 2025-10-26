@@ -32,7 +32,7 @@ from .advanced_response_engine import (
     get_response_engine,
 )
 from .agent_orchestrator import get_orchestrator
-# from .agent_routes import router as agent_router  # Temporarily disabled due to import error
+from .agent_routes import router as agent_router
 from .agents.containment_agent import ContainmentAgent
 from .ai_response_advisor import get_ai_advisor
 from .baseline_engine import baseline_engine
