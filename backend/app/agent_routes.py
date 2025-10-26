@@ -13,9 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .agent_enrollment_service import AgentEnrollmentService
-from .auth import get_current_user_optional
 from .db import get_db
-from .models import User
 
 logger = logging.getLogger(__name__)
 
