@@ -185,6 +185,40 @@ async def get_current_active_user(
     return current_user
 
 
+async def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> Optional[User]:
+    """
+    Optional dependency to get the current authenticated user
+    Returns User object if authenticated, None if not authenticated
+    """
+    try:
+        payload = decode_token(credentials.credentials)
+        user_id: int = payload.get("user_id")
+
+        if user_id is None:
+            return None
+
+        # Get database session
+        from .db import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            stmt = select(User).where(User.id == user_id, User.is_active == True)
+            result = await db.execute(stmt)
+            user = result.scalar_one_or_none()
+
+            if user is None:
+                return None
+
+            # Check if account is locked
+            if user.locked_until and user.locked_until > datetime.now(timezone.utc):
+                return None
+
+            return user
+
+    except (JWTError, Exception):
+        return None
+
+
 def require_role(required_role: str):
     """Dependency factory to require specific role"""
     async def role_checker(current_user: User = Depends(get_current_user)) -> User:

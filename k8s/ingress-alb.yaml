@@ -9,16 +9,18 @@ metadata:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     
-    # SSL/TLS Configuration
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
-    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    # SSL/TLS Configuration - HTTP Only (for now)
+    # TODO: Enable HTTPS when SSL certificate is available
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    # alb.ingress.kubernetes.io/ssl-redirect: '443'
     # TODO: Replace with your ACM certificate ARN
     # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/CERT_ID
+    # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
     
-    # IP Whitelisting - CHANGE THIS FOR PUBLIC ACCESS
-    # Current: Restricted to your IP only
+    # IP Whitelisting - Updated for current user access
+    # Current: Restricted to user IP for security
     # For public demos: Remove this annotation or set to 0.0.0.0/0
-    alb.ingress.kubernetes.io/inbound-cidrs: 37.19.221.202/32
+    alb.ingress.kubernetes.io/inbound-cidrs: 24.11.0.176/32
     
     # Health Check Configuration
     alb.ingress.kubernetes.io/healthcheck-path: /health
