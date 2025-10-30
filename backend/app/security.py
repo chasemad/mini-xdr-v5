@@ -5,18 +5,18 @@ import hashlib
 import hmac
 import time
 from collections import defaultdict, deque
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Deque, Dict, Tuple
 
 from fastapi import HTTPException
+from sqlalchemy import delete, select
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
-from sqlalchemy import delete, select
 
+from .config import settings
 from .db import AsyncSessionLocal
 from .models import AgentCredential, RequestNonce
-from .config import settings
 
 MAX_CLOCK_SKEW_SECONDS = 300  # +/- 5 minutes
 NONCE_TTL_SECONDS = 600
@@ -35,23 +35,28 @@ SIMPLE_AUTH_PREFIXES = [
     "/api/triggers",  # Workflow trigger management endpoints
     "/api/agents",  # Agent orchestration and chat endpoints
     "/api/telemetry",  # Telemetry status endpoint uses JWT
-    "/ingest/multi"  # Multi-source ingestion (for testing - use HMAC in production)
+    "/ingest/multi",  # Multi-source ingestion (for testing - use HMAC in production)
 ]
 
 ALLOWED_PATHS = {
     "/health",
+    "/api/health",  # Health check endpoint (Kubernetes probes)
     "/docs",
     "/openapi.json",
-    "/api/auth/config"
+    "/api/auth/config",
 }
 
 
-def build_canonical_message(method: str, path: str, body: str, timestamp: str, nonce: str) -> str:
+def build_canonical_message(
+    method: str, path: str, body: str, timestamp: str, nonce: str
+) -> str:
     return "|".join([method.upper(), path, body, timestamp, nonce])
 
 
 def compute_signature(secret_hash: str, canonical_message: str) -> str:
-    return hmac.new(secret_hash.encode("utf-8"), canonical_message.encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.new(
+        secret_hash.encode("utf-8"), canonical_message.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
 
 
 def require_api_key(request: Request) -> bool:
@@ -70,7 +75,9 @@ def require_api_key(request: Request) -> bool:
     return True
 
 
-def is_timestamp_valid(timestamp: int, now: datetime | None = None, max_skew: int = MAX_CLOCK_SKEW_SECONDS) -> bool:
+def is_timestamp_valid(
+    timestamp: int, now: datetime | None = None, max_skew: int = MAX_CLOCK_SKEW_SECONDS
+) -> bool:
     if now is None:
         now = datetime.now(timezone.utc)
     return abs(int(now.timestamp()) - int(timestamp)) <= max_skew
@@ -107,7 +114,10 @@ class RateLimiter:
             burst_count = sum(1 for ts in events if now - ts <= self.burst_window)
             sustained_count = len(events)
 
-            if burst_count >= self.burst_limit or sustained_count >= self.sustained_limit:
+            if (
+                burst_count >= self.burst_limit
+                or sustained_count >= self.sustained_limit
+            ):
                 raise HTTPException(status_code=429, detail="Rate limit exceeded")
 
             events.append(now)
@@ -133,7 +143,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
             try:
                 body_bytes = gzip.decompress(body_bytes)
             except OSError as exc:
-                raise HTTPException(status_code=400, detail="Invalid gzip payload") from exc
+                raise HTTPException(
+                    status_code=400, detail="Invalid gzip payload"
+                ) from exc
         body_text = body_bytes.decode("utf-8") if body_bytes else ""
 
         device_id = request.headers.get("X-Device-ID")
@@ -142,15 +154,21 @@ class AuthMiddleware(BaseHTTPMiddleware):
         signature = request.headers.get("X-Signature")
 
         if not all([device_id, timestamp_header, nonce, signature]):
-            raise HTTPException(status_code=401, detail="Missing authentication headers")
+            raise HTTPException(
+                status_code=401, detail="Missing authentication headers"
+            )
 
         try:
             timestamp = int(timestamp_header)
         except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid timestamp format") from None
+            raise HTTPException(
+                status_code=400, detail="Invalid timestamp format"
+            ) from None
 
         if not is_timestamp_valid(timestamp):
-            raise HTTPException(status_code=401, detail="Timestamp outside allowed window")
+            raise HTTPException(
+                status_code=401, detail="Timestamp outside allowed window"
+            )
 
         canonical = build_canonical_message(
             request.method,
@@ -177,16 +195,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     def _requires_auth(self, request: Request) -> bool:
         path = request.url.path
-        
+
         # Check for paths that don't require any auth
         if path in ALLOWED_PATHS or path.startswith("/static"):
             return False
-            
+
         # Check for paths that use simple API key auth (bypass HMAC)
         if any(path.startswith(prefix) for prefix in SIMPLE_AUTH_PREFIXES):
             return False
-            
-        # Check if path requires HMAC authentication  
+
+        # Check if path requires HMAC authentication
         return any(path.startswith(prefix) for prefix in SECURED_PREFIXES)
 
     async def _get_active_credential(self, session, device_id: str) -> AgentCredential:
@@ -201,12 +219,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Handle timezone-aware/naive comparison
         if credential.revoked_at:
-            revoked_at = credential.revoked_at.replace(tzinfo=timezone.utc) if credential.revoked_at.tzinfo is None else credential.revoked_at
+            revoked_at = (
+                credential.revoked_at.replace(tzinfo=timezone.utc)
+                if credential.revoked_at.tzinfo is None
+                else credential.revoked_at
+            )
             if revoked_at <= now:
                 raise HTTPException(status_code=401, detail="Device revoked")
 
         if credential.expires_at:
-            expires_at = credential.expires_at.replace(tzinfo=timezone.utc) if credential.expires_at.tzinfo is None else credential.expires_at
+            expires_at = (
+                credential.expires_at.replace(tzinfo=timezone.utc)
+                if credential.expires_at.tzinfo is None
+                else credential.expires_at
+            )
             if expires_at <= now:
                 raise HTTPException(status_code=401, detail="Device credential expired")
         return credential
@@ -224,7 +250,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
             raise HTTPException(status_code=401, detail="Nonce already used")
 
         # Prune old nonces
-        expiry_cutoff = datetime.now(timezone.utc) - timedelta(seconds=NONCE_TTL_SECONDS)
+        expiry_cutoff = datetime.now(timezone.utc) - timedelta(
+            seconds=NONCE_TTL_SECONDS
+        )
         await session.execute(
             delete(RequestNonce).where(RequestNonce.created_at < expiry_cutoff)
         )
