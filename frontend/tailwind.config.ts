@@ -16,53 +16,46 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Background colors
-        bg: 'var(--bg)',
-        surface: {
-          0: 'var(--surface-0)',
-          1: 'var(--surface-1)',
-          2: 'var(--surface-2)',
+        // Shadcn/UI colors
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+        primary: {
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
         },
-
-        // Text colors
-        text: {
-          DEFAULT: 'var(--text)',
-          muted: 'var(--text-muted)',
-          subtle: 'var(--text-subtle)',
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
         },
-
-        // Border
-        border: 'var(--border)',
-
-        // Primary action color
-        primary: 'var(--primary)',
-
-        // Status colors
-        info: 'var(--info)',
-        success: 'var(--success)',
-        warning: 'var(--warning)',
-        danger: 'var(--danger)',
-
-        // Severity scale for incidents
-        severity: {
-          info: 'var(--severity-info)',
-          low: 'var(--severity-low)',
-          med: 'var(--severity-med)',
-          high: 'var(--severity-high)',
-          critical: 'var(--severity-critical)',
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
         },
-
-        // Interactive states
-        hover: 'var(--hover)',
-        active: 'var(--active)',
-        focus: 'var(--focus)',
-        disabled: 'var(--disabled)',
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
+        popover: {
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
+        },
+        card: {
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
+        },
       },
 
       borderRadius: {
-        xl: 'var(--radius-xl)',
-        '2xl': 'var(--radius-2xl)',
-        '3xl': 'var(--radius-3xl)',
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
       },
 
       boxShadow: {
