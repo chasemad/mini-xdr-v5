@@ -9,6 +9,7 @@ import UnifiedResponseTimeline from "@/components/UnifiedResponseTimeline";
 import TacticalDecisionCenter from "@/components/TacticalDecisionCenter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useIncidentRealtime } from "@/app/hooks/useIncidentRealtime";
+import { apiUrl } from "@/app/utils/api";
 
 interface IncidentDetail {
   id: number;
@@ -48,14 +49,14 @@ export default function EnterpriseIncidentPage({ params }: { params: Promise<{ i
   // Unwrap params using React.use() for Next.js 15
   const { id } = use(params);
   const incidentId = parseInt(id);
-  
+
   // Use real-time hook for incident data
-  const { 
-    incident, 
-    loading: realtimeLoading, 
+  const {
+    incident,
+    loading: realtimeLoading,
     refreshIncident,
     connectionStatus,
-    lastUpdate 
+    lastUpdate
   } = useIncidentRealtime({
     incidentId,
     autoRefresh: true,
@@ -77,9 +78,9 @@ export default function EnterpriseIncidentPage({ params }: { params: Promise<{ i
   const handleExecuteRecommendation = async (action: string, params?: Record<string, any>) => {
     try {
       setExecuting(true);
-      
+
       const response = await fetch(
-        `http://localhost:8000/api/incidents/${incidentId}/execute-ai-recommendation`,
+        apiUrl(`/api/incidents/${incidentId}/execute-ai-recommendation`),
         {
           method: 'POST',
           headers: {
@@ -94,7 +95,7 @@ export default function EnterpriseIncidentPage({ params }: { params: Promise<{ i
       );
 
       const data = await response.json();
-      
+
       if (data.success) {
         // Refresh incident to show new action
         await fetchIncident();
@@ -121,7 +122,7 @@ export default function EnterpriseIncidentPage({ params }: { params: Promise<{ i
       setExecuting(true);
 
       const response = await fetch(
-        `http://localhost:8000/api/incidents/${incidentId}/execute-ai-plan`,
+        apiUrl(`/api/incidents/${incidentId}/execute-ai-plan`),
         {
           method: 'POST',
           headers: {
@@ -182,7 +183,7 @@ export default function EnterpriseIncidentPage({ params }: { params: Promise<{ i
   const handleRollback = async (rollbackId: string) => {
     try {
       const response = await fetch(
-        `http://localhost:8000/api/agents/actions/rollback/${rollbackId}`,
+        apiUrl(`/api/agents/actions/rollback/${rollbackId}`),
         {
           method: 'POST',
           headers: {
@@ -370,7 +371,7 @@ export default function EnterpriseIncidentPage({ params }: { params: Promise<{ i
             <TabsContent value="iocs">
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold text-white mb-4">Indicators of Compromise</h3>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
                     <h4 className="text-sm font-semibold text-red-300 mb-2">IP Addresses</h4>
@@ -419,7 +420,7 @@ export default function EnterpriseIncidentPage({ params }: { params: Promise<{ i
             <TabsContent value="ml">
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold text-white mb-4">Machine Learning Analysis</h3>
-                
+
                 {incident.ensemble_scores && Object.keys(incident.ensemble_scores).length > 0 && (
                   <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4">
                     <h4 className="text-sm font-semibold text-purple-300 mb-3">Ensemble Model Scores</h4>
@@ -477,4 +478,3 @@ export default function EnterpriseIncidentPage({ params }: { params: Promise<{ i
     </div>
   );
 }
-

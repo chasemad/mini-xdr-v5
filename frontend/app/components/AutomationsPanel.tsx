@@ -6,8 +6,9 @@ import {
   CheckCircle, XCircle, Clock, Settings, Filter, Search, ChevronDown, ChevronRight,
   FileText, TrendingUp, Activity, Target, Workflow, Plus, RefreshCw
 } from "lucide-react";
+import { apiUrl, getApiKey } from "@/app/utils/api";
 
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "demo-minixdr-api-key";
+const API_KEY = getApiKey() || "demo-minixdr-api-key";
 
 interface WorkflowTrigger {
   id: number;
@@ -69,7 +70,7 @@ export default function AutomationsPanel() {
 
   const fetchTriggers = async () => {
     try {
-      const response = await fetch("http://localhost:8000/api/triggers/", {
+      const response = await fetch(apiUrl("/api/triggers/"), {
         headers: { "X-API-Key": API_KEY }
       });
       const data = await response.json();
@@ -83,7 +84,7 @@ export default function AutomationsPanel() {
 
   const fetchSuggestions = async () => {
     try {
-      const response = await fetch("http://localhost:8000/api/nlp-suggestions/", {
+      const response = await fetch(apiUrl("/api/nlp-suggestions/"), {
         headers: { "X-API-Key": API_KEY }
       });
       const data = await response.json();
@@ -95,7 +96,7 @@ export default function AutomationsPanel() {
 
   const updateTriggerSettings = async (triggerId: number, settings: any) => {
     try {
-      await fetch(`http://localhost:8000/api/triggers/${triggerId}/settings`, {
+      await fetch(apiUrl(`/api/triggers/${triggerId}/settings`), {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",

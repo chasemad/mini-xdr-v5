@@ -17,7 +17,9 @@ import {
 import { useAuth } from "./contexts/AuthContext";
 import { DashboardLayout } from "../components/DashboardLayout";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { apiUrl, API_BASE_URL } from "./utils/api";
+
+const API_BASE = API_BASE_URL;
 
 interface Incident {
   id: number;

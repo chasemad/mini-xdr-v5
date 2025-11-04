@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
+import {
   Activity, RefreshCw, Filter, TrendingUp, Bot, Zap, User,
   CheckCircle, XCircle, Clock, AlertCircle
 } from 'lucide-react';
 import ActionCard, { UnifiedAction } from './ActionCard';
 import ActionDetailModal from './ActionDetailModal';
 import { calculateActionSummary } from '@/lib/actionFormatters';
+import { apiUrl } from '@/app/utils/api';
 
 interface UnifiedResponseTimelineProps {
   incidentId: number;
@@ -47,7 +48,7 @@ export default function UnifiedResponseTimeline({
 
   const fetchAgentActions = async () => {
     try {
-      const response = await fetch(`http://localhost:8000/api/agents/actions/${incidentId}`);
+      const response = await fetch(apiUrl(`/api/agents/actions/${incidentId}`));
       if (response.ok) {
         const data = await response.json();
         setAgentActions(data);
@@ -192,7 +193,7 @@ export default function UnifiedResponseTimeline({
 
   const handleRollback = async (action: UnifiedAction) => {
     if (!onRollback || !action.rollbackId) return;
-    
+
     try {
       await onRollback(action.rollbackId);
       await handleRefresh();
@@ -324,7 +325,7 @@ export default function UnifiedResponseTimeline({
             <AlertCircle className="w-12 h-12 text-gray-600 mx-auto mb-3" />
             <div className="text-gray-400">No actions found</div>
             <div className="text-sm text-gray-500 mt-1">
-              {filterSource !== 'all' 
+              {filterSource !== 'all'
                 ? `No ${filterSource} actions for this incident`
                 : 'No actions have been taken yet'}
             </div>
@@ -364,4 +365,3 @@ export default function UnifiedResponseTimeline({
     </div>
   );
 }
-

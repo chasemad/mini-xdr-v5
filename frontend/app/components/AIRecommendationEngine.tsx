@@ -2,7 +2,7 @@
 
 /**
  * AI Recommendation Engine Component
- * 
+ *
  * Provides intelligent response recommendations with confidence scoring,
  * contextual analysis, and natural language explanations.
  */
@@ -14,10 +14,10 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { 
-  Brain, 
-  Zap, 
-  Target, 
+import {
+  Brain,
+  Zap,
+  Target,
   TrendingUp,
   TrendingDown,
   AlertTriangle,
@@ -38,8 +38,8 @@ import {
   Key,
   Database
 } from 'lucide-react'
-import { 
-  getAIRecommendations, 
+import {
+  getAIRecommendations,
   analyzeIncidentContext,
   optimizeResponseStrategy,
   createResponseWorkflow
@@ -177,16 +177,16 @@ const AIRecommendationEngine: React.FC<AIRecommendationEngineProps> = ({
       }
 
       const workflowResult = await createResponseWorkflow(tempWorkflowData)
-      
+
       if (workflowResult.success) {
         const optimizationResult = await optimizeResponseStrategy(workflowResult.workflow_id)
-        
+
         if (optimizationResult.success) {
           setRecommendations(optimizationResult.optimized_recommendations || recommendations)
           setError(null)
         }
       }
-      
+
     } catch (err) {
       console.error('Failed to optimize recommendations:', err)
       setError('Failed to optimize recommendations')
@@ -204,7 +204,7 @@ const AIRecommendationEngine: React.FC<AIRecommendationEngineProps> = ({
 
     setCreatingWorkflow(true)
     try {
-      const selectedRecs = recommendations.filter(rec => 
+      const selectedRecs = recommendations.filter(rec =>
         selectedRecommendations.includes(rec.action_type)
       )
 
@@ -223,7 +223,7 @@ const AIRecommendationEngine: React.FC<AIRecommendationEngineProps> = ({
       }
 
       const result = await createResponseWorkflow(workflowData)
-      
+
       if (result.success) {
         onWorkflowCreated?.(result.workflow_id)
         setSelectedRecommendations([])
@@ -296,7 +296,7 @@ const AIRecommendationEngine: React.FC<AIRecommendationEngineProps> = ({
             Intelligent response recommendations powered by machine learning and contextual analysis
           </CardDescription>
         </CardHeader>
-        
+
         {aiInsight && (
           <CardContent>
             <div className="p-4 bg-white border border-blue-200 rounded-lg">
@@ -351,7 +351,7 @@ const AIRecommendationEngine: React.FC<AIRecommendationEngineProps> = ({
                     )}
                     Re-analyze
                   </Button>
-                  
+
                   <Button
                     variant="outline"
                     size="sm"
@@ -366,7 +366,7 @@ const AIRecommendationEngine: React.FC<AIRecommendationEngineProps> = ({
                     Optimize
                   </Button>
                 </div>
-                
+
                 {selectedRecommendations.length > 0 && (
                   <Button
                     onClick={createWorkflowFromAI}
@@ -394,9 +394,9 @@ const AIRecommendationEngine: React.FC<AIRecommendationEngineProps> = ({
             {recommendations.map((rec, index) => {
               const isSelected = selectedRecommendations.includes(rec.action_type)
               const Icon = categoryIcons['network'] || Shield // Simplified - would get actual category
-              
+
               return (
-                <Card 
+                <Card
                   key={rec.action_type}
                   className={`transition-all cursor-pointer ${
                     isSelected ? 'ring-2 ring-blue-500 bg-blue-50' : 'hover:shadow-md'
@@ -420,10 +420,10 @@ const AIRecommendationEngine: React.FC<AIRecommendationEngineProps> = ({
                           <p className="text-sm text-gray-600">Priority {rec.priority}</p>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center gap-2">
                         {getConfidenceIcon(rec.confidence)}
-                        <Badge 
+                        <Badge
                           variant="outline"
                           className={confidenceColors[rec.confidence_level as keyof typeof confidenceColors]}
                         >
@@ -512,7 +512,7 @@ const AIRecommendationEngine: React.FC<AIRecommendationEngineProps> = ({
                         <Eye className="h-3 w-3 mr-1" />
                         Details
                       </Button>
-                      
+
                       <Button
                         size="sm"
                         variant="outline"
@@ -530,7 +530,7 @@ const AIRecommendationEngine: React.FC<AIRecommendationEngineProps> = ({
                 </Card>
               )
             })}
-            
+
             {recommendations.length === 0 && !loading && (
               <Card>
                 <CardContent className="p-8 text-center">
@@ -579,7 +579,7 @@ const AIRecommendationEngine: React.FC<AIRecommendationEngineProps> = ({
                         {formatConfidence(contextAnalysis.incident_severity.score)} severity
                       </div>
                     </div>
-                    
+
                     <div>
                       <h5 className="font-medium text-sm mb-2">Contributing Factors</h5>
                       <ul className="text-sm text-gray-600 space-y-1">
@@ -618,7 +618,7 @@ const AIRecommendationEngine: React.FC<AIRecommendationEngineProps> = ({
                         </div>
                       </div>
                     </div>
-                    
+
                     <div>
                       <h5 className="font-medium text-sm mb-2">Pattern Indicators</h5>
                       <div className="flex flex-wrap gap-1">
@@ -682,12 +682,12 @@ const AIRecommendationEngine: React.FC<AIRecommendationEngineProps> = ({
                           {formatConfidence(contextAnalysis.threat_intelligence.reputation_score)}
                         </span>
                       </div>
-                      <Progress 
-                        value={contextAnalysis.threat_intelligence.reputation_score * 100} 
-                        className="h-2" 
+                      <Progress
+                        value={contextAnalysis.threat_intelligence.reputation_score * 100}
+                        className="h-2"
                       />
                     </div>
-                    
+
                     <div>
                       <h5 className="font-medium text-sm mb-2">Threat Categories</h5>
                       <div className="flex flex-wrap gap-1">
@@ -732,7 +732,7 @@ const AIRecommendationEngine: React.FC<AIRecommendationEngineProps> = ({
                 {/* Learning Progress */}
                 <div className="space-y-4">
                   <h4 className="font-semibold">Learning Progress</h4>
-                  
+
                   <div className="space-y-3">
                     <div>
                       <div className="flex items-center justify-between text-sm mb-1">
@@ -741,7 +741,7 @@ const AIRecommendationEngine: React.FC<AIRecommendationEngineProps> = ({
                       </div>
                       <Progress value={87} className="h-2" />
                     </div>
-                    
+
                     <div>
                       <div className="flex items-center justify-between text-sm mb-1">
                         <span>Learning Velocity</span>
@@ -749,7 +749,7 @@ const AIRecommendationEngine: React.FC<AIRecommendationEngineProps> = ({
                       </div>
                       <Progress value={75} className="h-2" />
                     </div>
-                    
+
                     <div>
                       <div className="flex items-center justify-between text-sm mb-1">
                         <span>Model Confidence</span>
@@ -763,7 +763,7 @@ const AIRecommendationEngine: React.FC<AIRecommendationEngineProps> = ({
                 {/* Recent Improvements */}
                 <div className="space-y-4">
                   <h4 className="font-semibold">Recent Improvements</h4>
-                  
+
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-sm">
                       <CheckCircle className="h-4 w-4 text-green-500" />
@@ -816,16 +816,3 @@ const AIRecommendationEngine: React.FC<AIRecommendationEngineProps> = ({
 }
 
 export default AIRecommendationEngine
-
-
-
-
-
-
-
-
-
-
-
-
-

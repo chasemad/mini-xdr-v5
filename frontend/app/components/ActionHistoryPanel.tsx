@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { Shield, Clock, RefreshCw, User, HardDrive, Lock, Undo2 } from "lucide-react";
+import { apiUrl, getApiKey } from "@/app/utils/api";
 
 interface Action {
   id: number;
@@ -132,7 +133,7 @@ const ACTION_NAME_MAP: Record<string, string> = {
   reset_password: "Reset Password",
   remove_from_group: "Remove from Group",
   enforce_mfa: "Enforce MFA",
-  
+
   // EDR
   kill_process: "Kill Process",
   quarantine_file: "Quarantine File",
@@ -140,7 +141,7 @@ const ACTION_NAME_MAP: Record<string, string> = {
   isolate_host: "Isolate Host",
   delete_registry_key: "Delete Registry Key",
   disable_scheduled_task: "Disable Scheduled Task",
-  
+
   // DLP
   scan_file: "Scan File",
   block_upload: "Block Upload",
@@ -246,7 +247,7 @@ export default function ActionHistoryPanel({
   useEffect(() => {
     const fetchAgentActions = async () => {
       try {
-        const response = await fetch(`http://localhost:8000/api/agents/actions/${incidentId}`);
+        const response = await fetch(apiUrl(`/api/agents/actions/${incidentId}`));
         if (response.ok) {
           const data = await response.json();
           setAgentActions(data);
@@ -331,11 +332,10 @@ export default function ActionHistoryPanel({
     if (!hasManualActions) return;
     setVerifying(true);
     try {
-      const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "";
-      const response = await fetch(`http://localhost:8000/api/incidents/${incidentId}/verify-actions`, {
+      const response = await fetch(apiUrl(`/api/incidents/${incidentId}/verify-actions`), {
         method: "POST",
         headers: {
-          "x-api-key": API_KEY,
+          "x-api-key": getApiKey(),
         },
       });
 
@@ -353,23 +353,23 @@ export default function ActionHistoryPanel({
 
   const handleAgentRollback = async (action: UnifiedAction) => {
     if (!action.rollbackId || action.rollbackExecuted) return;
-    
+
     if (!confirm(`Are you sure you want to rollback "${action.displayName}"?\n\nThis will restore the previous state.`)) {
       return;
     }
 
     setRollingBackAgent(action.rollbackId);
-    
+
     try {
-      const response = await fetch(`http://localhost:8000/api/agents/rollback/${action.rollbackId}`, {
+      const response = await fetch(apiUrl(`/api/agents/rollback/${action.rollbackId}`), {
         method: "POST"
       });
-      
+
       if (response.ok) {
         const result = await response.json();
         console.log("Rollback result:", result);
         // Refresh agent actions
-        const agentResponse = await fetch(`http://localhost:8000/api/agents/actions/${incidentId}`);
+        const agentResponse = await fetch(apiUrl(`/api/agents/actions/${incidentId}`));
         if (agentResponse.ok) {
           const data = await agentResponse.json();
           setAgentActions(data);
@@ -440,7 +440,7 @@ export default function ActionHistoryPanel({
           const isAgent = item.source === "agent";
           const canRollbackAgent = isAgent && item.rollbackId && !item.rollbackExecuted && item.status !== "failed";
           const isRollingBack = rollingBackAgent === item.rollbackId;
-          
+
           // Agent color mapping
           const agentColors = {
             iam: { badge: "bg-blue-500/20 text-blue-300 border-blue-500/30", icon: "text-blue-400" },
@@ -568,16 +568,18 @@ export default function ActionHistoryPanel({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        onRollback?.({
-                          actionType: item.rollback.action_type,
-                          label: item.rollback.label,
-                          source: item.source,
-                          originalId: item.originalId,
-                        });
+                        if (item.rollback) {
+                          onRollback?.({
+                            actionType: item.rollback.action_type,
+                            label: item.rollback.label,
+                            source: item.source,
+                            originalId: item.originalId,
+                          });
+                        }
                       }}
                       className="mt-2 inline-flex items-center gap-1 text-xs text-blue-300 hover:text-blue-200"
                     >
-                      ⟲ {item.rollback.label}
+                      ⟲ {item.rollback?.label || 'Rollback'}
                     </button>
                   )}
                 </div>

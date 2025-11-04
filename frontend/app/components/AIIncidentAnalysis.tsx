@@ -9,17 +9,18 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { 
-  Brain, 
-  Lightbulb, 
-  AlertTriangle, 
-  CheckCircle, 
+import {
+  Brain,
+  Lightbulb,
+  AlertTriangle,
+  CheckCircle,
   Target,
   Shield,
   Zap,
   RefreshCw,
   MessageSquare
 } from 'lucide-react'
+import { apiUrl } from '../utils/api'
 
 interface AIIncidentAnalysisProps {
   incident: any
@@ -58,7 +59,7 @@ export default function AIIncidentAnalysis({ incident, onRecommendationAction }:
       setLoading(true)
       setError(null)
 
-      const response = await fetch(`http://localhost:8000/api/incidents/${incident.id}/ai-analysis`, {
+      const response = await fetch(apiUrl(`/api/incidents/${incident.id}/ai-analysis`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -120,8 +121,8 @@ export default function AIIncidentAnalysis({ incident, onRecommendationAction }:
           <Brain className="w-5 h-5 text-purple-400" />
           AI Security Analysis
           <div className="ml-auto flex items-center gap-2">
-            <select 
-              value={aiProvider} 
+            <select
+              value={aiProvider}
               onChange={(e) => setAiProvider(e.target.value as 'openai' | 'xai')}
               className="text-sm bg-gray-800 border border-gray-600 rounded px-2 py-1"
             >
@@ -193,8 +194,8 @@ export default function AIIncidentAnalysis({ incident, onRecommendationAction }:
                   </span>
                 </div>
                 {onRecommendationAction && analysis.recommendation === 'contain_now' && (
-                  <Button 
-                    size="sm" 
+                  <Button
+                    size="sm"
                     onClick={() => onRecommendationAction('auto_contain')}
                     className="bg-red-600 hover:bg-red-700"
                   >

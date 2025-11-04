@@ -2,7 +2,7 @@
 
 /**
  * Effectiveness Analysis Component
- * 
+ *
  * Detailed analysis of response effectiveness with action-level performance,
  * workflow optimization insights, and comparative analytics.
  */
@@ -13,9 +13,9 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { 
-  Target, 
-  TrendingUp, 
+import {
+  Target,
+  TrendingUp,
   TrendingDown,
   CheckCircle,
   AlertTriangle,
@@ -114,10 +114,10 @@ const EffectivenessAnalysis: React.FC<EffectivenessAnalysisProps> = ({
 
   // Sort and filter actions
   const sortedActions = Object.entries(data.action_effectiveness)
-    .filter(([actionType]) => 
+    .filter(([actionType]) =>
       filterCategory === 'all' || getActionCategory(actionType) === filterCategory
     )
-    .sort(([, a], [, b]) => 
+    .sort(([, a], [, b]) =>
       sortBy === 'effectiveness' ? b - a : a - b
     )
 
@@ -155,7 +155,7 @@ const EffectivenessAnalysis: React.FC<EffectivenessAnalysisProps> = ({
                   By Usage
                 </Button>
               </div>
-              
+
               <div className="flex gap-2">
                 <Button
                   size="sm"
@@ -181,7 +181,7 @@ const EffectivenessAnalysis: React.FC<EffectivenessAnalysisProps> = ({
                 })}
               </div>
             </div>
-            
+
             <Badge variant="outline">
               {Object.keys(data.action_effectiveness).length} Actions Analyzed
             </Badge>
@@ -201,7 +201,7 @@ const EffectivenessAnalysis: React.FC<EffectivenessAnalysisProps> = ({
               Success rates for individual response actions
             </CardDescription>
           </CardHeader>
-          
+
           <CardContent>
             <ScrollArea className="h-96">
               <div className="space-y-3">
@@ -209,9 +209,9 @@ const EffectivenessAnalysis: React.FC<EffectivenessAnalysisProps> = ({
                   const category = getActionCategory(actionType)
                   const Icon = categoryIcons[category as keyof typeof categoryIcons] || Shield
                   const grade = getEffectivenessGrade(effectiveness)
-                  
+
                   return (
-                    <div 
+                    <div
                       key={actionType}
                       className="p-3 border rounded-lg hover:shadow-sm transition-shadow"
                     >
@@ -222,9 +222,9 @@ const EffectivenessAnalysis: React.FC<EffectivenessAnalysisProps> = ({
                             {actionType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
                           </span>
                         </div>
-                        
+
                         <div className="flex items-center gap-2">
-                          <Badge 
+                          <Badge
                             variant="outline"
                             className={getEffectivenessColor(effectiveness)}
                           >
@@ -235,16 +235,16 @@ const EffectivenessAnalysis: React.FC<EffectivenessAnalysisProps> = ({
                           </span>
                         </div>
                       </div>
-                      
+
                       <Progress value={effectiveness * 100} className="h-2 mb-2" />
-                      
+
                       <div className="flex items-center justify-between text-xs text-gray-500">
                         <span className="flex items-center gap-1">
                           <Badge variant="secondary" className="text-xs">
                             {category}
                           </Badge>
                         </span>
-                        
+
                         <div className="flex items-center gap-2">
                           {effectiveness >= 0.9 && (
                             <Star className="h-3 w-3 text-yellow-500" />
@@ -257,7 +257,7 @@ const EffectivenessAnalysis: React.FC<EffectivenessAnalysisProps> = ({
                     </div>
                   )
                 })}
-                
+
                 {sortedActions.length === 0 && (
                   <div className="text-center py-8">
                     <Target className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -281,15 +281,15 @@ const EffectivenessAnalysis: React.FC<EffectivenessAnalysisProps> = ({
               Performance analysis of response playbooks
             </CardDescription>
           </CardHeader>
-          
+
           <CardContent>
             <ScrollArea className="h-96">
               <div className="space-y-3">
                 {sortedWorkflows.map(([workflowName, effectiveness], index) => {
                   const grade = getEffectivenessGrade(effectiveness)
-                  
+
                   return (
-                    <div 
+                    <div
                       key={workflowName}
                       className="p-3 border rounded-lg hover:shadow-sm transition-shadow"
                     >
@@ -300,9 +300,9 @@ const EffectivenessAnalysis: React.FC<EffectivenessAnalysisProps> = ({
                           </div>
                           <span className="font-medium text-sm">{workflowName}</span>
                         </div>
-                        
+
                         <div className="flex items-center gap-2">
-                          <Badge 
+                          <Badge
                             variant="outline"
                             className={getEffectivenessColor(effectiveness)}
                           >
@@ -313,12 +313,12 @@ const EffectivenessAnalysis: React.FC<EffectivenessAnalysisProps> = ({
                           </span>
                         </div>
                       </div>
-                      
+
                       <Progress value={effectiveness * 100} className="h-2 mb-2" />
-                      
+
                       <div className="flex items-center justify-between text-xs text-gray-500">
                         <span>Playbook Performance</span>
-                        
+
                         <div className="flex items-center gap-1">
                           {effectiveness >= 0.9 ? (
                             <CheckCircle className="h-3 w-3 text-green-500" />
@@ -327,7 +327,7 @@ const EffectivenessAnalysis: React.FC<EffectivenessAnalysisProps> = ({
                           ) : (
                             <Activity className="h-3 w-3 text-blue-500" />
                           )}
-                          
+
                           {index < 3 && (
                             <Star className="h-3 w-3 text-yellow-500" />
                           )}
@@ -336,7 +336,7 @@ const EffectivenessAnalysis: React.FC<EffectivenessAnalysisProps> = ({
                     </div>
                   )
                 })}
-                
+
                 {sortedWorkflows.length === 0 && (
                   <div className="text-center py-8">
                     <Activity className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -371,7 +371,7 @@ const EffectivenessAnalysis: React.FC<EffectivenessAnalysisProps> = ({
               AI-powered recommendations for enhancing response effectiveness
             </CardDescription>
           </CardHeader>
-          
+
           <CardContent>
             <div className="space-y-3">
               {data.improvement_recommendations.map((recommendation, index) => (
@@ -402,7 +402,7 @@ const EffectivenessAnalysis: React.FC<EffectivenessAnalysisProps> = ({
             Effectiveness Summary
           </CardTitle>
         </CardHeader>
-        
+
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Top Performers */}
@@ -435,13 +435,13 @@ const EffectivenessAnalysis: React.FC<EffectivenessAnalysisProps> = ({
                 {uniqueCategories.map(category => {
                   const categoryActions = Object.entries(data.action_effectiveness)
                     .filter(([actionType]) => getActionCategory(actionType) === category)
-                  
-                  const avgEffectiveness = categoryActions.length > 0 
+
+                  const avgEffectiveness = categoryActions.length > 0
                     ? categoryActions.reduce((sum, [, eff]) => sum + eff, 0) / categoryActions.length
                     : 0
-                  
+
                   const Icon = categoryIcons[category as keyof typeof categoryIcons] || Shield
-                  
+
                   return (
                     <div key={category} className="flex items-center justify-between text-sm">
                       <div className="flex items-center gap-2">
@@ -470,21 +470,21 @@ const EffectivenessAnalysis: React.FC<EffectivenessAnalysisProps> = ({
                     {sortedActions.filter(([, eff]) => eff >= 0.9).length} actions performing excellently
                   </span>
                 </div>
-                
+
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="h-3 w-3 text-orange-500" />
                   <span>
                     {sortedActions.filter(([, eff]) => eff < 0.7).length} actions need improvement
                   </span>
                 </div>
-                
+
                 <div className="flex items-center gap-2">
                   <Activity className="h-3 w-3 text-blue-500" />
                   <span>
                     {uniqueCategories.length} categories active
                   </span>
                 </div>
-                
+
                 <div className="flex items-center gap-2">
                   <TrendingUp className="h-3 w-3 text-green-500" />
                   <span>
@@ -508,16 +508,3 @@ const Crown: React.FC<{ className?: string }> = ({ className = "" }) => (
 )
 
 export default EffectivenessAnalysis
-
-
-
-
-
-
-
-
-
-
-
-
-

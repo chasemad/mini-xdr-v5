@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Shield, RefreshCw, Undo2, AlertTriangle, CheckCircle, Clock, User, HardDrive, Lock } from "lucide-react";
+import { apiUrl } from '../utils/api';
 
 interface AgentAction {
   id: number;
@@ -55,7 +56,7 @@ const ACTION_NAME_MAP: Record<string, string> = {
   reset_password: "Reset Password",
   remove_from_group: "Remove from Group",
   enforce_mfa: "Enforce MFA",
-  
+
   // EDR
   kill_process: "Kill Process",
   quarantine_file: "Quarantine File",
@@ -63,7 +64,7 @@ const ACTION_NAME_MAP: Record<string, string> = {
   isolate_host: "Isolate Host",
   delete_registry_key: "Delete Registry Key",
   disable_scheduled_task: "Disable Scheduled Task",
-  
+
   // DLP
   scan_file: "Scan File",
   block_upload: "Block Upload",
@@ -78,7 +79,7 @@ export default function AgentActionsPanel({ incidentId, onActionClick }: AgentAc
 
   const fetchActions = async () => {
     try {
-      const response = await fetch(`http://localhost:8000/api/agents/actions/${incidentId}`);
+      const response = await fetch(apiUrl(`/api/agents/actions/${incidentId}`));
       if (response.ok) {
         const data = await response.json();
         setActions(data);
@@ -105,18 +106,18 @@ export default function AgentActionsPanel({ incidentId, onActionClick }: AgentAc
 
   const handleRollback = async (action: AgentAction) => {
     if (!action.rollback_id || action.rollback_executed) return;
-    
+
     if (!confirm(`Are you sure you want to rollback "${ACTION_NAME_MAP[action.action_name] || action.action_name}"?\n\nThis will restore the previous state.`)) {
       return;
     }
 
     setRollingBack(action.rollback_id);
-    
+
     try {
-      const response = await fetch(`http://localhost:8000/api/agents/rollback/${action.rollback_id}`, {
+      const response = await fetch(apiUrl(`/api/agents/rollback/${action.rollback_id}`), {
         method: "POST"
       });
-      
+
       if (response.ok) {
         const result = await response.json();
         console.log("Rollback result:", result);
@@ -139,7 +140,7 @@ export default function AgentActionsPanel({ incidentId, onActionClick }: AgentAc
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
-    
+
     if (diffMins < 1) return "just now";
     if (diffMins < 60) return `${diffMins}m ago`;
     const diffHours = Math.floor(diffMins / 60);
@@ -217,7 +218,7 @@ export default function AgentActionsPanel({ incidentId, onActionClick }: AgentAc
                       <span className="text-sm font-medium text-white">
                         {ACTION_NAME_MAP[action.action_name] || action.action_name}
                       </span>
-                      
+
                       {/* Status Badge */}
                       {action.status === "success" && (
                         <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-300 flex items-center gap-1">
@@ -311,4 +312,3 @@ export default function AgentActionsPanel({ incidentId, onActionClick }: AgentAc
     </div>
   );
 }
-

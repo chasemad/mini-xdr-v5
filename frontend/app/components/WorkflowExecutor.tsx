@@ -2,7 +2,7 @@
 
 /**
  * Workflow Executor Component
- * 
+ *
  * Real-time execution and monitoring of response workflows.
  * Provides live progress tracking, step-by-step execution monitoring,
  * and interactive control capabilities.
@@ -39,12 +39,13 @@ import {
   Edit,
   Trash2
 } from 'lucide-react'
-import { 
+import {
   executeResponseWorkflow,
   cancelWorkflow,
   getWorkflowStatus,
   getWorkflowActions
 } from '@/app/lib/api'
+import { apiUrl } from '../utils/api'
 
 interface ResponseWorkflow {
   id: number
@@ -197,7 +198,7 @@ const WorkflowExecutor: React.FC<WorkflowExecutorProps> = ({
     }
 
     try {
-      const response = await fetch(`http://localhost:8000/api/response/workflows/${workflow.workflow_id}`, {
+      const response = await fetch(apiUrl(`/api/response/workflows/${workflow.workflow_id}`), {
         method: 'DELETE',
         headers: {
           'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'demo-minixdr-api-key'
@@ -256,16 +257,16 @@ const WorkflowExecutor: React.FC<WorkflowExecutorProps> = ({
             </div>
           </div>
         </CardHeader>
-        
+
         <CardContent>
           <ScrollArea className="h-96">
             <div className="space-y-3">
               {workflows.map(workflow => (
-                <Card 
+                <Card
                   key={workflow.workflow_id}
                   className={`cursor-pointer transition-all ${
-                    selectedWorkflow?.workflow_id === workflow.workflow_id 
-                      ? 'ring-2 ring-blue-500 bg-blue-50' 
+                    selectedWorkflow?.workflow_id === workflow.workflow_id
+                      ? 'ring-2 ring-blue-500 bg-blue-50'
                       : 'hover:shadow-md'
                   }`}
                   onClick={() => setSelectedWorkflow(workflow)}
@@ -282,7 +283,7 @@ const WorkflowExecutor: React.FC<WorkflowExecutorProps> = ({
                         {workflow.status.replace('_', ' ')}
                       </Badge>
                     </div>
-                    
+
                     {/* Progress */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between text-xs">
@@ -291,7 +292,7 @@ const WorkflowExecutor: React.FC<WorkflowExecutorProps> = ({
                       </div>
                       <Progress value={workflow.progress_percentage} className="h-1" />
                     </div>
-                    
+
                     {/* Metrics */}
                     <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
                       <span>Created: {new Date(workflow.created_at).toLocaleTimeString()}</span>
@@ -299,7 +300,7 @@ const WorkflowExecutor: React.FC<WorkflowExecutorProps> = ({
                         <span className="text-green-600">{Math.round(workflow.success_rate * 100)}% success</span>
                       )}
                     </div>
-                    
+
                     {/* Quick Actions */}
                     <div className="mt-3 flex gap-2">
                       {workflow.status === 'pending' && (
@@ -372,7 +373,7 @@ const WorkflowExecutor: React.FC<WorkflowExecutorProps> = ({
                   </CardContent>
                 </Card>
               ))}
-              
+
               {workflows.length === 0 && (
                 <div className="text-center py-8">
                   <Activity className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -397,7 +398,7 @@ const WorkflowExecutor: React.FC<WorkflowExecutorProps> = ({
             </CardDescription>
           )}
         </CardHeader>
-        
+
         <CardContent>
           {selectedWorkflow ? (
             <div className="space-y-4">
@@ -427,7 +428,7 @@ const WorkflowExecutor: React.FC<WorkflowExecutorProps> = ({
               <div className="grid grid-cols-2 gap-4 p-3 bg-gray-50 rounded-lg">
                 <div className="text-center">
                   <div className="text-lg font-bold text-blue-600">
-                    {selectedWorkflow.success_rate !== undefined 
+                    {selectedWorkflow.success_rate !== undefined
                       ? Math.round(selectedWorkflow.success_rate * 100) + '%'
                       : 'N/A'
                     }
@@ -448,16 +449,16 @@ const WorkflowExecutor: React.FC<WorkflowExecutorProps> = ({
                   <Zap className="h-4 w-4" />
                   Workflow Steps
                 </h4>
-                
+
                 <ScrollArea className="h-48">
                   <div className="space-y-2">
                     {workflowActions.map((action, index) => {
                       const Icon = getActionIcon(action.action_type, 'network') // Default category
                       const isActive = selectedWorkflow.current_step === index + 1
                       const isCompleted = index < selectedWorkflow.current_step
-                      
+
                       return (
-                        <div 
+                        <div
                           key={action.action_id}
                           className={`p-3 border rounded-lg ${
                             isActive ? 'border-blue-300 bg-blue-50' :
@@ -478,7 +479,7 @@ const WorkflowExecutor: React.FC<WorkflowExecutorProps> = ({
                                   'text-gray-600'
                                 }`} />
                               </div>
-                              
+
                               <div>
                                 <div className="font-medium text-sm">
                                   {action.action_name || action.action_type}
@@ -488,7 +489,7 @@ const WorkflowExecutor: React.FC<WorkflowExecutorProps> = ({
                                 </div>
                               </div>
                             </div>
-                            
+
                             <div className="flex items-center gap-2">
                               {action.status === 'completed' && (
                                 <CheckCircle className="h-4 w-4 text-green-600" />
@@ -499,13 +500,13 @@ const WorkflowExecutor: React.FC<WorkflowExecutorProps> = ({
                               {action.status === 'running' && (
                                 <div className="animate-spin h-4 w-4 border border-current border-t-transparent rounded-full text-blue-600"></div>
                               )}
-                              
+
                               <Badge variant="outline" className="text-xs">
                                 {action.status}
                               </Badge>
                             </div>
                           </div>
-                          
+
                           {/* Action Results */}
                           {action.result_data && (
                             <div className="mt-2 p-2 bg-white rounded text-xs">
@@ -520,7 +521,7 @@ const WorkflowExecutor: React.FC<WorkflowExecutorProps> = ({
                               )}
                             </div>
                           )}
-                          
+
                           {/* Error Details */}
                           {action.error_details && (
                             <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs">
@@ -531,7 +532,7 @@ const WorkflowExecutor: React.FC<WorkflowExecutorProps> = ({
                         </div>
                       )
                     })}
-                    
+
                     {workflowActions.length === 0 && selectedWorkflow && (
                       <div className="text-center py-4">
                         <AlertTriangle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
@@ -563,7 +564,7 @@ const WorkflowExecutor: React.FC<WorkflowExecutorProps> = ({
                     )}
                   </Button>
                 )}
-                
+
                 {selectedWorkflow.status === 'running' && (
                   <Button
                     variant="destructive"
@@ -584,7 +585,7 @@ const WorkflowExecutor: React.FC<WorkflowExecutorProps> = ({
                     )}
                   </Button>
                 )}
-                
+
                 <Button
                   variant="outline"
                   onClick={() => loadWorkflowActions(selectedWorkflow.workflow_id)}
@@ -618,7 +619,7 @@ const WorkflowExecutor: React.FC<WorkflowExecutorProps> = ({
             Real-time workflow execution events and system notifications
           </CardDescription>
         </CardHeader>
-        
+
         <CardContent>
           <ScrollArea className="h-96">
             <div className="space-y-2">
@@ -666,9 +667,9 @@ const WorkflowExecutor: React.FC<WorkflowExecutorProps> = ({
                   warning: 'border-l-yellow-500 bg-yellow-50',
                   error: 'border-l-red-500 bg-red-50'
                 }
-                
+
                 return (
-                  <div 
+                  <div
                     key={event.id}
                     className={`p-2 border-l-4 rounded-r ${severityColors[event.severity as keyof typeof severityColors]}`}
                   >
@@ -690,16 +691,3 @@ const WorkflowExecutor: React.FC<WorkflowExecutorProps> = ({
 }
 
 export default WorkflowExecutor
-
-
-
-
-
-
-
-
-
-
-
-
-

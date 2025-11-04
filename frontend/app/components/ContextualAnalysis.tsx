@@ -2,7 +2,7 @@
 
 /**
  * Contextual Analysis Component
- * 
+ *
  * Comprehensive multi-dimensional context visualization for incidents,
  * including threat intelligence, behavioral analysis, and predictive insights.
  */
@@ -13,9 +13,9 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { 
-  Brain, 
-  Target, 
+import {
+  Brain,
+  Target,
   Clock,
   Eye,
   Shield,
@@ -116,13 +116,13 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
   const loadContextAnalysis = useCallback(async () => {
     try {
       setError(null)
-      
+
       const result = await analyzeIncidentContext(incidentId)
-      
+
       if (result.success) {
         setContextData(result.context_analysis)
         setLastUpdated(new Date())
-        
+
         // Generate insights for parent component
         onInsightGenerated?.({
           type: 'context_analysis',
@@ -132,7 +132,7 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
       } else {
         setError(result.error || 'Failed to load context analysis')
       }
-      
+
     } catch (err) {
       console.error('Failed to load context analysis:', err)
       setError(err instanceof Error ? err.message : 'Unknown error')
@@ -233,7 +233,7 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
               Contextual Analysis - Incident #{incidentId}
               <Sparkles className="h-4 w-4 text-purple-500" />
             </CardTitle>
-            
+
             <div className="flex items-center gap-2">
               {lastUpdated && (
                 <span className="text-xs text-gray-500">
@@ -250,19 +250,19 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
               </Button>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-4 mt-2">
-            <Badge 
+            <Badge
               variant="outline"
               className={getSeverityColor(contextData.threat_context.severity_score)}
             >
               {Math.round(contextData.threat_context.severity_score * 100)}% Severity
             </Badge>
-            
+
             <Badge variant="outline">
               {getConfidenceLevel(contextData.threat_context.confidence)} Confidence
             </Badge>
-            
+
             <Badge variant="outline">
               {contextData.analysis_quality.completeness} Completeness
             </Badge>
@@ -301,7 +301,7 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
                   Threat Assessment
                 </CardTitle>
               </CardHeader>
-              
+
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="text-center p-3 bg-gray-50 rounded-lg">
@@ -310,7 +310,7 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
                     </div>
                     <div className="text-sm text-gray-600">Severity Score</div>
                   </div>
-                  
+
                   <div className="text-center p-3 bg-gray-50 rounded-lg">
                     <div className="text-2xl font-bold text-blue-600">
                       {Math.round(contextData.threat_context.confidence * 100)}%
@@ -353,7 +353,7 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
                   Attribution Analysis
                 </CardTitle>
               </CardHeader>
-              
+
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="text-center p-3 bg-gray-50 rounded-lg">
@@ -362,7 +362,7 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
                     </div>
                     <div className="text-sm text-gray-600">Attribution Confidence</div>
                   </div>
-                  
+
                   <div className="text-center p-3 bg-gray-50 rounded-lg">
                     <div className="text-lg font-bold text-orange-600">
                       {contextData.threat_context.attribution.sophistication_level}
@@ -391,8 +391,8 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
                     <div className="flex items-center gap-2 text-sm">
                       <MapPin className="h-4 w-4 text-blue-600" />
                       <span>
-                        {contextData.threat_context.attribution.geographical_indicators?.country || 'Unknown'} 
-                        {contextData.threat_context.attribution.geographical_indicators?.city && 
+                        {contextData.threat_context.attribution.geographical_indicators?.country || 'Unknown'}
+                        {contextData.threat_context.attribution.geographical_indicators?.city &&
                           `, ${contextData.threat_context.attribution.geographical_indicators.city}`
                         }
                       </span>
@@ -412,7 +412,7 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
                 Temporal Pattern Analysis
               </CardTitle>
             </CardHeader>
-            
+
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div className="text-center p-4 bg-blue-50 rounded-lg">
@@ -424,14 +424,14 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
                     {Math.round(contextData.temporal_analysis.confidence * 100)}% confidence
                   </Badge>
                 </div>
-                
+
                 <div className="text-center p-4 bg-green-50 rounded-lg">
                   <div className="text-2xl font-bold text-green-600">
                     {formatDuration(contextData.temporal_analysis.total_duration_seconds)}
                   </div>
                   <div className="text-sm text-gray-600">Attack Duration</div>
                 </div>
-                
+
                 <div className="text-center p-4 bg-orange-50 rounded-lg">
                   <div className="text-2xl font-bold text-orange-600">
                     {contextData.temporal_analysis.event_rate_per_minute.toFixed(1)}/min
@@ -442,7 +442,7 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
 
               <div className="space-y-4">
                 <h4 className="font-semibold">Timing Analysis</h4>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                   <div>
                     <div className="flex items-center justify-between mb-1">
@@ -453,7 +453,7 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
                     </div>
                     <Progress value={25} className="h-1" />
                   </div>
-                  
+
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <span>Maximum Interval</span>
@@ -463,7 +463,7 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
                     </div>
                     <Progress value={75} className="h-1" />
                   </div>
-                  
+
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <span>Variance</span>
@@ -487,13 +487,13 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
                 Behavioral Analysis
               </CardTitle>
             </CardHeader>
-            
+
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Behavior Scores */}
                 <div className="space-y-4">
                   <h4 className="font-semibold">Behavioral Patterns</h4>
-                  
+
                   <div className="space-y-3">
                     {Object.entries(contextData.behavioral_analysis.behavior_scores).map(([behavior, score]) => (
                       <div key={behavior}>
@@ -510,7 +510,7 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
                 {/* Sophistication Analysis */}
                 <div className="space-y-4">
                   <h4 className="font-semibold">Sophistication Assessment</h4>
-                  
+
                   <div className="p-4 bg-gray-50 rounded-lg">
                     <div className="text-center mb-3">
                       <div className="text-2xl font-bold text-purple-600">
@@ -518,7 +518,7 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
                       </div>
                       <div className="text-sm text-gray-600">Primary Behavior</div>
                     </div>
-                    
+
                     <div className="space-y-2">
                       <div className="flex items-center justify-between text-sm">
                         <span>Overall Score</span>
@@ -526,7 +526,7 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
                           {Math.round(contextData.behavioral_analysis.overall_score * 100)}%
                         </span>
                       </div>
-                      
+
                       <div className="flex items-center justify-between text-sm">
                         <span>Attacker Intent</span>
                         <Badge variant="outline">
@@ -583,7 +583,7 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
                 AI-powered predictions for incident evolution and impact
               </CardDescription>
             </CardHeader>
-            
+
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 {/* Escalation Probability */}
@@ -595,9 +595,9 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
                   <div className="text-2xl font-bold text-red-600 mb-1">
                     {Math.round(contextData.predictive_analysis.escalation_probability * 100)}%
                   </div>
-                  <Progress 
-                    value={contextData.predictive_analysis.escalation_probability * 100} 
-                    className="h-2" 
+                  <Progress
+                    value={contextData.predictive_analysis.escalation_probability * 100}
+                    className="h-2"
                   />
                 </div>
 
@@ -610,9 +610,9 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
                   <div className="text-2xl font-bold text-orange-600 mb-1">
                     {Math.round(contextData.predictive_analysis.lateral_movement_risk * 100)}%
                   </div>
-                  <Progress 
-                    value={contextData.predictive_analysis.lateral_movement_risk * 100} 
-                    className="h-2" 
+                  <Progress
+                    value={contextData.predictive_analysis.lateral_movement_risk * 100}
+                    className="h-2"
                   />
                 </div>
 
@@ -636,7 +636,7 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
                     <Target className="h-4 w-4" />
                     Next Likely Targets
                   </h4>
-                  
+
                   <div className="space-y-2">
                     {contextData.predictive_analysis.next_likely_targets.map((target, index) => (
                       <div key={index} className="flex items-center justify-between p-2 border rounded">
@@ -658,7 +658,7 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
                     <AlertTriangle className="h-4 w-4" />
                     Early Warning Indicators
                   </h4>
-                  
+
                   <div className="space-y-2">
                     {contextData.predictive_analysis.early_warning_indicators.map((indicator, index) => (
                       <div key={index} className="flex items-center gap-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
@@ -682,7 +682,7 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
             Analysis Quality Assessment
           </CardTitle>
         </CardHeader>
-        
+
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
@@ -697,7 +697,7 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
                 {contextData.analysis_quality.completeness} quality data available
               </div>
             </div>
-            
+
             <div className="space-y-2">
               <h5 className="font-medium text-sm">Quality Factors</h5>
               <div className="space-y-1">
@@ -727,16 +727,3 @@ const ContextualAnalysis: React.FC<ContextualAnalysisProps> = ({
 }
 
 export default ContextualAnalysis
-
-
-
-
-
-
-
-
-
-
-
-
-

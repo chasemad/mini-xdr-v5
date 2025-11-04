@@ -2,7 +2,7 @@
 
 /**
  * Playbook Canvas Component
- * 
+ *
  * Advanced drag-and-drop interface for visual workflow creation with
  * conditional logic, branching, and real-time validation.
  */
@@ -31,10 +31,10 @@ import '@xyflow/react/dist/style.css'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { 
-  Plus, 
-  Save, 
-  Play, 
+import {
+  Plus,
+  Save,
+  Play,
   Trash2,
   Copy,
   Undo,
@@ -74,7 +74,7 @@ const nodeTypes: NodeTypes = {
       </div>
     </div>
   ),
-  
+
   endNode: ({ data, selected }: { data: any; selected: boolean }) => (
     <div className={`px-4 py-2 rounded-full border-2 ${
       selected ? 'border-blue-500 shadow-lg' : 'border-red-300'
@@ -85,7 +85,7 @@ const nodeTypes: NodeTypes = {
       </div>
     </div>
   ),
-  
+
   actionNode: ({ data, selected }: { data: any; selected: boolean }) => {
     const categoryColors = {
       network: 'bg-blue-50 border-blue-300',
@@ -97,7 +97,7 @@ const nodeTypes: NodeTypes = {
       compliance: 'bg-indigo-50 border-indigo-300',
       forensics: 'bg-pink-50 border-pink-300'
     }
-    
+
     return (
       <div className={`px-4 py-3 rounded-lg border-2 min-w-48 max-w-64 ${
         selected ? 'border-blue-500 shadow-lg' : categoryColors[data.category as keyof typeof categoryColors] || 'border-gray-300'
@@ -112,11 +112,11 @@ const nodeTypes: NodeTypes = {
             <AlertTriangle className="h-3 w-3 text-yellow-500" />
           )}
         </div>
-        
+
         <div className="text-xs text-gray-600 mb-2 line-clamp-2">
           {data.description}
         </div>
-        
+
         <div className="flex items-center justify-between">
           <Badge variant="outline" className="text-xs">
             {data.safety_level}
@@ -126,7 +126,7 @@ const nodeTypes: NodeTypes = {
             {Math.floor(data.estimated_duration / 60)}m
           </div>
         </div>
-        
+
         {data.rollback_supported && (
           <div className="flex items-center gap-1 mt-1">
             <RotateCcw className="h-3 w-3 text-green-500" />
@@ -136,7 +136,7 @@ const nodeTypes: NodeTypes = {
       </div>
     )
   },
-  
+
   conditionNode: ({ data, selected }: { data: any; selected: boolean }) => (
     <div className={`px-3 py-2 rounded-lg border-2 min-w-32 ${
       selected ? 'border-blue-500 shadow-lg' : 'border-yellow-300'
@@ -150,7 +150,7 @@ const nodeTypes: NodeTypes = {
       </div>
     </div>
   ),
-  
+
   waitNode: ({ data, selected }: { data: any; selected: boolean }) => (
     <div className={`px-3 py-2 rounded-lg border-2 min-w-32 ${
       selected ? 'border-blue-500 shadow-lg' : 'border-gray-300'
@@ -164,7 +164,7 @@ const nodeTypes: NodeTypes = {
       </div>
     </div>
   ),
-  
+
   approvalNode: ({ data, selected }: { data: any; selected: boolean }) => (
     <div className={`px-3 py-2 rounded-lg border-2 min-w-32 ${
       selected ? 'border-blue-500 shadow-lg' : 'border-purple-300'
@@ -212,7 +212,7 @@ const PlaybookCanvas: React.FC<PlaybookCanvasProps> = ({
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
   const { setViewport, getViewport, zoomIn, zoomOut, fitView } = useReactFlow()
-  
+
   // Canvas state
   const [selectedNodes, setSelectedNodes] = useState<string[]>([])
   const [selectedEdges, setSelectedEdges] = useState<string[]>([])
@@ -225,7 +225,7 @@ const PlaybookCanvas: React.FC<PlaybookCanvasProps> = ({
   const [workflowName, setWorkflowName] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [isValidating, setIsValidating] = useState(false)
-  
+
   // History for undo/redo
   const [history, setHistory] = useState<{ nodes: Node[]; edges: Edge[] }[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
@@ -304,7 +304,7 @@ const PlaybookCanvas: React.FC<PlaybookCanvasProps> = ({
   // Validate workflow design
   const validateWorkflowDesign = useCallback(async () => {
     setIsValidating(true)
-    
+
     try {
       const actionNodes = nodes.filter(n => n.type === 'actionNode')
       const errors: string[] = []
@@ -350,7 +350,7 @@ const PlaybookCanvas: React.FC<PlaybookCanvasProps> = ({
           }))
 
           const validationResult = await validateWorkflow({ steps })
-          
+
           if (validationResult.success && validationResult.validation) {
             if (!validationResult.validation.valid) {
               errors.push(...validationResult.validation.errors)
@@ -419,7 +419,7 @@ const PlaybookCanvas: React.FC<PlaybookCanvasProps> = ({
               data: nodeDataParsed,
             }
             break
-            
+
           case 'condition':
             newNode = {
               id: `condition-${Date.now()}`,
@@ -428,7 +428,7 @@ const PlaybookCanvas: React.FC<PlaybookCanvasProps> = ({
               data: { condition: 'if success', label: 'Condition' },
             }
             break
-            
+
           case 'wait':
             newNode = {
               id: `wait-${Date.now()}`,
@@ -437,7 +437,7 @@ const PlaybookCanvas: React.FC<PlaybookCanvasProps> = ({
               data: { duration: '30s', label: 'Wait' },
             }
             break
-            
+
           case 'approval':
             newNode = {
               id: `approval-${Date.now()}`,
@@ -446,7 +446,7 @@ const PlaybookCanvas: React.FC<PlaybookCanvasProps> = ({
               data: { approver: 'manager', label: 'Approval Required' },
             }
             break
-            
+
           default:
             return
         }
@@ -554,9 +554,9 @@ const PlaybookCanvas: React.FC<PlaybookCanvasProps> = ({
           <Button size="sm" variant="outline" onClick={redo} disabled={historyIndex >= history.length - 1}>
             <Redo className="h-3 w-3" />
           </Button>
-          
+
           <div className="w-px h-6 bg-gray-300 mx-2" />
-          
+
           <Button size="sm" variant="outline" onClick={() => zoomIn()}>
             <ZoomIn className="h-3 w-3" />
           </Button>
@@ -566,9 +566,9 @@ const PlaybookCanvas: React.FC<PlaybookCanvasProps> = ({
           <Button size="sm" variant="outline" onClick={() => fitView()}>
             <Maximize className="h-3 w-3" />
           </Button>
-          
+
           <div className="w-px h-6 bg-gray-300 mx-2" />
-          
+
           <Button size="sm" variant="outline" onClick={clearCanvas}>
             <Trash2 className="h-3 w-3" />
             Clear
@@ -584,7 +584,7 @@ const PlaybookCanvas: React.FC<PlaybookCanvasProps> = ({
             placeholder="Enter workflow name..."
             className="px-3 py-1 border rounded text-sm min-w-48"
           />
-          
+
           {/* Validation Status */}
           <div className="flex items-center gap-2">
             {isValidating ? (
@@ -594,9 +594,9 @@ const PlaybookCanvas: React.FC<PlaybookCanvasProps> = ({
             ) : (
               <AlertTriangle className="h-4 w-4 text-red-500" />
             )}
-            
-            <Badge 
-              variant="outline" 
+
+            <Badge
+              variant="outline"
               className={
                 validationSummary.severity === 'error' ? 'border-red-300 text-red-700' :
                 validationSummary.severity === 'warning' ? 'border-yellow-300 text-yellow-700' :
@@ -650,7 +650,7 @@ const PlaybookCanvas: React.FC<PlaybookCanvasProps> = ({
         >
           <Background variant={BackgroundVariant.Dots} />
           <Controls />
-          <MiniMap 
+          <MiniMap
             nodeColor={(node) => {
               switch (node.type) {
                 case 'startNode': return '#10B981'
@@ -663,7 +663,7 @@ const PlaybookCanvas: React.FC<PlaybookCanvasProps> = ({
               }
             }}
           />
-          
+
           {/* Canvas Mode Selector */}
           <Panel position="top-left">
             <Card className="w-48">
@@ -747,7 +747,7 @@ const PlaybookCanvas: React.FC<PlaybookCanvasProps> = ({
                       <div className="text-red-600 mt-1">{error}</div>
                     </div>
                   ))}
-                  
+
                   {validation.warnings.map((warning, index) => (
                     <div key={`warning-${index}`} className="p-2 bg-yellow-50 border border-yellow-200 rounded text-xs">
                       <div className="flex items-center gap-1">
@@ -844,16 +844,3 @@ function detectCycles(nodes: Node[], edges: Edge[]): boolean {
 }
 
 export default PlaybookCanvas
-
-
-
-
-
-
-
-
-
-
-
-
-

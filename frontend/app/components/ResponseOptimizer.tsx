@@ -2,7 +2,7 @@
 
 /**
  * Response Optimizer Component
- * 
+ *
  * Advanced response optimization dashboard with AI-powered strategy tuning,
  * historical learning insights, and real-time performance optimization.
  */
@@ -14,9 +14,9 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { 
-  Zap, 
-  TrendingUp, 
+import {
+  Zap,
+  TrendingUp,
   TrendingDown,
   Target,
   Brain,
@@ -86,7 +86,7 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
     },
     {
       type: "parameter_optimization",
-      priority: "medium", 
+      priority: "medium",
       description: "Optimize action parameters based on historical success patterns",
       potential_improvement: "15% higher success rate",
       implementation: "Apply ML-learned optimal parameters for each action type"
@@ -111,10 +111,10 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
   const loadOptimizationData = useCallback(async () => {
     try {
       setError(null)
-      
+
       // Set mock data for now
       setOptimizationOpportunities(mockOpportunities)
-      
+
       // If we have a workflow ID, get its status
       if (workflowId) {
         const workflowData = await getWorkflowStatus(workflowId)
@@ -124,7 +124,7 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
             optimization_score: 0.78,
             improvements: [
               "Reduced average response time by 23%",
-              "Improved success rate by 12%", 
+              "Improved success rate by 12%",
               "Decreased resource usage by 18%"
             ],
             risk_reduction: 0.35,
@@ -133,7 +133,7 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
           })
         }
       }
-      
+
     } catch (err) {
       console.error('Failed to load optimization data:', err)
       setError(err instanceof Error ? err.message : 'Unknown error')
@@ -174,7 +174,7 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
       } else {
         setError(result.error || 'Optimization failed')
       }
-      
+
     } catch (err) {
       console.error('Optimization failed:', err)
       setError(err instanceof Error ? err.message : 'Optimization failed')
@@ -234,7 +234,7 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
             Continuously optimize response strategies using machine learning and historical data
           </CardDescription>
         </CardHeader>
-        
+
         <CardContent>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -259,7 +259,7 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
                 ))}
               </div>
             </div>
-            
+
             <Button
               onClick={executeOptimization}
               disabled={isOptimizing || !workflowId}
@@ -311,7 +311,7 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
                   Optimization Results
                 </CardTitle>
               </CardHeader>
-              
+
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                   <div className="text-center p-4 bg-blue-50 rounded-lg">
@@ -320,21 +320,21 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
                     </div>
                     <div className="text-sm text-gray-600">Optimization Score</div>
                   </div>
-                  
+
                   <div className="text-center p-4 bg-green-50 rounded-lg">
                     <div className="text-2xl font-bold text-green-600">
                       {Math.round(optimizationResult.risk_reduction * 100)}%
                     </div>
                     <div className="text-sm text-gray-600">Risk Reduction</div>
                   </div>
-                  
+
                   <div className="text-center p-4 bg-purple-50 rounded-lg">
                     <div className="text-2xl font-bold text-purple-600">
                       {Math.round(optimizationResult.efficiency_gain * 100)}%
                     </div>
                     <div className="text-sm text-gray-600">Efficiency Gain</div>
                   </div>
-                  
+
                   <div className="text-center p-4 bg-orange-50 rounded-lg">
                     <div className="text-2xl font-bold text-orange-600">
                       {Math.round(optimizationResult.confidence * 100)}%
@@ -348,7 +348,7 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
                     <CheckCircle className="h-4 w-4 text-green-500" />
                     Applied Improvements
                   </h4>
-                  
+
                   {optimizationResult.improvements.map((improvement, index) => (
                     <div key={index} className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
                       <ArrowRight className="h-4 w-4 text-green-600" />
@@ -371,7 +371,7 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
                 Select optimization focus area for AI-powered tuning
               </CardDescription>
             </CardHeader>
-            
+
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
@@ -384,7 +384,7 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
                   },
                   {
                     key: 'effectiveness',
-                    title: 'Effectiveness Optimization', 
+                    title: 'Effectiveness Optimization',
                     description: 'Focus on improving success rates and outcomes',
                     icon: Target,
                     benefits: ['Higher success rates', 'Better action selection', 'Reduced false positives']
@@ -404,7 +404,7 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
                     benefits: ['Risk mitigation', 'Rollback planning', 'Safety validation']
                   }
                 ].map(({ key, title, description, icon: Icon, benefits }) => (
-                  <Card 
+                  <Card
                     key={key}
                     className={`cursor-pointer transition-all ${
                       selectedStrategy === key ? 'ring-2 ring-blue-500 bg-blue-50' : 'hover:shadow-md'
@@ -419,7 +419,7 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
                           <p className="text-xs text-gray-600">{description}</p>
                         </div>
                       </div>
-                      
+
                       <div className="space-y-1">
                         {benefits.map((benefit, idx) => (
                           <div key={idx} className="flex items-center gap-1 text-xs text-gray-600">
@@ -447,7 +447,7 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
                 AI-identified opportunities for improving response performance
               </CardDescription>
             </CardHeader>
-            
+
             <CardContent>
               <div className="space-y-4">
                 {optimizationOpportunities.map((opportunity, index) => (
@@ -461,15 +461,15 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
                           </h4>
                           <p className="text-sm text-gray-600 mt-1">{opportunity.description}</p>
                         </div>
-                        
-                        <Badge 
+
+                        <Badge
                           variant="outline"
                           className={getPriorityColor(opportunity.priority)}
                         >
                           {opportunity.priority} priority
                         </Badge>
                       </div>
-                      
+
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <h5 className="font-medium text-xs text-gray-700 mb-1">Expected Improvement</h5>
@@ -480,13 +480,13 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
                             </span>
                           </div>
                         </div>
-                        
+
                         <div>
                           <h5 className="font-medium text-xs text-gray-700 mb-1">Implementation</h5>
                           <p className="text-xs text-gray-600">{opportunity.implementation}</p>
                         </div>
                       </div>
-                      
+
                       <div className="mt-3 pt-3 border-t flex gap-2">
                         <Button size="sm" variant="outline" className="flex-1">
                           <Eye className="h-3 w-3 mr-1" />
@@ -500,7 +500,7 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
                     </CardContent>
                   </Card>
                 ))}
-                
+
                 {optimizationOpportunities.length === 0 && (
                   <div className="text-center py-12">
                     <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
@@ -526,13 +526,13 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
                 Historical learning and performance insights
               </CardDescription>
             </CardHeader>
-            
+
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Learning Progress */}
                 <div className="space-y-4">
                   <h4 className="font-semibold">Learning Progress</h4>
-                  
+
                   <div className="space-y-3">
                     <div>
                       <div className="flex items-center justify-between text-sm mb-1">
@@ -541,7 +541,7 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
                       </div>
                       <Progress value={94} className="h-2" />
                     </div>
-                    
+
                     <div>
                       <div className="flex items-center justify-between text-sm mb-1">
                         <span>Learning Velocity</span>
@@ -549,7 +549,7 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
                       </div>
                       <Progress value={85} className="h-2" />
                     </div>
-                    
+
                     <div>
                       <div className="flex items-center justify-between text-sm mb-1">
                         <span>Prediction Confidence</span>
@@ -563,7 +563,7 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
                 {/* Optimization History */}
                 <div className="space-y-4">
                   <h4 className="font-semibold">Recent Optimizations</h4>
-                  
+
                   <div className="space-y-2">
                     {[
                       { action: "Malware Response optimization", improvement: "+23% faster", time: "2 hours ago" },
@@ -616,16 +616,3 @@ const ResponseOptimizer: React.FC<ResponseOptimizerProps> = ({
 }
 
 export default ResponseOptimizer
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -9,16 +9,17 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { 
-  CheckCircle, 
-  XCircle, 
-  Clock, 
-  AlertTriangle, 
-  User, 
+import {
+  CheckCircle,
+  XCircle,
+  Clock,
+  AlertTriangle,
+  User,
   Shield,
   Zap,
   Eye
 } from 'lucide-react'
+import { apiUrl } from '../utils/api'
 
 interface WorkflowApprovalPanelProps {
   incidentId: number
@@ -58,7 +59,7 @@ export default function WorkflowApprovalPanel({ incidentId }: WorkflowApprovalPa
   const loadPendingWorkflows = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`http://localhost:8000/api/response/workflows?status=awaiting_approval&incident_id=${incidentId}`, {
+      const response = await fetch(apiUrl(`/api/response/workflows?status=awaiting_approval&incident_id=${incidentId}`), {
         headers: {
           'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'demo-minixdr-api-key'
         }
@@ -82,8 +83,8 @@ export default function WorkflowApprovalPanel({ incidentId }: WorkflowApprovalPa
   const approveWorkflow = async (workflowId: string) => {
     try {
       setProcessingId(workflowId)
-      
-      const response = await fetch(`http://localhost:8000/api/response/workflows/${workflowId}/approve`, {
+
+      const response = await fetch(apiUrl(`/api/response/workflows/${workflowId}/approve`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -100,7 +101,7 @@ export default function WorkflowApprovalPanel({ incidentId }: WorkflowApprovalPa
       }
 
       await loadPendingWorkflows() // Refresh the list
-      
+
     } catch (err) {
       console.error('Approval failed:', err)
       setError(err instanceof Error ? err.message : 'Approval failed')
@@ -112,8 +113,8 @@ export default function WorkflowApprovalPanel({ incidentId }: WorkflowApprovalPa
   const rejectWorkflow = async (workflowId: string) => {
     try {
       setProcessingId(workflowId)
-      
-      const response = await fetch(`http://localhost:8000/api/response/workflows/${workflowId}/reject`, {
+
+      const response = await fetch(apiUrl(`/api/response/workflows/${workflowId}/reject`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -130,7 +131,7 @@ export default function WorkflowApprovalPanel({ incidentId }: WorkflowApprovalPa
       }
 
       await loadPendingWorkflows() // Refresh the list
-      
+
     } catch (err) {
       console.error('Rejection failed:', err)
       setError(err instanceof Error ? err.message : 'Rejection failed')
@@ -261,7 +262,7 @@ export default function WorkflowApprovalPanel({ incidentId }: WorkflowApprovalPa
                       <User className="w-4 h-4" />
                       <span>Created {new Date(workflow.created_at).toLocaleString()}</span>
                     </div>
-                    
+
                     <div className="flex items-center gap-2">
                       <Button
                         variant="outline"
@@ -273,7 +274,7 @@ export default function WorkflowApprovalPanel({ incidentId }: WorkflowApprovalPa
                         <XCircle className="w-4 h-4 mr-1" />
                         Reject
                       </Button>
-                      
+
                       <Button
                         size="sm"
                         onClick={() => approveWorkflow(workflow.workflow_id)}

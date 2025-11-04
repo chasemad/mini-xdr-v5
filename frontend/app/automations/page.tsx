@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { DashboardLayout } from "@/components/DashboardLayout";
+import { apiUrl } from "@/app/utils/api";
 
 interface WorkflowTrigger {
   id: number;
@@ -71,7 +72,7 @@ export default function AutomationsPage() {
 
   const fetchTriggers = async () => {
     try {
-      const response = await fetch("http://localhost:8000/api/triggers/", {
+      const response = await fetch(apiUrl("/api/triggers/"), {
         headers: { "X-API-Key": API_KEY }
       });
       const data = await response.json();
@@ -85,7 +86,7 @@ export default function AutomationsPage() {
 
   const fetchSuggestions = async () => {
     try {
-      const response = await fetch("http://localhost:8000/api/nlp-suggestions/", {
+      const response = await fetch(apiUrl("/api/nlp-suggestions/"), {
         headers: { "X-API-Key": API_KEY }
       });
       const data = await response.json();
@@ -97,7 +98,7 @@ export default function AutomationsPage() {
 
   const handleBulkAction = async (action: "pause" | "resume" | "archive") => {
     try {
-      await fetch(`http://localhost:8000/api/triggers/bulk/${action}`, {
+      await fetch(apiUrl(`/api/triggers/bulk/${action}`), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -114,7 +115,7 @@ export default function AutomationsPage() {
 
   const updateTriggerSettings = async (triggerId: number, settings: any) => {
     try {
-      await fetch(`http://localhost:8000/api/triggers/${triggerId}/settings`, {
+      await fetch(apiUrl(`/api/triggers/${triggerId}/settings`), {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",

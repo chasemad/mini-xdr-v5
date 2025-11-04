@@ -5,6 +5,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useIncidentWebSocket } from './useWebSocket';
+import { apiUrl } from '../utils/api';
 
 interface IncidentUpdate {
   type: 'status_change' | 'new_action' | 'action_complete' | 'action_failed' | 'agent_action' | 'full_update';
@@ -108,7 +109,7 @@ export function useIncidentRealtime({
   const fetchIncident = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:8000/incidents/${incidentId}`, {
+      const response = await fetch(apiUrl(`/incidents/${incidentId}`), {
         headers: {
           'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'demo-minixdr-api-key'
         }
@@ -205,4 +206,3 @@ export function useActionRealtime(incidentId: number, actionId?: string) {
     actionResult
   };
 }
-

@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { 
-  Brain, Lightbulb, AlertTriangle, Target, Shield, 
+import {
+  Brain, Lightbulb, AlertTriangle, Target, Shield,
   Zap, RefreshCw, ChevronDown, ChevronUp, CheckCircle,
   TrendingUp, Globe, Info, Loader2
 } from 'lucide-react';
+import { apiUrl } from '@/app/utils/api';
 
 interface AIRecommendation {
   action: string;
@@ -35,10 +36,10 @@ interface EnhancedAIAnalysisProps {
   onExecuteAllRecommendations?: () => Promise<void>;
 }
 
-export default function EnhancedAIAnalysis({ 
-  incident, 
+export default function EnhancedAIAnalysis({
+  incident,
   onExecuteRecommendation,
-  onExecuteAllRecommendations 
+  onExecuteAllRecommendations
 }: EnhancedAIAnalysisProps) {
   const [analysis, setAnalysis] = useState<AIAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
@@ -60,7 +61,7 @@ export default function EnhancedAIAnalysis({
       setLoading(true);
       setError(null);
 
-      const response = await fetch(`http://localhost:8000/api/incidents/${incident.id}/ai-analysis`, {
+      const response = await fetch(apiUrl(`/api/incidents/${incident.id}/ai-analysis`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -325,7 +326,7 @@ export default function EnhancedAIAnalysis({
                 <span>{reason}</span>
               </div>
             ))}
-            
+
             {analysis.threat_attribution && (
               <div className="mt-4 pt-4 border-t border-gray-700">
                 <div className="flex items-center gap-2 mb-2">
@@ -449,4 +450,3 @@ export default function EnhancedAIAnalysis({
     </div>
   );
 }
-
