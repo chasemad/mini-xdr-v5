@@ -6,10 +6,6 @@ on:
   workflow_dispatch:  # Allow manual trigger
   push:
     branches: [main]
-    paths:
-      - 'backend/requirements.txt'
-      - 'frontend/package.json'
-      - 'frontend/package-lock.json'
 
 env:
   AWS_REGION: us-east-1
@@ -18,6 +14,7 @@ jobs:
   dependency-scan:
     name: Dependency Vulnerability Scan
     runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.modified, 'backend/requirements.txt') || contains(github.event.head_commit.modified, 'frontend/package.json') || contains(github.event.head_commit.modified, 'frontend/package-lock.json')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -64,8 +61,8 @@ jobs:
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
+          base: ${{ github.event.before }}
+          head: ${{ github.sha }}
           extra_args: --debug --only-verified
 
       - name: GitLeaks Secret Scan
