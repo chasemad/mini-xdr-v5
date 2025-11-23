@@ -1,0 +1,200 @@
+# ============================================================================
+# Mini-XDR MCP Server Deployment - Production
+# ============================================================================
+# Model Context Protocol server for AI assistant integration
+# Provides 37 tools for incident management, threat hunting, orchestration
+# ============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mini-xdr-mcp-server
+  namespace: mini-xdr
+  labels:
+    app: mini-xdr-mcp-server
+    component: mcp-server
+    version: v1.0.0
+    environment: production
+spec:
+  replicas: 2  # High availability
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0  # Zero downtime
+  selector:
+    matchLabels:
+      app: mini-xdr-mcp-server
+  template:
+    metadata:
+      labels:
+        app: mini-xdr-mcp-server
+        component: mcp-server
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3001"
+        prometheus.io/path: "/health"
+    spec:
+      # Security context
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+
+      # Service account
+      serviceAccountName: mini-xdr-backend
+
+      containers:
+      - name: mcp-server
+        image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/mini-xdr-mcp-server:latest
+        imagePullPolicy: Always
+
+        ports:
+        - containerPort: 3001
+          name: http
+          protocol: TCP
+
+        # Environment variables
+        env:
+        - name: TRANSPORT
+          value: "http"
+        - name: PORT
+          value: "3001"
+        - name: API_BASE
+          value: "http://backend-service:8000"
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mini-xdr-secrets
+              key: api-key
+              optional: true
+        - name: NODE_ENV
+          value: "production"
+
+        # Resource limits
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+        # Liveness probe
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        # Readiness probe
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        # Startup probe
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 12  # 60 seconds max startup time
+
+        # Security context for container
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+
+        # Volume mounts for writable directories
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: cache
+          mountPath: /app/.cache
+
+      # Volumes
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: cache
+        emptyDir: {}
+
+      # Node affinity - prefer different nodes for HA
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - mini-xdr-mcp-server
+              topologyKey: kubernetes.io/hostname
+
+---
+# ============================================================================
+# Horizontal Pod Autoscaler for MCP Server
+# ============================================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: mini-xdr-mcp-server-hpa
+  namespace: mini-xdr
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mini-xdr-mcp-server
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300  # 5 minutes
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+      - type: Pods
+        value: 2
+        periodSeconds: 30
+      selectPolicy: Max

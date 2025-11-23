@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "mcp": "ts-node app/mcp_server.ts",
+    "mcp:http": "ts-node app/mcp_server_http.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

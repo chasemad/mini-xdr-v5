@@ -63,7 +63,6 @@ from .onboarding_v2.routes import router as onboarding_v2_router
 from .policy_engine import policy_engine
 from .responder import block_ip, unblock_ip
 from .response_optimizer import get_response_optimizer
-from .secure_startup import initialize_secure_environment
 from .security import AuthMiddleware, RateLimiter
 from .triager import generate_default_triage, run_triage
 from .trigger_evaluator import trigger_evaluator
@@ -105,10 +104,6 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Enhanced Mini-XDR backend...")
 
-    # Initialize secure environment with AWS Secrets Manager
-    logger.info("Initializing secure environment...")
-    initialize_secure_environment()
-
     # Initialize database with timeout and error handling
     try:
         await asyncio.wait_for(init_db(), timeout=60)
@@ -129,6 +124,15 @@ async def lifespan(app: FastAPI):
     # Initialize agent orchestrator
     logger.info("Initializing Agent Orchestrator...")
     agent_orchestrator = await get_orchestrator()
+
+    # Initialize DLP Agent
+    logger.info("Initializing DLP Agent...")
+    try:
+        from .agents.dlp_agent import dlp_agent
+
+        logger.info("✅ DLP Agent activated successfully")
+    except Exception as e:
+        logger.warning(f"Failed to initialize DLP agent: {e}")
 
     # Load ML models if available
     try:
@@ -174,6 +178,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to start learning pipeline: {e}")
 
+    # Start automated retraining scheduler (Phase 2)
+    try:
+        from .learning import start_retrain_scheduler
+
+        await start_retrain_scheduler()
+        logger.info("✅ Automated retraining scheduler started (Phase 2)")
+    except Exception as e:
+        logger.warning(f"Failed to start retraining scheduler: {e}")
+
     # Add scheduled tasks
     scheduler.add_job(
         process_scheduled_unblocks,
@@ -190,10 +203,41 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
     )
 
+    # Initialize T-Pot honeypot monitoring
+    try:
+        from .tpot_connector import initialize_tpot_monitoring
+        from .tpot_elasticsearch_ingestor import start_elasticsearch_ingestion
+
+        logger.info("Initializing T-Pot honeypot monitoring...")
+        if await initialize_tpot_monitoring(AsyncSessionLocal):
+            logger.info("✅ T-Pot monitoring initialized successfully")
+            # Start Elasticsearch-based ingestion
+            await start_elasticsearch_ingestion()
+            logger.info("✅ T-Pot Elasticsearch ingestion started")
+        else:
+            logger.warning(
+                "T-Pot monitoring initialization failed - will continue without honeypot integration"
+            )
+    except Exception as e:
+        logger.warning(
+            f"Failed to initialize T-Pot: {e} - continuing without honeypot integration"
+        )
+
     yield
 
     # Shutdown
     logger.info("Shutting down Enhanced Mini-XDR backend...")
+
+    # Shutdown T-Pot monitoring
+    try:
+        from .tpot_connector import shutdown_tpot_monitoring
+        from .tpot_elasticsearch_ingestor import stop_elasticsearch_ingestion
+
+        await stop_elasticsearch_ingestion()
+        await shutdown_tpot_monitoring()
+        logger.info("T-Pot monitoring stopped")
+    except Exception as e:
+        logger.warning(f"Error stopping T-Pot monitoring: {e}")
 
     # Stop learning pipeline
     try:
@@ -201,6 +245,15 @@ async def lifespan(app: FastAPI):
         logger.info("Learning pipeline stopped")
     except Exception as e:
         logger.warning(f"Error stopping learning pipeline: {e}")
+
+    # Stop automated retraining scheduler (Phase 2)
+    try:
+        from .learning import stop_retrain_scheduler
+
+        await stop_retrain_scheduler()
+        logger.info("Retraining scheduler stopped")
+    except Exception as e:
+        logger.warning(f"Error stopping retraining scheduler: {e}")
 
     await threat_intel.close()
     scheduler.shutdown()
@@ -242,6 +295,21 @@ app.include_router(trigger_router)
 app.include_router(onboarding_router)  # Legacy onboarding
 app.include_router(onboarding_v2_router)
 app.include_router(agent_router)  # Agent communication endpoints
+
+# T-Pot Honeypot Integration
+from .tpot_routes import router as tpot_router
+
+app.include_router(tpot_router)
+
+# System Health Check
+from .health_routes import router as health_router
+
+app.include_router(health_router)
+
+# Agent Coordination API (for v2 incident UI)
+from .agent_coordination_routes import router as agent_coordination_router
+
+app.include_router(agent_coordination_router)
 
 from fastapi import Depends
 
@@ -416,6 +484,17 @@ async def _get_detailed_events_for_ip(db: AsyncSession, src_ip: str, hours: int 
 
     result = await db.execute(query)
     return result.scalars().all()
+
+
+async def _get_all_events_for_ip(db: AsyncSession, src_ip: str):
+    """Get ALL events for an IP without time restrictions for complete incident analysis"""
+    logger.info(f"Getting ALL events for IP: {src_ip}")
+    query = select(Event).where(Event.src_ip == src_ip).order_by(Event.ts.asc())
+
+    result = await db.execute(query)
+    events = result.scalars().all()
+    logger.info(f"Found {len(events)} events for IP {src_ip}")
+    return events
 
 
 def _extract_iocs_from_events(events):
@@ -1232,6 +1311,14 @@ async def ingest_cowrie(
 
     Accepts either a single event or list of events
     """
+    print(
+        f"\n🔴🔴🔴 INGESTION STARTED - Received {len(events) if isinstance(events, list) else 1} event(s) 🔴🔴🔴\n",
+        flush=True,
+    )
+    logger.info(
+        f"🔴 INGESTION STARTED - Received {len(events) if isinstance(events, list) else 1} event(s)"
+    )
+
     # Normalize to list
     if isinstance(events, dict):
         events = [events]
@@ -1283,19 +1370,31 @@ async def ingest_cowrie(
             logger.error(f"Failed to process event: {e}")
             continue
 
+    print(f"🔵 About to commit {stored_count} events...", flush=True)
+    logger.info(f"🔵 About to commit {stored_count} events...")
     await db.commit()
+
+    print(f"✅ Committed {stored_count} events to database", flush=True)
+    logger.info(f"✅ Committed {stored_count} events to database")
 
     # Run intelligent detection on all unique source IPs
     incident_id = None
     unique_ips = set()
 
+    print(f"🟡 Starting detection phase for {stored_count} events...", flush=True)
+
     # Get all events for analysis
+    print(f"📊 Fetching last {stored_count} events for analysis...", flush=True)
+    logger.info(f"📊 Fetching last {stored_count} events for analysis...")
     all_events = await db.execute(
         select(Event).order_by(Event.ts.desc()).limit(stored_count)
     )
     stored_events = all_events.scalars().all()
+    print(f"📊 Retrieved {len(stored_events)} events from database", flush=True)
+    logger.info(f"📊 Retrieved {len(stored_events)} events from database")
 
     # Group events by source IP
+    print(f"🟢 Grouping {len(stored_events)} events by IP...", flush=True)
     events_by_ip = {}
     for event in stored_events:
         if event.src_ip:
@@ -1305,27 +1404,50 @@ async def ingest_cowrie(
             events_by_ip[event.src_ip].append(event)
 
     # Run intelligent detection for each unique IP
+    print(f"🟣 About to import intelligent_detector...", flush=True)
     from .intelligent_detection import intelligent_detector
+
+    print(
+        f"🔍 Running detection for {len(unique_ips)} unique IPs: {unique_ips}",
+        flush=True,
+    )
+    logger.info(f"🔍 Running detection for {len(unique_ips)} unique IPs: {unique_ips}")
 
     for src_ip in unique_ips:
         try:
+            print(
+                f"🔍 Analyzing {src_ip} with {len(events_by_ip[src_ip])} events",
+                flush=True,
+            )
+            logger.info(f"🔍 Analyzing {src_ip} with {len(events_by_ip[src_ip])} events")
+
+            print(
+                f"🔵 About to call intelligent_detector.analyze_and_create_incidents...",
+                flush=True,
+            )
             detection_result = await intelligent_detector.analyze_and_create_incidents(
                 db, src_ip, events_by_ip[src_ip]
+            )
+            print(
+                f"🟢 Detection result received: {detection_result.get('incident_created', False)}",
+                flush=True,
             )
 
             if detection_result["incident_created"]:
                 incident_id = detection_result["incident_id"]
                 incidents_detected.append(incident_id)
                 logger.info(
-                    f"Intelligent incident created: {incident_id} for {src_ip} - {detection_result.get('threat_type', 'unknown')}"
+                    f"✅ Intelligent incident created: {incident_id} for {src_ip} - {detection_result.get('threat_type', 'unknown')}"
                 )
             else:
-                logger.debug(
-                    f"No incident created for {src_ip}: {detection_result['reason']}"
+                logger.info(
+                    f"⚠️ No incident created for {src_ip}: {detection_result['reason']}"
                 )
 
         except Exception as e:
-            logger.error(f"Intelligent detection failed for {src_ip}: {e}")
+            logger.error(
+                f"❌ Intelligent detection failed for {src_ip}: {e}", exc_info=True
+            )
             # Fallback to legacy detection
             fallback_incident = await run_detection(db, src_ip)
             if fallback_incident:
@@ -1644,21 +1766,46 @@ async def agent_orchestrate(
     request_data: Dict[str, Any], db: AsyncSession = Depends(get_db)
 ):
     """
-    Enhanced agent orchestration endpoint for contextual chat interaction
+    Enhanced agent orchestration endpoint with intelligent conversation handling
+    Supports: general Q&A, action requests with confirmation, follow-up questions
     """
-    if not agent_orchestrator:
-        raise HTTPException(
-            status_code=503, detail="Agent orchestrator not initialized"
-        )
-
     query = request_data.get("query", "")
     incident_id = request_data.get("incident_id")
     context = request_data.get("context", {})
-    agent_type = request_data.get("agent_type", "orchestrated_response")
+    conversation_id = request_data.get("conversation_id")
+    pending_action_id = request_data.get("pending_action_id")
+
+    # Legacy support
+    agent_type = request_data.get("agent_type", "copilot")
     workflow_type = request_data.get("workflow_type", "comprehensive")
 
     try:
-        # Handle contextual incident analysis (new chat mode)
+        # Use new copilot handler for modern conversational AI
+        if agent_type == "copilot" or (
+            incident_id and context and agent_type == "orchestrated_response"
+        ):
+            from .ai_copilot_handler import get_copilot_handler
+
+            copilot = await get_copilot_handler()
+
+            response = await copilot.handle_request(
+                query=query,
+                incident_id=incident_id,
+                context=context,
+                conversation_id=conversation_id,
+                pending_action_id=pending_action_id,
+                db_session=db,
+            )
+
+            return response.to_dict()
+
+        # Legacy mode: fallback to old behavior for backwards compatibility
+        if not agent_orchestrator:
+            raise HTTPException(
+                status_code=503, detail="Agent orchestrator not initialized"
+            )
+
+        # Handle contextual incident analysis (legacy chat mode)
         if incident_id and context:
             incident = (
                 (await db.execute(select(Incident).where(Incident.id == incident_id)))
@@ -2024,6 +2171,52 @@ async def agent_orchestrate(
         return {"message": f"Agent error: {str(e)}"}
 
 
+@app.post("/api/agents/confirm-action")
+async def confirm_agent_action(
+    request_data: Dict[str, Any], db: AsyncSession = Depends(get_db)
+):
+    """
+    Handle confirmation or rejection of pending agent actions
+
+    Expects:
+        - pending_action_id: ID of the action awaiting confirmation
+        - approved: boolean indicating approval/rejection
+        - incident_id: optional incident ID for context
+        - context: optional additional context
+    """
+    from .ai_copilot_handler import get_copilot_handler
+
+    pending_action_id = request_data.get("pending_action_id")
+    approved = request_data.get("approved", False)
+    incident_id = request_data.get("incident_id")
+    context = request_data.get("context", {})
+    conversation_id = request_data.get("conversation_id")
+
+    if not pending_action_id:
+        raise HTTPException(status_code=400, detail="pending_action_id is required")
+
+    try:
+        copilot = await get_copilot_handler()
+
+        # Generate confirmation query based on approval status
+        query = "yes, approve" if approved else "no, cancel"
+
+        response = await copilot.handle_request(
+            query=query,
+            incident_id=incident_id,
+            context=context,
+            conversation_id=conversation_id,
+            pending_action_id=pending_action_id,
+            db_session=db,
+        )
+
+        return response.to_dict()
+
+    except Exception as e:
+        logger.error(f"Confirmation handling failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Confirmation error: {str(e)}")
+
+
 @app.get("/api/incidents")
 async def list_incidents(db: AsyncSession = Depends(get_db)):
     """List all incidents in reverse chronological order"""
@@ -2040,6 +2233,20 @@ async def list_incidents(db: AsyncSession = Depends(get_db)):
             "status": inc.status,
             "auto_contained": inc.auto_contained,
             "triage_note": inc.triage_note,
+            "risk_score": inc.risk_score,
+            "escalation_level": inc.escalation_level,
+            "threat_category": inc.threat_category,
+            "containment_method": inc.containment_method,
+            "agent_confidence": inc.containment_confidence
+            if (
+                inc.containment_confidence is not None
+                and inc.containment_confidence > 0
+            )
+            else inc.agent_confidence,
+            # Phase 2: ML and Council fields
+            "ml_confidence": inc.ml_confidence,
+            "council_confidence": inc.council_confidence,
+            "council_verdict": inc.council_verdict,
         }
         for inc in incidents
     ]
@@ -2131,10 +2338,8 @@ async def get_incident_detail(inc_id: int, db: AsyncSession = Depends(get_db)):
     combined_failure = manual_failure_count + workflow_failure_count
     combined_success_rate = combined_success / total_actions if total_actions else 0.0
 
-    # Get detailed events with full forensic data (extend to 30 days for demo/testing)
-    detailed_events = await _get_detailed_events_for_ip(
-        db, incident.src_ip, hours=24 * 30
-    )
+    # Get detailed events with full forensic data (get ALL events for this IP)
+    detailed_events = await _get_all_events_for_ip(db, incident.src_ip)
 
     # Extract IOCs and attack patterns
     iocs = _extract_iocs_from_events(detailed_events)
@@ -2142,6 +2347,26 @@ async def get_incident_detail(inc_id: int, db: AsyncSession = Depends(get_db)):
 
     # Sort timeline by most recent first
     attack_timeline.sort(key=lambda x: x["timestamp"], reverse=True)
+
+    # Event summary for better incident visualization
+    event_summary = {
+        "total_events": len(detailed_events),
+        "event_types": list(set(e.eventid for e in detailed_events)),
+        "time_range": {
+            "earliest": min((e.ts for e in detailed_events), default=None),
+            "latest": max((e.ts for e in detailed_events), default=None),
+        }
+        if detailed_events
+        else None,
+        "event_counts_by_type": {},
+    }
+
+    # Count events by type
+    for event in detailed_events:
+        event_type = event.eventid
+        event_summary["event_counts_by_type"][event_type] = (
+            event_summary["event_counts_by_type"].get(event_type, 0) + 1
+        )
 
     return {
         "id": incident.id,
@@ -2151,6 +2376,8 @@ async def get_incident_detail(inc_id: int, db: AsyncSession = Depends(get_db)):
         "status": incident.status,
         "auto_contained": incident.auto_contained,
         "triage_note": incident.triage_note,
+        "triggering_events": incident.triggering_events,
+        "events_analyzed_count": incident.events_analyzed_count,
         # Enhanced SOC fields
         "escalation_level": incident.escalation_level,
         "risk_score": incident.risk_score,
@@ -2162,6 +2389,11 @@ async def get_incident_detail(inc_id: int, db: AsyncSession = Depends(get_db)):
         "agent_confidence": incident.agent_confidence,
         "ml_features": incident.ml_features,
         "ensemble_scores": incident.ensemble_scores,
+        # Phase 2: ML and Council fields
+        "ml_confidence": incident.ml_confidence,
+        "council_confidence": incident.council_confidence,
+        "council_verdict": incident.council_verdict,
+        "council_reasoning": incident.council_reasoning,
         "actions": [
             {
                 "id": a.id,
@@ -2202,11 +2434,7 @@ async def get_incident_detail(inc_id: int, db: AsyncSession = Depends(get_db)):
         # Attack analysis
         "iocs": iocs,
         "attack_timeline": attack_timeline,
-        "event_summary": {
-            "total_events": len(detailed_events),
-            "event_types": list(set(e.eventid for e in detailed_events)),
-            "time_span_hours": 24,
-        },
+        "event_summary": event_summary,
     }
 
 
@@ -3854,12 +4082,17 @@ async def clear_database(
         else:
             events_count = 0
 
-        # Reset auto-increment counters
-        await db.execute(
-            text(
-                "DELETE FROM sqlite_sequence WHERE name IN ('incidents', 'events', 'actions')"
+        # Reset auto-increment counters (SQLite only)
+        try:
+            await db.execute(
+                text(
+                    "DELETE FROM sqlite_sequence WHERE name IN ('incidents', 'events', 'actions')"
+                )
             )
-        )
+        except Exception as e:
+            logger.warning(
+                f"Could not reset sqlite_sequence (normal if not using SQLite or table empty): {e}"
+            )
 
         await db.commit()
 
@@ -4193,7 +4426,6 @@ async def get_orchestrator_status():
             "status": orchestrator_status,
             "orchestrator": orchestrator_data,
             "ml_models": ml_status,
-            "using_aws": False,  # We are NOT using AWS anymore
             "using_local_models": True,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
@@ -4360,6 +4592,31 @@ async def health_check():
         "auto_contain": auto_contain_enabled,
         "orchestrator": orchestrator_status,
     }
+
+
+@app.get("/api/council/metrics")
+async def get_council_metrics():
+    """
+    Get Council of Models performance metrics.
+
+    Returns real-time statistics including:
+    - Routing decisions
+    - API calls and costs
+    - Vector cache performance
+    - Verdicts and overrides
+    """
+    try:
+        from .orchestrator.metrics import get_metrics_summary
+
+        return get_metrics_summary()
+    except ImportError:
+        return {
+            "error": "Council metrics not available",
+            "message": "Council of Models system not initialized",
+        }
+    except Exception as e:
+        logger.error(f"Failed to get Council metrics: {e}")
+        return {"error": "Failed to retrieve metrics", "message": str(e)}
 
 
 @app.get("/test/ssh")
@@ -6778,76 +7035,16 @@ async def reject_response_workflow(
         )
 
 
-@app.get("/api/ml/sagemaker/status")
-async def get_sagemaker_status(http_request: Request):
-    """Get SageMaker endpoint status and cost information"""
-    _require_api_key(http_request)
-
-    try:
-        from .sagemaker_endpoint_manager import get_endpoint_manager
-
-        manager = await get_endpoint_manager()
-        metrics = await manager.get_endpoint_metrics()
-
-        return {
-            "success": True,
-            "sagemaker_metrics": metrics,
-            "training_job": "mini-xdr-comprehensive-fixed-20250927-154158",
-            "model_accuracy": 0.979875,
-            "features": 79,
-            "cost_optimization_available": True,
-        }
-
-    except Exception as e:
-        logger.error(f"Failed to get SageMaker status: {e}")
-        return {"success": False, "error": str(e)}
-
-
-@app.post("/api/ml/sagemaker/scale-down")
-async def scale_down_sagemaker(http_request: Request):
-    """Scale SageMaker endpoint to zero for cost savings"""
-    _require_api_key(http_request)
-
-    try:
-        from .sagemaker_endpoint_manager import get_endpoint_manager
-
-        manager = await get_endpoint_manager()
-        result = await manager.scale_to_zero()
-
-        return result
-
-    except Exception as e:
-        logger.error(f"Failed to scale down SageMaker: {e}")
-        return {"success": False, "error": str(e)}
-
-
-@app.post("/api/ml/sagemaker/scale-up")
-async def scale_up_sagemaker(http_request: Request):
-    """Scale up SageMaker endpoint for ML inference"""
-    _require_api_key(http_request)
-
-    try:
-        from .sagemaker_endpoint_manager import get_endpoint_manager
-
-        manager = await get_endpoint_manager()
-        result = await manager.scale_up_on_demand()
-
-        return result
-
-    except Exception as e:
-        logger.error(f"Failed to scale up SageMaker: {e}")
-        return {"success": False, "error": str(e)}
-
-
 @app.post("/api/incidents/{incident_id}/ai-analysis")
 async def generate_ai_incident_analysis(
     incident_id: int,
     request: Dict[str, Any],
     http_request: Request,
+    current_user: Dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Generate AI analysis for an incident (with caching)"""
-    _require_api_key(http_request)
+    # Use JWT authentication instead of API key
 
     try:
         # Get incident details
@@ -7091,7 +7288,11 @@ async def execute_ai_recommendation(
         if action_type == "block_ip":
             ip = parameters.get("ip") or incident.src_ip
             duration = parameters.get("duration", 30)
+            logger.info(
+                f"Executing block_ip for incident {incident_id}: IP={ip}, duration={duration}min"
+            )
             status, detail = await block_ip(ip, duration * 60)  # Convert to seconds
+            logger.info(f"block_ip result: status={status}, detail={detail[:500]}")
             result = {
                 "status": status,
                 "detail": detail,
@@ -7099,6 +7300,12 @@ async def execute_ai_recommendation(
                 "duration_minutes": duration,
             }
             action_name = f"Block IP {ip}"
+
+            # If blocking failed, raise an exception with details
+            if status != "success":
+                raise HTTPException(
+                    status_code=500, detail=f"IP blocking failed: {detail}"
+                )
 
         elif action_type == "isolate_host":
             # Simulate host isolation
@@ -7166,6 +7373,33 @@ async def execute_ai_recommendation(
             },
         )
         db.add(action)
+
+        # ALSO create an AdvancedResponseAction for workflow timeline consistency
+        try:
+            from .models import AdvancedResponseAction
+
+            workflow_action = AdvancedResponseAction(
+                action_id=f"ui_{incident_id}_{action_type}_{int(datetime.utcnow().timestamp())}",
+                incident_id=incident_id,
+                action_type=action_type,
+                action_name=action_name,
+                action_description=f"Manual execution via UI: {action_name}",
+                action_category="containment"
+                if action_type == "block_ip"
+                else "investigation",
+                status="completed" if result.get("status") == "success" else "failed",
+                parameters=parameters,
+                result_data=result,
+                executed_by="soc_analyst",
+                execution_method="manual_ui",
+                error_details=result.get("detail")
+                if result.get("status") != "success"
+                else None,
+            )
+            db.add(workflow_action)
+        except Exception as e:
+            logger.warning(f"Could not create AdvancedResponseAction: {e}")
+
         await db.commit()
 
         return {
@@ -7295,6 +7529,90 @@ async def execute_ai_plan(
     except Exception as e:
         logger.error(f"Failed to execute AI plan: {e}")
         return {"success": False, "error": str(e)}
+
+
+@app.get("/api/incidents/{incident_id}/actions")
+async def get_incident_actions(
+    incident_id: int, http_request: Request, db: AsyncSession = Depends(get_db)
+):
+    """Get all actions (manual, workflow, and agent) for an incident"""
+    _require_api_key(http_request)
+
+    try:
+        # Get manual actions
+        manual_actions = (
+            (
+                await db.execute(
+                    select(Action)
+                    .where(Action.incident_id == incident_id)
+                    .order_by(Action.created_at.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        # Get workflow actions
+        from .models import AdvancedResponseAction
+
+        workflow_actions = (
+            (
+                await db.execute(
+                    select(AdvancedResponseAction)
+                    .where(AdvancedResponseAction.incident_id == incident_id)
+                    .order_by(AdvancedResponseAction.created_at.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        # Combine and format actions
+        all_actions = []
+
+        for action in manual_actions:
+            all_actions.append(
+                {
+                    "id": action.id,
+                    "type": "manual",
+                    "action": action.action,
+                    "action_type": action.action,
+                    "result": action.result,
+                    "status": action.result,
+                    "detail": action.detail,
+                    "params": action.params,
+                    "created_at": action.created_at.isoformat()
+                    if action.created_at
+                    else None,
+                }
+            )
+
+        for action in workflow_actions:
+            all_actions.append(
+                {
+                    "id": action.id,
+                    "type": "workflow",
+                    "action": action.action_type,
+                    "action_type": action.action_type,
+                    "action_name": action.action_name,
+                    "result": action.status,
+                    "status": action.status,
+                    "detail": action.action_description,
+                    "params": action.parameters,
+                    "created_at": action.created_at.isoformat()
+                    if action.created_at
+                    else None,
+                }
+            )
+
+        # Sort by created_at
+        all_actions.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+
+        return all_actions
+
+    except Exception as e:
+        logger.error(f"Failed to get actions for incident {incident_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/incidents/{incident_id}/threat-status")

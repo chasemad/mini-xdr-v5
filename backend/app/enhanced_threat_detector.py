@@ -9,23 +9,24 @@ Strategic improvements to the existing 97.98% accuracy model:
 5. Ensemble Methods: Multiple models with confidence calibration
 """
 
+import asyncio
+import json
+import logging
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import joblib
+import numpy as np
+import openai
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Any, Optional, Tuple
-import json
-import logging
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-import joblib
-import openai
-from dataclasses import dataclass
-import asyncio
 
+from .config import settings
 from .models import Event
-from .secrets_manager import secrets_manager
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PredictionResult:
     """Enhanced prediction result with uncertainty and explanations"""
+
     predicted_class: int
     confidence: float
     class_probabilities: List[float]
@@ -61,14 +63,18 @@ class AttentionLayer(nn.Module):
 
         # Self-attention mechanism
         q = self.query(x).unsqueeze(1)  # (batch_size, 1, attention_dim)
-        k = self.key(x).unsqueeze(1)    # (batch_size, 1, attention_dim)
+        k = self.key(x).unsqueeze(1)  # (batch_size, 1, attention_dim)
         v = self.value(x).unsqueeze(1)  # (batch_size, 1, attention_dim)
 
         # Compute attention weights
-        attention_weights = torch.softmax(torch.matmul(q, k.transpose(-2, -1)) / np.sqrt(self.attention_dim), dim=-1)
+        attention_weights = torch.softmax(
+            torch.matmul(q, k.transpose(-2, -1)) / np.sqrt(self.attention_dim), dim=-1
+        )
 
         # Apply attention
-        attended = torch.matmul(attention_weights, v).squeeze(1)  # (batch_size, attention_dim)
+        attended = torch.matmul(attention_weights, v).squeeze(
+            1
+        )  # (batch_size, attention_dim)
 
         # Project back to input dimension
         output = self.output(attended)
@@ -123,8 +129,14 @@ class EnhancedXDRThreatDetector(nn.Module):
     - Feature interaction layers
     """
 
-    def __init__(self, input_dim: int = 79, hidden_dims: List[int] = [512, 256, 128, 64],
-                 num_classes: int = 7, dropout_rate: float = 0.3, use_attention: bool = True):
+    def __init__(
+        self,
+        input_dim: int = 79,
+        hidden_dims: List[int] = [512, 256, 128, 64],
+        num_classes: int = 7,
+        dropout_rate: float = 0.3,
+        use_attention: bool = True,
+    ):
         super().__init__()
 
         self.input_dim = input_dim
@@ -136,7 +148,7 @@ class EnhancedXDRThreatDetector(nn.Module):
             nn.Linear(input_dim, input_dim * 2),
             nn.ReLU(),
             nn.Dropout(0.1),
-            nn.Linear(input_dim * 2, input_dim)
+            nn.Linear(input_dim * 2, input_dim),
         )
 
         # Attention layer for feature relationships
@@ -199,6 +211,11 @@ class EnhancedXDRThreatDetector(nn.Module):
         """Get predictions with uncertainty estimates"""
         self.train()  # Enable dropout for uncertainty
 
+        # Set batch norm layers to eval mode to handle batch size of 1
+        for module in self.modules():
+            if isinstance(module, nn.BatchNorm1d):
+                module.eval()
+
         predictions = []
         uncertainties = []
 
@@ -235,7 +252,9 @@ class FeatureEnhancer:
         self.feature_interactions = None
         self.scaler = None
 
-    def analyze_feature_importance(self, features: np.ndarray, labels: np.ndarray) -> Dict[str, float]:
+    def analyze_feature_importance(
+        self, features: np.ndarray, labels: np.ndarray
+    ) -> Dict[str, float]:
         """Analyze feature importance using multiple methods"""
         try:
             from sklearn.ensemble import RandomForestClassifier
@@ -255,15 +274,18 @@ class FeatureEnhancer:
             # Create feature importance dictionary
             importance_dict = {}
             for i, importance in enumerate(combined_importance):
-                importance_dict[f'feature_{i}'] = float(importance)
+                importance_dict[f"feature_{i}"] = float(importance)
 
             # Identify important features
             self.important_features = [
-                i for i, importance in enumerate(combined_importance)
+                i
+                for i, importance in enumerate(combined_importance)
                 if importance > self.feature_importance_threshold
             ]
 
-            logger.info(f"Identified {len(self.important_features)} important features out of {len(combined_importance)}")
+            logger.info(
+                f"Identified {len(self.important_features)} important features out of {len(combined_importance)}"
+            )
 
             return importance_dict
 
@@ -271,13 +293,17 @@ class FeatureEnhancer:
             logger.error(f"Feature importance analysis failed: {e}")
             return {}
 
-    def create_feature_interactions(self, features: np.ndarray, top_k: int = 10) -> np.ndarray:
+    def create_feature_interactions(
+        self, features: np.ndarray, top_k: int = 10
+    ) -> np.ndarray:
         """Create interactions between top features"""
         if self.important_features is None or len(self.important_features) < 2:
             return features
 
         # Select top k important features for interactions
-        top_features = self.important_features[:min(top_k, len(self.important_features))]
+        top_features = self.important_features[
+            : min(top_k, len(self.important_features))
+        ]
 
         interactions = []
         for i in range(len(top_features)):
@@ -295,7 +321,9 @@ class FeatureEnhancer:
 
         return features
 
-    def enhance_features(self, features: np.ndarray, labels: np.ndarray = None, fit: bool = False) -> np.ndarray:
+    def enhance_features(
+        self, features: np.ndarray, labels: np.ndarray = None, fit: bool = False
+    ) -> np.ndarray:
         """Enhance feature quality"""
         if fit and labels is not None:
             # Analyze importance during training
@@ -303,6 +331,7 @@ class FeatureEnhancer:
 
             # Fit scaler
             from sklearn.preprocessing import RobustScaler
+
             self.scaler = RobustScaler()
             features_scaled = self.scaler.fit_transform(features)
         else:
@@ -328,7 +357,7 @@ class OpenAIThreatAnalyzer:
     def _init_client(self):
         """Initialize OpenAI client"""
         try:
-            api_key = secrets_manager.get_secret("OPENAI_API_KEY")
+            api_key = settings.openai_api_key
             if api_key:
                 self.client = openai.AsyncOpenAI(api_key=api_key)
                 logger.info("OpenAI client initialized for threat analysis")
@@ -342,7 +371,7 @@ class OpenAIThreatAnalyzer:
         src_ip: str,
         events: List[Event],
         ml_prediction: PredictionResult,
-        uncertainty_threshold: float = 0.3
+        uncertainty_threshold: float = 0.3,
     ) -> Optional[Dict[str, Any]]:
         """Analyze uncertain ML predictions with OpenAI"""
 
@@ -386,7 +415,7 @@ Respond in JSON format:
                 model="gpt-4o",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                max_tokens=800
+                max_tokens=800,
             )
 
             # Parse response
@@ -394,28 +423,37 @@ Respond in JSON format:
 
             # Extract JSON
             import re
-            json_match = re.search(r'\{.*\}', analysis_text, re.DOTALL)
+
+            json_match = re.search(r"\{.*\}", analysis_text, re.DOTALL)
             if json_match:
                 analysis = json.loads(json_match.group(0))
 
-                logger.info(f"OpenAI analysis completed for {src_ip}: {analysis.get('threat_assessment', 'unknown')}")
+                logger.info(
+                    f"OpenAI analysis completed for {src_ip}: {analysis.get('threat_assessment', 'unknown')}"
+                )
 
                 return {
                     "openai_analysis": analysis,
-                    "enhanced_confidence": analysis.get("confidence", ml_prediction.confidence),
+                    "enhanced_confidence": analysis.get(
+                        "confidence", ml_prediction.confidence
+                    ),
                     "recommendation": analysis.get("recommended_action", "monitor"),
                     "reasoning": analysis.get("reasoning", ""),
-                    "novel_indicators": analysis.get("novel_indicators", [])
+                    "novel_indicators": analysis.get("novel_indicators", []),
                 }
             else:
-                logger.warning(f"Failed to parse OpenAI JSON response: {analysis_text[:200]}")
+                logger.warning(
+                    f"Failed to parse OpenAI JSON response: {analysis_text[:200]}"
+                )
                 return {"raw_analysis": analysis_text}
 
         except Exception as e:
             logger.error(f"OpenAI threat analysis failed: {e}")
             return None
 
-    def _prepare_analysis_context(self, src_ip: str, events: List[Event], ml_prediction: PredictionResult) -> str:
+    def _prepare_analysis_context(
+        self, src_ip: str, events: List[Event], ml_prediction: PredictionResult
+    ) -> str:
         """Prepare context for OpenAI analysis"""
 
         # Event summary
@@ -451,7 +489,9 @@ class ExplainableAI:
         self.model = model
         self.feature_names = [f"feature_{i}" for i in range(79)]
 
-    def explain_prediction(self, features: np.ndarray, prediction: PredictionResult) -> Dict[str, Any]:
+    def explain_prediction(
+        self, features: np.ndarray, prediction: PredictionResult
+    ) -> Dict[str, Any]:
         """Generate explanation for a prediction"""
         try:
             # Simple gradient-based feature importance
@@ -461,17 +501,25 @@ class ExplainableAI:
             top_features = sorted(
                 [(name, importance) for name, importance in feature_importance.items()],
                 key=lambda x: abs(x[1]),
-                reverse=True
+                reverse=True,
             )[:15]
 
             explanation = {
                 "prediction": prediction.threat_type,
                 "confidence": prediction.confidence,
                 "uncertainty": prediction.uncertainty_score,
-                "top_features": {name: float(importance) for name, importance in top_features},
-                "explanation_text": self._generate_explanation_text(top_features, prediction),
+                "top_features": {
+                    name: float(importance) for name, importance in top_features
+                },
+                "explanation_text": self._generate_explanation_text(
+                    top_features, prediction
+                ),
                 "risk_factors": self._identify_risk_factors(feature_importance),
-                "model_certainty": "high" if prediction.uncertainty_score < 0.1 else "medium" if prediction.uncertainty_score < 0.3 else "low"
+                "model_certainty": "high"
+                if prediction.uncertainty_score < 0.1
+                else "medium"
+                if prediction.uncertainty_score < 0.3
+                else "low",
             }
 
             return explanation
@@ -481,7 +529,7 @@ class ExplainableAI:
             return {
                 "error": str(e),
                 "prediction": prediction.threat_type,
-                "confidence": prediction.confidence
+                "confidence": prediction.confidence,
             }
 
     def _calculate_gradient_importance(self, features: np.ndarray) -> Dict[str, float]:
@@ -490,7 +538,9 @@ class ExplainableAI:
             self.model.eval()
 
             # Convert to tensor and enable gradients
-            input_tensor = torch.tensor(features, dtype=torch.float32, requires_grad=True)
+            input_tensor = torch.tensor(
+                features, dtype=torch.float32, requires_grad=True
+            )
 
             # Forward pass
             logits, _ = self.model(input_tensor)
@@ -507,7 +557,9 @@ class ExplainableAI:
             # Create importance dictionary
             importance = {}
             for i, grad in enumerate(gradients):
-                importance[self.feature_names[i]] = float(grad * features[0, i])  # Gradient * input
+                importance[self.feature_names[i]] = float(
+                    grad * features[0, i]
+                )  # Gradient * input
 
             return importance
 
@@ -515,7 +567,9 @@ class ExplainableAI:
             logger.error(f"Gradient importance calculation failed: {e}")
             return {}
 
-    def _generate_explanation_text(self, top_features: List[Tuple[str, float]], prediction: PredictionResult) -> str:
+    def _generate_explanation_text(
+        self, top_features: List[Tuple[str, float]], prediction: PredictionResult
+    ) -> str:
         """Generate human-readable explanation"""
 
         positive_features = [(name, imp) for name, imp in top_features if imp > 0][:5]
@@ -525,21 +579,37 @@ class ExplainableAI:
 
         if positive_features:
             explanation += f"Key indicators supporting this classification: "
-            explanation += ", ".join([f"{name.replace('_', ' ')} ({imp:.3f})" for name, imp in positive_features])
+            explanation += ", ".join(
+                [
+                    f"{name.replace('_', ' ')} ({imp:.3f})"
+                    for name, imp in positive_features
+                ]
+            )
             explanation += ". "
 
         if negative_features:
             explanation += f"Factors reducing threat likelihood: "
-            explanation += ", ".join([f"{name.replace('_', ' ')} ({abs(imp):.3f})" for name, imp in negative_features])
+            explanation += ", ".join(
+                [
+                    f"{name.replace('_', ' ')} ({abs(imp):.3f})"
+                    for name, imp in negative_features
+                ]
+            )
             explanation += ". "
 
         uncertainty_text = {
             "low": "The model is highly confident in this prediction.",
             "medium": "The model has moderate confidence - additional analysis recommended.",
-            "high": "The model is uncertain - manual review strongly recommended."
+            "high": "The model is uncertain - manual review strongly recommended.",
         }
 
-        uncertainty_level = "low" if prediction.uncertainty_score < 0.1 else "medium" if prediction.uncertainty_score < 0.3 else "high"
+        uncertainty_level = (
+            "low"
+            if prediction.uncertainty_score < 0.1
+            else "medium"
+            if prediction.uncertainty_score < 0.3
+            else "high"
+        )
         explanation += uncertainty_text[uncertainty_level]
 
         return explanation
@@ -556,7 +626,7 @@ class ExplainableAI:
             "privilege_escalation": "Privilege escalation attempts",
             "malware": "Malware-like behavior patterns",
             "payload_complexity": "Complex payload structure",
-            "attack_sophistication": "Sophisticated attack techniques"
+            "attack_sophistication": "Sophisticated attack techniques",
         }
 
         risk_factors = []
@@ -594,7 +664,7 @@ class EnhancedThreatDetectionSystem:
             3: "Brute Force Attack",
             4: "Web Application Attack",
             5: "Malware/Botnet",
-            6: "Advanced Persistent Threat"
+            6: "Advanced Persistent Threat",
         }
 
         if model_path:
@@ -619,13 +689,20 @@ class EnhancedThreatDetectionSystem:
                 if original_file.exists():
                     # Load into standard architecture for compatibility
                     from .deep_learning_models import XDRThreatDetector
-                    original_model = XDRThreatDetector(input_dim=79, hidden_dims=[256, 128, 64], num_classes=7).to(self.device)
-                    original_state_dict = torch.load(original_file, map_location=self.device)
+
+                    original_model = XDRThreatDetector(
+                        input_dim=79, hidden_dims=[256, 128, 64], num_classes=7
+                    ).to(self.device)
+                    original_state_dict = torch.load(
+                        original_file, map_location=self.device
+                    )
                     original_model.load_state_dict(original_state_dict)
 
                     # Transfer weights to enhanced model (best effort)
                     self._transfer_weights(original_model)
-                    logger.info("Transferred weights from original model to enhanced architecture")
+                    logger.info(
+                        "Transferred weights from original model to enhanced architecture"
+                    )
                 else:
                     logger.warning("No model file found - using untrained model")
 
@@ -636,8 +713,10 @@ class EnhancedThreatDetectionSystem:
             enhancer_file = model_dir / "feature_enhancer.pkl"
             if enhancer_file.exists():
                 enhancer_data = joblib.load(enhancer_file)
-                self.feature_enhancer.important_features = enhancer_data.get('important_features')
-                self.feature_enhancer.scaler = enhancer_data.get('scaler')
+                self.feature_enhancer.important_features = enhancer_data.get(
+                    "important_features"
+                )
+                self.feature_enhancer.scaler = enhancer_data.get("scaler")
                 logger.info("Feature enhancer loaded")
 
             return True
@@ -666,10 +745,7 @@ class EnhancedThreatDetectionSystem:
             logger.error(f"Weight transfer failed: {e}")
 
     async def analyze_threat(
-        self,
-        src_ip: str,
-        events: List[Event],
-        feature_vector: np.ndarray = None
+        self, src_ip: str, events: List[Event], feature_vector: np.ndarray = None
     ) -> PredictionResult:
         """Complete threat analysis with enhanced capabilities"""
 
@@ -680,6 +756,7 @@ class EnhancedThreatDetectionSystem:
             # Extract or use provided features
             if feature_vector is None:
                 from .deep_learning_models import deep_learning_manager
+
                 feature_dict = deep_learning_manager._extract_features(src_ip, events)
                 feature_vector = np.array([list(feature_dict.values())]).reshape(1, -1)
 
@@ -690,15 +767,23 @@ class EnhancedThreatDetectionSystem:
             if enhanced_features.shape[1] > 79:
                 enhanced_features = enhanced_features[:, :79]
             elif enhanced_features.shape[1] < 79:
-                padding = np.zeros((enhanced_features.shape[0], 79 - enhanced_features.shape[1]))
+                padding = np.zeros(
+                    (enhanced_features.shape[0], 79 - enhanced_features.shape[1])
+                )
                 enhanced_features = np.concatenate([enhanced_features, padding], axis=1)
 
             # Convert to tensor
-            input_tensor = torch.tensor(enhanced_features, dtype=torch.float32).to(self.device)
+            input_tensor = torch.tensor(enhanced_features, dtype=torch.float32).to(
+                self.device
+            )
 
             # Get prediction with uncertainty
             with torch.no_grad():
-                probabilities, pred_uncertainty, aleatoric_uncertainty = self.model.predict_with_uncertainty(input_tensor)
+                (
+                    probabilities,
+                    pred_uncertainty,
+                    aleatoric_uncertainty,
+                ) = self.model.predict_with_uncertainty(input_tensor)
 
                 # Get primary prediction
                 predicted_class = torch.argmax(probabilities, dim=1).item()
@@ -708,7 +793,9 @@ class EnhancedThreatDetectionSystem:
                 # Calculate combined uncertainty
                 epistemic_uncertainty = torch.mean(pred_uncertainty[0]).item()
                 aleatoric_uncertainty = aleatoric_uncertainty[0].item()
-                combined_uncertainty = (epistemic_uncertainty + aleatoric_uncertainty) / 2
+                combined_uncertainty = (
+                    epistemic_uncertainty + aleatoric_uncertainty
+                ) / 2
 
             # Create initial prediction result
             prediction = PredictionResult(
@@ -716,19 +803,24 @@ class EnhancedThreatDetectionSystem:
                 confidence=confidence,
                 class_probabilities=class_probabilities,
                 uncertainty_score=combined_uncertainty,
-                threat_type=self.threat_classes.get(predicted_class, "Unknown")
+                threat_type=self.threat_classes.get(predicted_class, "Unknown"),
+                explanation={},  # Will be populated below if explainer is available
             )
 
             # Generate explanation
             if self.explainer:
-                explanation = self.explainer.explain_prediction(enhanced_features, prediction)
+                explanation = self.explainer.explain_prediction(
+                    enhanced_features, prediction
+                )
                 prediction.explanation = explanation
                 prediction.feature_importance = explanation.get("top_features", {})
 
             # OpenAI enhancement for uncertain predictions
             if combined_uncertainty > 0.2 or confidence < 0.8:
-                openai_analysis = await self.openai_analyzer.analyze_uncertain_prediction(
-                    src_ip, events, prediction
+                openai_analysis = (
+                    await self.openai_analyzer.analyze_uncertain_prediction(
+                        src_ip, events, prediction
+                    )
                 )
 
                 if openai_analysis:
@@ -737,7 +829,10 @@ class EnhancedThreatDetectionSystem:
 
                     # Update confidence if OpenAI provides better assessment
                     enhanced_confidence = openai_analysis.get("enhanced_confidence")
-                    if enhanced_confidence and enhanced_confidence > prediction.confidence:
+                    if (
+                        enhanced_confidence
+                        and enhanced_confidence > prediction.confidence
+                    ):
                         prediction.confidence = enhanced_confidence
 
             logger.info(

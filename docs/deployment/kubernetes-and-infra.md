@@ -17,13 +17,9 @@
 
 ## Terraform / IaC
 
-- AWS infrastructure modules live in `infrastructure/aws/`. Includes VPC, EKS cluster, RDS Postgres,
-  Secrets Manager, and ECR repository configurations. Update variables and outputs when resource
-  names or requirements change.
-- Azure infrastructure uses Terraform modules in `infrastructure/azure/` for AKS, Azure Database for
-  PostgreSQL, Key Vault, and Container Registry.
-- Keep Terraform state secured (S3 + DynamoDB lock for AWS, Azure Storage for Azure recommended).
-  Document state file locations in `change-control/audit-log.md`.
+- Legacy AWS infrastructure modules are archived; local deployments rely on Docker Compose. Any
+  Terraform modules should be revalidated before use and kept in a separate branch or archive.
+- Keep Terraform state secured and documented in `change-control/audit-log.md` if re-enabled.
 
 ## CI/CD Integration
 
@@ -34,9 +30,9 @@
 
 ## Artefact Management
 
-- ML models (`models/`) must be published to an artefact store (S3, Azure Blob) for cloud deployments.
-  Update deployment manifests to mount or download the latest revisions.
-- Container images should be versioned and pushed to your registry (ECR, ACR, GHCR). Tag releases in
+- ML models (`models/`) should be versioned locally and mounted via Docker Compose. For any cloud
+  deployments, publish artefacts to your preferred registry/blob store and update manifest mounts.
+- Container images should be versioned and pushed to your registry (e.g., GHCR). Tag releases in
   `change-control/release-notes.md`.
 
 ## Distributed Deployments

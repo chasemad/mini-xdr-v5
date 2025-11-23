@@ -1,17 +1,15 @@
 "use client";
 
 import React, { useState } from 'react';
-import { 
-  ChevronDown, ChevronUp, Loader2, RotateCcw, Eye, Copy,
+import {
+  ChevronDown, ChevronUp, Loader2, RotateCcw, Eye,
   Bot, Zap, User
 } from 'lucide-react';
-import { 
-  getActionIcon, 
-  getStatusColor, 
+import {
+  getActionIcon,
+  getStatusColor,
   getStatusIcon,
   formatTimeAgo,
-  getActionDisplayName,
-  formatJSON
 } from '@/lib/actionFormatters';
 
 export interface UnifiedAction {
@@ -48,12 +46,12 @@ interface ActionCardProps {
   isExpanded?: boolean;
 }
 
-export default function ActionCard({ 
-  action, 
-  onExpand, 
+export default function ActionCard({
+  action,
+  onExpand,
   onRollback,
   onViewDetails,
-  isExpanded = false 
+  isExpanded = false
 }: ActionCardProps) {
   const [localExpanded, setLocalExpanded] = useState(isExpanded);
   const [rolling, setRolling] = useState(false);
@@ -65,7 +63,7 @@ export default function ActionCard({
   const iconConfig = getActionIcon(action.actionKey, action.agentType);
   const IconComponent = iconConfig.icon;
 
-  const canRollback = action.rollbackId && !action.rollbackExecuted && 
+  const canRollback = action.rollbackId && !action.rollbackExecuted &&
                       !['failed', 'error'].includes(action.status.toLowerCase());
 
   const handleToggle = () => {
@@ -78,11 +76,11 @@ export default function ActionCard({
 
   const handleRollback = async () => {
     if (!onRollback || !canRollback) return;
-    
+
     const confirmed = confirm(
       `Are you sure you want to rollback "${action.displayName}"?\n\nThis will restore the previous state.`
     );
-    
+
     if (confirmed) {
       setRolling(true);
       try {
@@ -95,9 +93,9 @@ export default function ActionCard({
 
   const getSourceIcon = () => {
     switch (action.source) {
-      case 'agent': return <Bot className="h-4 w-4" />;
-      case 'workflow': return <Zap className="h-4 w-4" />;
-      case 'manual': return <User className="h-4 w-4" />;
+      case 'agent': return <Bot className="h-3 w-3" />;
+      case 'workflow': return <Zap className="h-3 w-3" />;
+      case 'manual': return <User className="h-3 w-3" />;
       default: return null;
     }
   };
@@ -114,177 +112,161 @@ export default function ActionCard({
   const sourceColor = getSourceColor();
 
   return (
-    <div className={`
-      bg-gray-800/50 border rounded-lg transition-all duration-200
-      ${expanded ? 'border-gray-600' : 'border-gray-700/50'}
-      hover:border-gray-600 hover:bg-gray-800/70
-    `}>
-      {/* Card Header */}
-      <div 
-        className="p-4 cursor-pointer"
-        onClick={handleToggle}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3 flex-1">
-            {/* Icon */}
-            <div className={`p-2 rounded-lg flex-shrink-0 bg-${iconConfig.bgColor} border border-${iconConfig.borderColor}`}>
-              <IconComponent className={`w-5 h-5 text-${iconConfig.color}`} />
-            </div>
-
-            {/* Action Details */}
-            <div className="flex-1 min-w-0">
-              {/* Title Row */}
-              <div className="flex items-center gap-2 mb-1">
-                <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold bg-${sourceColor}-500/20 text-${sourceColor}-300`}>
-                  {getSourceIcon()}
-                  <span>{action.sourceLabel}</span>
-                </div>
-                <span className="text-xs text-gray-500">{formatTimeAgo(action.createdAt)}</span>
-              </div>
-
-              {/* Action Name */}
-              <h3 className="text-white font-semibold text-base mb-2">
-                {statusIcon} {action.displayName}
-              </h3>
-
-              {/* Quick Info */}
-              <div className="flex items-center gap-3 text-xs">
-                <span className={`px-2 py-0.5 rounded font-semibold bg-${statusColor}-500/20 text-${statusColor}-300`}>
-                  {action.status.toUpperCase()}
-                </span>
-                
-                {action.workflowName && (
-                  <span className="text-gray-400">
-                    Workflow: <span className="text-gray-300">{action.workflowName}</span>
-                  </span>
-                )}
-
-                {action.executedBy && (
-                  <span className="text-gray-400">
-                    By: <span className="text-gray-300">{action.executedBy}</span>
-                  </span>
-                )}
-
-                {action.rollbackExecuted && action.rollbackTimestamp && (
-                  <span className="px-2 py-0.5 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30">
-                    🔄 Rolled Back
-                  </span>
-                )}
-              </div>
-
-              {/* Brief detail (if not expanded) */}
-              {!expanded && action.detail && (
-                <div className="mt-2 text-sm text-gray-400 line-clamp-2">
-                  {action.detail}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {expanded ? (
-              <ChevronUp className="w-5 h-5 text-gray-400" />
-            ) : (
-              <ChevronDown className="w-5 h-5 text-gray-400" />
+    <div className={`font-mono text-xs border-l-2 pl-3 py-2 hover:bg-muted/30 transition-all duration-200 ${
+      action.status.toLowerCase().includes('success') || action.status.toLowerCase().includes('completed')
+        ? 'border-green-500/50 bg-green-500/5'
+        : action.status.toLowerCase().includes('failed') || action.status.toLowerCase().includes('error')
+        ? 'border-red-500/50 bg-red-500/5'
+        : 'border-amber-500/50 bg-amber-500/5'
+    }`}>
+      {/* Log Entry Header */}
+      <div className="flex items-start gap-2">
+        <span className={`font-bold min-w-[12px] ${
+          action.status.toLowerCase().includes('success') || action.status.toLowerCase().includes('completed')
+            ? 'text-green-400'
+            : action.status.toLowerCase().includes('failed') || action.status.toLowerCase().includes('error')
+            ? 'text-red-400'
+            : 'text-amber-400'
+        }`}>
+          {statusIcon}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 text-muted-foreground mb-1">
+            <span className="text-primary/80 font-medium">{formatTimeAgo(action.createdAt)}</span>
+            <span className="text-muted-foreground/60">•</span>
+            <span className={`uppercase font-medium ${
+              action.source === 'agent' ? 'text-blue-400' :
+              action.source === 'workflow' ? 'text-purple-400' :
+              'text-gray-400'
+            }`}>
+              {action.sourceLabel}
+            </span>
+            {action.executedBy && (
+              <>
+                <span className="text-muted-foreground/60">•</span>
+                <span className="text-muted-foreground font-medium">{action.executedBy}</span>
+              </>
             )}
           </div>
+
+          <div className="flex items-center gap-2">
+            <span className={`font-medium ${
+              action.status.toLowerCase().includes('success') || action.status.toLowerCase().includes('completed')
+                ? 'text-green-300'
+                : action.status.toLowerCase().includes('failed') || action.status.toLowerCase().includes('error')
+                ? 'text-red-300'
+                : 'text-amber-300'
+            }`}>
+              {action.displayName}
+            </span>
+            <span className={`px-2 py-0.5 text-[10px] uppercase font-bold rounded border ${
+              action.status.toLowerCase().includes('success') || action.status.toLowerCase().includes('completed')
+                ? 'bg-green-500/20 text-green-300 border-green-500/30'
+                : action.status.toLowerCase().includes('failed') || action.status.toLowerCase().includes('error')
+                ? 'bg-red-500/20 text-red-300 border-red-500/30'
+                : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+            }`}>
+              {action.status}
+            </span>
+            {action.rollbackExecuted && (
+              <span className="px-2 py-0.5 text-[10px] uppercase font-bold bg-orange-500/20 text-orange-300 border border-orange-500/30 rounded">
+                ROLLED BACK
+              </span>
+            )}
+          </div>
+
+          {/* Brief detail */}
+          {action.detail && (
+            <div className="text-muted-foreground mt-1 leading-relaxed">
+              {expanded ? action.detail : action.detail.length > 100 ? `${action.detail.substring(0, 100)}...` : action.detail}
+            </div>
+          )}
+
+          {/* Expanded Content with Animation */}
+          <div className={`overflow-hidden transition-all duration-300 ease-in-out ${
+            expanded ? 'max-h-96 opacity-100 mt-3' : 'max-h-0 opacity-0'
+          }`}>
+            {/* Parameters (if expanded) */}
+            {action.params && Object.keys(action.params).length > 0 && (
+              <div className="text-muted-foreground mb-3 p-3 bg-purple-500/5 border border-purple-500/20 rounded-lg">
+                <div className="text-purple-400 font-medium mb-2 text-xs uppercase tracking-wide">Parameters:</div>
+                {Object.entries(action.params).map(([key, value]) => (
+                  <div key={key} className="ml-2 text-sm">
+                    <span className="text-purple-300 font-medium">{key}:</span> <span className="text-purple-200/80">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Result (if expanded) */}
+            {action.result && Object.keys(action.result).length > 0 && (
+              <div className="text-green-400 mb-3 p-3 bg-green-500/5 border border-green-500/20 rounded-lg">
+                <div className="text-green-400 font-medium mb-2 text-xs uppercase tracking-wide">Result Output:</div>
+                {Object.entries(action.result).map(([key, value]) => (
+                  <div key={key} className="ml-2 text-sm text-green-200/90">
+                    <span className="text-green-300 font-medium">{key}:</span> {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Error (if expanded) */}
+            {action.error && (
+              <div className="text-red-400 mb-3 p-3 bg-red-500/5 border border-red-500/20 rounded-lg">
+                <div className="text-red-300 font-medium mb-2 text-xs uppercase tracking-wide">Error Details:</div>
+                <div className="ml-2 text-sm text-red-200/90">{action.error}</div>
+              </div>
+            )}
+
+            {/* Action buttons (if expanded) */}
+            <div className="flex gap-2">
+              {onViewDetails && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onViewDetails();
+                  }}
+                  className="px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs font-mono rounded transition-colors flex items-center gap-1"
+                >
+                  <Eye className="w-3 h-3" />
+                  Full Logs
+                </button>
+              )}
+              {canRollback && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRollback();
+                  }}
+                  disabled={rolling}
+                  className="px-3 py-1.5 bg-orange-600/80 hover:bg-orange-600 text-white text-xs font-mono rounded transition-colors disabled:opacity-50 flex items-center gap-1"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  {rolling ? 'Rolling...' : 'Rollback'}
+                </button>
+              )}
+              <button
+                onClick={handleToggle}
+                className="px-3 py-1.5 bg-muted hover:bg-muted/80 text-muted-foreground text-xs font-mono rounded transition-colors ml-auto flex items-center gap-1"
+              >
+                <ChevronUp className="w-3 h-3" />
+                Collapse
+              </button>
+            </div>
+          </div>
+
+          {/* Expand toggle (if not expanded) */}
+          {!expanded && (
+            <button
+              onClick={handleToggle}
+              className="mt-2 text-primary/70 hover:text-primary text-xs font-mono transition-colors flex items-center gap-1 hover:bg-primary/10 px-2 py-1 rounded"
+            >
+              <ChevronDown className="w-3 h-3" />
+              {action.detail && action.detail.length > 100 ? 'Show full details' : 'More details'}
+            </button>
+          )}
         </div>
       </div>
-
-      {/* Expanded Content */}
-      {expanded && (
-        <div className="px-4 pb-4 space-y-4 border-t border-gray-700/50 pt-4">
-          {/* Full Details */}
-          {action.detail && (
-            <div>
-              <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">Details</h4>
-              <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">
-                {action.detail}
-              </p>
-            </div>
-          )}
-
-          {/* Parameters */}
-          {action.params && Object.keys(action.params).length > 0 && (
-            <div>
-              <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">Parameters</h4>
-              <div className="bg-gray-900/50 border border-gray-700 rounded p-3 text-xs space-y-1">
-                {Object.entries(action.params).map(([key, value]) => (
-                  <div key={key} className="flex gap-2">
-                    <span className="text-purple-400 font-mono">{key}:</span>
-                    <span className="text-gray-300 font-mono flex-1 break-all">
-                      {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Result Data */}
-          {action.result && Object.keys(action.result).length > 0 && (
-            <div>
-              <h4 className="text-xs font-semibold text-green-400 uppercase mb-2">Result</h4>
-              <div className="bg-green-500/10 border border-green-500/30 rounded p-3 text-xs space-y-1">
-                {Object.entries(action.result).map(([key, value]) => (
-                  <div key={key} className="flex gap-2">
-                    <span className="text-green-400 font-mono">{key}:</span>
-                    <span className="text-green-200 font-mono flex-1 break-all">
-                      {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Error Details */}
-          {action.error && (
-            <div>
-              <h4 className="text-xs font-semibold text-red-400 uppercase mb-2">Error</h4>
-              <div className="bg-red-500/10 border border-red-500/30 rounded p-3 text-xs text-red-200">
-                {action.error}
-              </div>
-            </div>
-          )}
-
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2 pt-2">
-            {onViewDetails && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onViewDetails();
-                }}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium transition-colors flex items-center gap-1.5"
-              >
-                <Eye className="w-4 h-4" />
-                View Full Details
-              </button>
-            )}
-
-            {canRollback && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleRollback();
-                }}
-                disabled={rolling}
-                className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded text-sm font-medium transition-colors flex items-center gap-1.5"
-              >
-                {rolling ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <RotateCcw className="w-4 h-4" />
-                )}
-                Rollback
-              </button>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
-

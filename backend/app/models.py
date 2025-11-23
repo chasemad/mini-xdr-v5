@@ -99,7 +99,9 @@ class Event(Base):
     ts = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     src_ip = Column(String(64), index=True)
     dst_ip = Column(String(64), nullable=True)
+    src_port = Column(Integer, nullable=True)
     dst_port = Column(Integer, nullable=True)
+    protocol = Column(String(32), nullable=True)
     eventid = Column(String(128), index=True)
     message = Column(Text, nullable=True)
     raw = Column(JSON)
@@ -166,10 +168,30 @@ class Incident(Base):
     )  # Agent's self-assessed decision confidence
     soar_integrations = Column(JSON, nullable=True)  # External SOAR integrations
 
+    # Incident trigger context
+    triggering_events = Column(
+        JSON, nullable=True
+    )  # Events that triggered this incident
+    events_analyzed_count = Column(Integer, default=0)  # Number of events analyzed
+
     # ML correlation fields
     correlation_id = Column(String(64), nullable=True)  # Links related incidents
     ml_features = Column(JSON, nullable=True)  # Extracted features for ML analysis
     ensemble_scores = Column(JSON, nullable=True)  # Individual model scores
+    ml_confidence = Column(Float, nullable=True)  # Original ML model confidence
+
+    # Council of Models fields (GenAI verification layer)
+    council_verdict = Column(String(50), nullable=True)  # CONFIRM|OVERRIDE|UNCERTAIN
+    council_reasoning = Column(Text, nullable=True)  # Gemini's detailed explanation
+    council_confidence = Column(
+        Float, nullable=True
+    )  # Council's confidence score (0-1)
+    routing_path = Column(JSON, nullable=True)  # Path taken through Council workflow
+    api_calls_made = Column(JSON, nullable=True)  # Which LLMs were consulted
+    processing_time_ms = Column(Float, nullable=True)  # Total Council processing time
+    gemini_analysis = Column(Text, nullable=True)  # Full Gemini Judge analysis
+    grok_intel = Column(Text, nullable=True)  # External threat intelligence
+    openai_remediation = Column(Text, nullable=True)  # OpenAI remediation script
 
     # AI Analysis Caching
     ai_analysis = Column(JSON, nullable=True)  # Cached AI analysis results
@@ -1009,7 +1031,7 @@ class IntegrationCredentials(Base):
     # Provider identification
     provider = Column(
         String(50), nullable=False, index=True
-    )  # aws, azure, gcp, crowdstrike, etc.
+    )  # azure, gcp, crowdstrike, etc.
     credential_type = Column(
         String(50), nullable=False
     )  # oauth, api_key, service_account, assume_role
@@ -1052,7 +1074,7 @@ class CloudAsset(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     # Asset identification
-    provider = Column(String(50), nullable=False, index=True)  # aws, azure, gcp
+    provider = Column(String(50), nullable=False, index=True)  # azure, gcp
     asset_type = Column(
         String(100), nullable=False, index=True
     )  # ec2, rds, vm, aks, gce, etc.
@@ -1098,4 +1120,64 @@ class CloudAsset(Base):
             "asset_id",
             unique=True,
         ),
+    )
+
+
+class TrainingSample(Base):
+    """
+    Training samples collected from Council corrections for model retraining.
+
+    This table stores metadata about training samples. The actual feature vectors
+    are stored in file storage (S3 or local filesystem) for performance.
+
+    Purpose: Enable continuous learning by retraining models with Council corrections.
+    """
+
+    __tablename__ = "training_samples"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    # Source incident
+    incident_id = Column(
+        Integer,
+        ForeignKey("incidents.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # ML Prediction (what the model said)
+    ml_prediction = Column(String(100), nullable=False)  # Original ML prediction
+    ml_confidence = Column(Float, nullable=False)  # ML confidence score
+
+    # Council Verification
+    council_verdict = Column(
+        String(50), nullable=False, index=True
+    )  # CONFIRM, OVERRIDE, UNCERTAIN
+    correct_label = Column(
+        String(100), nullable=False, index=True
+    )  # Ground truth label (from Council/analyst)
+    was_override = Column(
+        Boolean, default=False, index=True
+    )  # True if Council overrode ML
+
+    # Feature Storage
+    features_stored = Column(
+        Boolean, default=True
+    )  # True if features are in file storage
+    features_path = Column(String(512), nullable=True)  # Path to feature file
+
+    # Training Usage
+    used_for_training = Column(
+        Boolean, default=False, index=True
+    )  # True if already used in retraining
+    training_run_id = Column(
+        String(100), nullable=True
+    )  # Which training run used this sample
+
+    # Relationships
+    incident = relationship("Incident")
+
+    __table_args__ = (
+        Index("ix_training_samples_unused", "used_for_training", "created_at"),
     )

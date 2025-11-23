@@ -57,29 +57,45 @@ Mini-XDR is composed of the following tiers:
 6. **Infrastructure tooling**
    - Local orchestration via `scripts/start-all.sh` (handles dependency checks, port cleanup, backend
      + frontend launch, optional signed API calls).
-   - Cloud deployment manifests located in `infrastructure/`, `k8s/`, and AWS buildspec files at repo
+   - Cloud deployment manifests located in `infrastructure/`, `k8s/`; legacy AWS buildspec files now archived
      root.
    - Documentation enforcement system with pre-commit hooks and CI/CD validation.
 
+## T-Pot Honeypot Integration
+
+7. **T-Pot Monitoring & Response** (`backend/app/tpot_connector.py`, `backend/app/tpot_routes.py`)
+   - Real-time SSH connection to T-Pot honeypot infrastructure at `24.11.0.176:64295`
+   - Continuous log monitoring from 8+ honeypot types (Cowrie, Dionaea, Suricata, etc.)
+   - SSH tunnels for Elasticsearch (port 64298) and Kibana (port 64296) access
+   - Automated defensive actions: IP blocking via UFW, container management, threat response
+   - Integration with ML detection pipeline for attack classification and scoring
+   - UI dashboard at `/honeypot` for real-time attack monitoring and container control
+
+**T-Pot Data Flow:**
+1. External attackers hit T-Pot honeypots (SSH, HTTP, malware, etc.)
+2. Honeypots log attacks to JSON files (`/home/luxieum/tpotce/data/*/log/`)
+3. `TPotConnector` tails logs via SSH and streams events to `multi_ingestor`
+4. Events processed through ML detection pipeline and stored in database
+5. AI agents analyze patterns and execute defensive actions on T-Pot
+6. SOC operators monitor attacks via Honeypot dashboard and Elasticsearch queries
+
 ## Data Flow Summary
 
-1. Logs/events arrive via ingest routes (`/ingest/*`, see `backend/app/multi_ingestion.py`).
+1. Logs/events arrive via ingest routes (`/ingest/*`, see `backend/app/multi_ingestion.py`) or from T-Pot honeypot monitoring.
 2. Events are sanitised, stored through SQLAlchemy models (`backend/app/models.py`), and evaluated by
    `run_detection` (`backend/app/detect.py`).
 3. Detected incidents trigger triage (`backend/app/triager.py`), context analysis, and may auto-block
    via `backend/app/responder.py` depending on policy and `settings.auto_contain`.
 4. SOC operators interact through the Next.js UI, which consumes `/api/incidents/*`,
-   `/api/response/*`, `/api/workflows/*` endpoints.
+   `/api/response/*`, `/api/workflows/*`, `/api/tpot/*` endpoints.
 5. Advanced response actions and workflows use APScheduler + async tasks to execute on remote hosts or
-   services where configured.
-6. Telemetry and status data is served via `/api/telemetry/status` for dashboard summaries.
+   T-Pot infrastructure where configured.
+6. Telemetry and status data is served via `/api/telemetry/status` and `/api/tpot/status` for dashboard summaries.
 
 ## Persistence
 
-- SQLAlchemy async engine configured in `backend/app/db.py` with SQLite default, Postgres support via
-  AsyncPG DSNs.
-- Secrets retrieved from environment variables and optionally AWS Secrets Manager through
-  `backend/app/config.py` + `backend/app/secrets_manager.py`.
-- ML models loaded from local filesystem; S3/SageMaker integrations exist in
-  `backend/app/sagemaker_client.py` and `backend/app/sagemaker_endpoint_manager.py` but require live
-  credentials before use.
+- SQLAlchemy async engine configured in `backend/app/db.py` using PostgreSQL via `settings.database_url`
+  (asyncpg).
+- Secrets retrieved from environment variables defined in `.env.local`; cloud secret managers are no
+  longer used.
+- ML models load from the local filesystem (`./models`); all cloud ML integrations are archived.

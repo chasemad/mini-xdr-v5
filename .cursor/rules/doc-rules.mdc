@@ -1,0 +1,31 @@
+---
+alwaysApply: true
+---
+# Documentation Rules for this repo
+
+You MUST follow these rules for ALL tasks in this project:
+
+1. **Do NOT create new documentation files by default.**
+   - Do NOT create new `.md`, `.mdx`, `.mdc`, `.txt`, or similar files just to summarize work or explain what you did.
+   - Do NOT create files named things like `notes`, `summary`, `auto-doc`, `analysis`, `plan`, `scratch`, or similar.
+
+2. **Update existing docs instead.**
+   - When you need to add or update documentation, FIRST look in the `docs/` directory (and `README.md` if relevant).
+   - Choose the most appropriate existing doc and edit it in-place.
+   - If an appropriate doc exists, you MUST update that file instead of creating a new one.
+
+3. **Only create a new doc when the USER explicitly asks for it.**
+   - You may create a new documentation file ONLY if the current user message clearly says to create a new file
+     (e.g. “create a new ADR in `docs/adr/…`”, “make a new markdown file for X”, etc.).
+   - When you do create a new doc at the user’s request, put it in the `docs/` folder (or the exact path the user specifies)
+     with a clear, meaningful name.
+
+4. **Planning and reasoning stay in chat, not in the repo.**
+   - Keep your step-by-step reasoning, plans, and summaries in the chat conversation unless the user explicitly asks you
+     to write them into a file.
+
+5. **Do not auto-invoke documentation tools.**
+   - Do NOT invoke any tools or workflows whose main purpose is to auto-generate new documentation files unless the user
+     explicitly requests documentation.
+
+

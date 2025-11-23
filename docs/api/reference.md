@@ -46,7 +46,7 @@ operations in the running build.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/incidents` | List incidents (supports filters, pagination). |
+| GET | `/incidents` | List incidents (supports filters, pagination). Response includes risk scores, ML confidence, and escalation details. |
 | GET | `/incidents/{id}` | Retrieve incident details including AI analysis and actions. |
 | POST | `/incidents/{id}/contain` | Block offending IP (duration optional). |
 | POST | `/incidents/{id}/actions/block-ip` | Granular action endpoints for SOC workflow buttons. |
@@ -143,9 +143,6 @@ conditions match.
 | POST | `/api/ml/explain/{incident_id}` | Generate explanation for incident prediction. |
 | GET | `/api/ml/models/performance` | Get model performance metrics. |
 | GET | `/api/ml/drift/status` | Get concept drift detection status. |
-| GET | `/api/ml/sagemaker/status` | Get SageMaker endpoint status. |
-| POST | `/api/ml/sagemaker/scale-down` | Scale down SageMaker endpoints. |
-| POST | `/api/ml/sagemaker/scale-up` | Scale up SageMaker endpoints. |
 
 ## Federated Learning (`/api/federated/*`)
 

@@ -1,6 +1,6 @@
 {
   "name": "T-Pot Honeypot",
-  "api_key": "6c49b95dd921e0003ce159e6b3c0b6eb4e126fc2b19a1530a0f72a4a9c0c1eee",
+  "api_key": "demo-minixdr-api-key",
   "source_type": "tpot",
   "hostname": "tpot-honeypot",
   "ingestion_endpoint": "http://localhost:8000/ingest/multi",

@@ -8,9 +8,9 @@ asyncpg==0.29.0  # Async PostgreSQL driver
 pydantic-settings==2.6.1
 email-validator==2.1.0
 paramiko==3.5.0
+asyncssh==2.14.2  # SSH client for T-Pot honeypot integration
 apscheduler==3.11.0
 openai==1.58.1
-boto3==1.40.40
 requests==2.32.5
 python-multipart==0.0.6
 greenlet
@@ -28,6 +28,12 @@ langchain==0.3.11
 langchain-openai==0.2.11
 langchain-community==0.3.11
 
+# Council of Models Architecture - Phase 1
+langgraph==0.2.45  # State machine orchestration
+langchain-google-vertexai==2.0.11  # Gemini 3 integration
+qdrant-client==1.12.1  # Vector database for learned false positives
+sentence-transformers==3.3.1  # Embeddings for vector search
+
 # Policy Engine and Configuration
 pyyaml==6.0.2
 
@@ -44,8 +50,7 @@ seaborn==0.13.2
 aiohttp==3.9.5
 aiofiles==23.2.1
 
-# Prometheus monitoring
-prometheus-client==0.20.0
+# Prometheus monitoring is defined later with version 0.23.1
 
 # WebSocket support for real-time agent communication
 websockets==12.0
@@ -65,8 +70,15 @@ optuna==3.6.1  # Hyperparameter optimization for ensemble models
 # Phase 3: Distributed MCP Architecture Dependencies
 kafka-python==2.0.2  # Apache Kafka integration for distributed messaging
 aiokafka==0.12.0  # Async Kafka client for high-performance messaging
-redis==5.0.1  # Redis client for distributed state management
+redis==5.0.1  # Redis client for distributed state management (includes async support)
 aioredis==2.0.1  # Async Redis client for caching and sessions
+prometheus-client==0.23.1  # Prometheus metrics for monitoring
+psutil==6.0.0  # System and process utilities for health monitoring
+
+# Phase 2: Advanced ML System Dependencies
+imbalanced-learn==0.12.0  # SMOTE/ADASYN for class balancing
+scikit-optimize==0.10.2  # Hyperparameter tuning and threshold optimization
+category_encoders==2.6.4  # Advanced feature encoding
 python-consul==1.1.0  # Consul integration for service discovery
 # pydantic-settings==2.4.0  # Enhanced configuration management (duplicate removed - using 2.6.1 above)
 python-jose[cryptography]==3.3.0  # JWT authentication and encryption

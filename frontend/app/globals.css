@@ -2,59 +2,131 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 
+  Steve Jobs / Apple "Pro" Aesthetic
+  - Typography: Clean, legibility-focused (Inter as generic sans).
+  - Colors: Industrial grays, purposeful semantic colors, no decorative gradients.
+  - Spacing: Generous, grid-aligned.
+*/
+
 @layer base {
   :root {
+    /* Base - Apple-esque Light Mode (Default, though app seems dark-focused) */
     --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --foreground: 240 5% 26%; /* Soft black */
+    
+    --card: 0 0% 98%;
+    --card-foreground: 240 5% 26%;
+    
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222.2 84% 4.9%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 240 5% 26%;
+    
+    --primary: 240 5.9% 10%; /* Almost black for primary actions */
+    --primary-foreground: 0 0% 98%;
+    
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    
     --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
+    --destructive-foreground: 0 0% 98%;
+
+    /* Semantic Colors - Purposeful, not decorative */
+    --success: 142 76% 36%; /* Deep legible green */
+    --warning: 38 92% 50%;  /* Amber */
+    --info: 221 83% 53%;    /* System Blue */
+
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 5% 64.9%;
+    
+    --radius: 0.75rem; /* Smooth, Apple-like curvature */
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    /* The "Pro App" Dark Mode (Logic, Final Cut style) */
+    --background: 228 6% 10%; /* Slightly brighter base for readability */
+    --foreground: 0 0% 96%;    /* #F5F5F5 */
+    
+    --card: 228 6% 18%;        /* Lift cards off the background a bit more */
+    --card-foreground: 0 0% 98%;
+    
+    --popover: 228 6% 18%;
+    --popover-foreground: 0 0% 98%;
+    
+    /* Primary Action: System Blue or Pure White depending on context */
+    --primary: 211 100% 50%;   /* #007AFF - Apple System Blue */
+    --primary-foreground: 0 0% 100%;
+    
+    --secondary: 228 6% 22%;   /* Bring secondary surfaces closer to card tone */
+    --secondary-foreground: 0 0% 98%;
+    
+    --muted: 228 6% 22%;
+    --muted-foreground: 228 8% 76%; /* Higher contrast muted text */
+    
+    --accent: 228 6% 22%;
+    --accent-foreground: 0 0% 98%;
+    
+    --destructive: 0 100% 60%; /* #FF3B30 */
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 140 100% 60%; /* #30D158 */
+    --warning: 48 100% 50%;  /* #FFD60A */
+    
+    --border: 228 6% 28%;      /* Stronger separators for dark mode legibility */
+    --input: 228 6% 24%;
+    --ring: 211 100% 50%;
   }
 }
 
 @layer base {
   * {
     @apply border-border;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
+  
   body {
     @apply bg-background text-foreground;
-    font-family: Arial, Helvetica, sans-serif;
+    font-feature-settings: "ss01", "ss02", "cv01", "cv02"; /* Enable tabular nums, clean sans features */
+    letter-spacing: -0.015em; /* Tight, professional tracking */
+  }
+
+  /* Typography Reset - Clean Sans */
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-medium tracking-tight;
+    letter-spacing: -0.025em;
+  }
+}
+
+@layer utilities {
+  /* Apple-style frosted glass */
+  .glass {
+    @apply bg-white/80 dark:bg-[#1C1C1E]/80 backdrop-blur-xl border border-white/20 dark:border-white/10;
+  }
+
+  /* Panel style - Flat, high quality surface */
+  .pro-panel {
+    @apply bg-card border border-border/50 rounded-xl shadow-sm;
+  }
+
+  /* Subtle inner glow for depth */
+  .inner-glow {
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+  }
+  
+  /* Clean focus states */
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-background;
+  }
+
+  /* Data display typography */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
   }
 }

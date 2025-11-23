@@ -1,0 +1,115 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    MINI-XDR DEMO QUICK REFERENCE (3-4 MIN)                   ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌─ PRE-DEMO ─────────────────────────────────────────────────────────────────┐
+│ 1. ./scripts/demo/pre-demo-setup.sh      # Auto-check everything           │
+│ 2. export TPOT_IP="24.11.0.176"          # Set target                       │
+│ 3. Open URLs:                                                               │
+│    - http://localhost:3000                # Dashboard                       │
+│    - http://localhost:3000/incidents      # Incidents                       │
+│    - http://localhost:3000/agents         # Copilot                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ MINUTE 1: INTRO + ATTACK ─────────────────────────────────────────────────┐
+│ SAY: "Mini-XDR: 12 AI agents, 97.98% ML accuracy, NL control, <2s response"│
+│ SHOW: Dashboard at localhost:3000                                           │
+│ RUN: ./scripts/demo/demo-attack.sh                                          │
+│ POINT OUT: Incidents appearing in real-time, ML scores, classifications     │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ MINUTE 2: AI ANALYSIS ────────────────────────────────────────────────────┐
+│ SAY: "12 AI agents analyzing: Attribution, Containment, Forensics..."      │
+│ DO: Click high-severity incident                                            │
+│ SHOW: ML scores (0-100), threat type, timeline, AI analysis                │
+│ OPTIONAL: curl -X POST http://localhost:8000/api/incidents/1/ai-analysis   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ MINUTE 3: COPILOT + RESPONSE ─────────────────────────────────────────────┐
+│ SAY: "Natural language control - plain English commands"                    │
+│ DO: Open copilot (localhost:3000/agents)                                    │
+│ TYPE: "Block this IP for 24 hours and alert the security team"             │
+│ SHOW: Confirmation dialog → Click "Approve" → See results                   │
+│ OR: curl -X POST localhost:8000/incidents/1/contain \                       │
+│       -H "Content-Type: application/json" \                                 │
+│       -d '{"duration_hours": 24}'                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ MINUTE 4: WORKFLOW + CLOSE ───────────────────────────────────────────────┐
+│ SAY: "Visual workflow automation for complex playbooks"                     │
+│ SHOW: Workflow designer OR curl localhost:8000/api/response/workflows      │
+│ CLOSE: "Enterprise XDR: 12 agents, 5 ML models, NL interface, visual       │
+│         automation, T-Pot integration. FastAPI, React 19, PyTorch,         │
+│         LangChain. 846K+ events, 97.98% accuracy, <2s response."           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ KEY COMMANDS ─────────────────────────────────────────────────────────────┐
+│ # Quick status checks                                                       │
+│ curl http://localhost:8000/health | jq                                      │
+│ curl http://localhost:8000/api/ml/status | jq                               │
+│ curl http://localhost:8000/api/agents/status | jq                           │
+│ curl http://localhost:8000/incidents | jq 'length'                          │
+│                                                                              │
+│ # Attack simulation                                                         │
+│ ./scripts/demo/demo-attack.sh                 # Full attack suite           │
+│ ./scripts/demo/manual-event-injection.sh      # Backup if T-Pot down        │
+│                                                                              │
+│ # Incident management                                                       │
+│ curl http://localhost:8000/incidents/1 | jq                                 │
+│ curl -X POST http://localhost:8000/incidents/1/contain \                    │
+│   -d '{"duration_hours": 24}'                                               │
+│ curl http://localhost:8000/incidents/1/block-status | jq                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ KEY METRICS ──────────────────────────────────────────────────────────────┐
+│ • 97.98% ML accuracy                  • <2s response time                   │
+│ • 12 AI agents                        • 5 ensemble ML models                │
+│ • 846,073+ events processed           • <5% false positives                 │
+│ • 10,000+ events/sec scale            • 99% local (no cloud)                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ TECH STACK ───────────────────────────────────────────────────────────────┐
+│ Backend:  FastAPI, PostgreSQL, Redis, 70+ Python deps                      │
+│ ML:       PyTorch, XGBoost, scikit-learn, SHAP/LIME                        │
+│ AI:       12 LangChain agents, OpenAI, autonomous decisions                │
+│ Frontend: Next.js 15, React 19, Three.js 3D viz                            │
+│ Data:     CICIDS2017, threat feeds, T-Pot honeypot                         │
+│ Security: HMAC, JWT, crypto validation, audit trails                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ DIFFERENTIATORS ──────────────────────────────────────────────────────────┐
+│ 1. 12 AI agents vs traditional alerting      (autonomous decisions)        │
+│ 2. Natural language interface                (plain English control)       │
+│ 3. Visual workflow designer                  (no coding required)          │
+│ 4. Explainable AI                            (SHAP/LIME for every decision)│
+│ 5. Real-time T-Pot integration               (live honeypot telemetry)    │
+│ 6. 99% local operation                       (no cloud dependency)         │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ TROUBLESHOOTING ──────────────────────────────────────────────────────────┐
+│ T-Pot down?                                                                 │
+│   → ./scripts/demo/manual-event-injection.sh                                │
+│                                                                              │
+│ No incidents?                                                               │
+│   → docker-compose logs backend | tail -50                                  │
+│   → curl http://localhost:8000/incidents | jq 'length'                      │
+│                                                                              │
+│ Models not loaded?                                                          │
+│   → ls -lh models/                                                          │
+│   → docker-compose restart backend                                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ POST-DEMO Q&A ────────────────────────────────────────────────────────────┐
+│ Q: How long to build?       A: 6 months focused development                │
+│ Q: Can it scale?            A: Yes! Kubernetes, 10K+ events/sec            │
+│ Q: False positives?         A: <5%, continuous learning, rollback agent    │
+│ Q: Cloud or on-prem?        A: 99% local, optional cloud integrations      │
+│ Q: What makes it special?   A: 12 AI agents + NL interface + explainable AI│
+└─────────────────────────────────────────────────────────────────────────────┘
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  PRO TIP: Keep terminal left, browser right. Practice once. Stay under 4min ║
+║           You built something amazing - show it with confidence! 🚀          ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+

@@ -11,6 +11,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Slider } from "@/components/ui/slider";
 import { DashboardLayout } from "@/components/DashboardLayout";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 interface SystemSetting {
   key: string;
@@ -350,55 +358,65 @@ export default function SettingsPage() {
               <CardTitle>Detection Rules ({rules.length})</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {rules.map((rule) => (
-                  <div key={rule.id} className="border border-gray-200 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <h3 className="font-semibold">{rule.name}</h3>
-                        <Badge variant="outline">{rule.type.toUpperCase()}</Badge>
-                        <Badge className={`${getSeverityColor(rule.severity)} border`}>
-                          {rule.severity.toUpperCase()}
-                        </Badge>
-                        <Badge className={`${getStatusColor(rule.enabled ? "active" : "inactive")} border`}>
-                          {rule.enabled ? "ENABLED" : "DISABLED"}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button size="sm" variant="outline">
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={rule.enabled ? "destructive" : "default"}
-                          onClick={() => toggleRule(rule.id)}
-                        >
-                          {rule.enabled ? "Disable" : "Enable"}
-                        </Button>
-                      </div>
-                    </div>
-
-                    <p className="text-gray-700 mb-3">{rule.description}</p>
-
-                    <div className="bg-gray-50 p-3 rounded-lg mb-3">
-                      <h4 className="text-sm font-medium mb-2">Conditions:</h4>
-                      <pre className="text-xs text-gray-700 overflow-x-auto">
-                        {JSON.stringify(rule.conditions, null, 2)}
-                      </pre>
-                    </div>
-
-                    <div>
-                      <span className="text-sm font-medium text-gray-700">Actions: </span>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {rule.actions.map((action, index) => (
-                          <Badge key={index} variant="outline" className="text-xs">
-                            {action.replace(/_/g, " ")}
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Severity</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rules.map((rule) => (
+                      <TableRow key={rule.id}>
+                        <TableCell className="font-medium">
+                          <div>{rule.name}</div>
+                          <div className="text-xs text-muted-foreground">{rule.description}</div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{rule.type.toUpperCase()}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={`${getSeverityColor(rule.severity)} border`}>
+                            {rule.severity.toUpperCase()}
                           </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={`${getStatusColor(rule.enabled ? "active" : "inactive")} border`}>
+                            {rule.enabled ? "ENABLED" : "DISABLED"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {rule.actions.map((action, index) => (
+                              <Badge key={index} variant="secondary" className="text-xs px-1">
+                                {action.replace(/_/g, " ")}
+                              </Badge>
+                            ))}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button size="sm" variant="outline">
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={rule.enabled ? "destructive" : "default"}
+                              onClick={() => toggleRule(rule.id)}
+                            >
+                              {rule.enabled ? "Disable" : "Enable"}
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
             </CardContent>
           </Card>
@@ -468,46 +486,49 @@ export default function SettingsPage() {
                   <CardTitle>User Accounts ({users.length})</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
-                    {users.map((user) => (
-                      <div key={user.id} className="border border-gray-200 rounded-lg p-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-3">
-                            <span className="font-semibold">{user.username}</span>
-                            <Badge className={`${getRoleColor(user.role)} border`}>
-                              {user.role.toUpperCase()}
-                            </Badge>
-                            <Badge className={`${getStatusColor(user.status)} border`}>
-                              {user.status.toUpperCase()}
-                            </Badge>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button size="sm" variant="outline">
-                              Edit
-                            </Button>
-                            {user.role !== "admin" && (
-                              <Button size="sm" variant="destructive">
-                                Disable
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
-                          <div>
-                            <span className="font-medium">Email:</span> {user.email}
-                          </div>
-                          <div>
-                            <span className="font-medium">Created:</span> {new Date(user.created_at).toLocaleDateString()}
-                          </div>
-                          {user.last_login && (
-                            <div className="col-span-2">
-                              <span className="font-medium">Last Login:</span> {new Date(user.last_login).toLocaleString()}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                  <div className="rounded-md border overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>User</TableHead>
+                          <TableHead>Role</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {users.map((user) => (
+                          <TableRow key={user.id}>
+                            <TableCell>
+                              <div className="font-medium">{user.username}</div>
+                              <div className="text-xs text-muted-foreground">{user.email}</div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge className={`${getRoleColor(user.role)} border`}>
+                                {user.role.toUpperCase()}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge className={`${getStatusColor(user.status)} border`}>
+                                {user.status.toUpperCase()}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-2">
+                                <Button size="sm" variant="outline">
+                                  Edit
+                                </Button>
+                                {user.role !== "admin" && (
+                                  <Button size="sm" variant="destructive">
+                                    Disable
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 </CardContent>
               </Card>

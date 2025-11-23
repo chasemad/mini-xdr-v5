@@ -10,7 +10,7 @@ import bcrypt
 async def reset_password():
     db_path = "/Users/chasemad/Desktop/mini-xdr/backend/xdr.db"
     email = "chasemadrian@protonmail.com"
-    new_password = "test123"  # Simple password for local testing
+    new_password = "demo-tpot-api-key"  # Your actual password
 
     # Hash the password
     salt = bcrypt.gensalt()

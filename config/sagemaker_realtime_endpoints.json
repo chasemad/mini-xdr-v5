@@ -1,0 +1,15 @@
+{
+  "deployment_type": "realtime",
+  "deployment_date": "2025-11-04T19:30:21.664534",
+  "region": "us-east-1",
+  "account_id": "116912495274",
+  "bucket": "mini-xdr-ml-models-116912495274",
+  "endpoints": {},
+  "cost_estimate": {
+    "ddos_monthly": 25,
+    "bruteforce_monthly": 25,
+    "general_monthly": 252,
+    "webattacks_monthly": 72,
+    "total_monthly_usd": 374
+  }
+}

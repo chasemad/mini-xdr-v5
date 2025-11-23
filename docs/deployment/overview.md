@@ -5,27 +5,22 @@ your environment and keep the referenced artefacts updated when code changes.
 
 ## Targets
 
-- **Local / Lab**: Use `scripts/start-all.sh` with SQLite and local models. See
-  [Local Quickstart](../getting-started/local-quickstart.md). Includes documentation enforcement system.
-- **AWS**: EKS (Kubernetes), ECS/Fargate, or EC2-based deployments using artefacts in
-  `infrastructure/aws/` and `k8s/`. Includes AWS Secrets Manager integration, CodeBuild CI/CD,
-  and multi-tenant support.
-- **Azure**: AKS + managed Postgres configuration documented under `deployment/azure/`.
-  Supports multi-tenant deployments with Azure Key Vault integration.
-- **Kubernetes (generic)**: Manifests in `k8s/` for custom clusters. Requires external Postgres and
-  secrets management solution. Supports distributed deployments with Kafka/Redis.
-- **Distributed**: Multi-node deployments with Kafka for event streaming, Redis for caching,
+- **Local / Lab**: Use `docker-compose up -d` (or `scripts/start-all.sh`) with PostgreSQL, Redis, and
+  local models. See [Local Quickstart](../getting-started/local-quickstart.md).
+- **Kubernetes (optional)**: Manifests in `k8s/` for custom clusters. Requires external Postgres and
+  secrets management. Validate manifests before production use.
+- **Distributed (optional)**: Multi-node deployments with Kafka for event streaming, Redis for caching,
   and federated learning capabilities.
 
 ## Deployment Assets
 
 | File/Folder | Purpose |
 | --- | --- |
-| `aws/` | Terraform and helper scripts for AWS networking, ECR, ECS tasks, and Secrets Manager. |
-| `infrastructure/` | Shared IaC modules and automation (Terraform & shell). |
-| `k8s/` | Kubernetes manifests for backend, frontend, and supporting services. |
-| `buildspec-backend.yml`, `buildspec-frontend.yml` | AWS CodeBuild definitions (update if pipelines change). |
+| `docker-compose.yml` | Local orchestration for Postgres, Redis, backend, frontend, optional T-Pot. |
+| `.env.local` | Local environment defaults for backend/frontend. |
+| `k8s/` | Kubernetes manifests for backend, frontend, and supporting services (validate before use). |
 | `scripts/start-all.sh` | Local orchestration script—useful for smoke tests before releasing. |
+| `docs/archived/aws/` | Legacy AWS deployment guides and artefacts (not part of the active stack). |
 
 ## Release Checklist
 

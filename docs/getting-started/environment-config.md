@@ -1,6 +1,6 @@
 # Environment Configuration
 
-## Backend (`backend/.env`)
+## Backend (`.env.local`)
 
 ### Core Configuration
 
@@ -17,7 +17,7 @@
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `DATABASE_URL` | `sqlite+aiosqlite:///./xdr.db` | Async SQLAlchemy DSN. Replace with `postgresql+asyncpg://user:pass@host/db` for Postgres. |
+| `DATABASE_URL` | `postgresql+asyncpg://xdr_user:local_dev_password@localhost:5432/mini_xdr` | Async SQLAlchemy DSN for the local PostgreSQL stack. |
 
 ### Detection & Response Configuration
 
@@ -32,14 +32,30 @@
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `HONEYPOT_HOST` | `34.193.101.171` | T-Pot honeypot host address. |
-| `HONEYPOT_USER` | `admin` | SSH username for honeypot access. |
-| `HONEYPOT_SSH_KEY` | `~/.ssh/mini-xdr-tpot-key.pem` | Path to SSH private key for honeypot access. |
-| `HONEYPOT_SSH_PORT` | `64295` | SSH port for honeypot access. |
-| `TPOT_API_KEY` | _(none)_ | API key for T-Pot honeypot management. |
-| `TPOT_HOST` | _(none)_ | Alternative T-Pot host (overrides HONEYPOT_HOST). |
-| `TPOT_SSH_PORT` | _(none)_ | Alternative T-Pot SSH port. |
-| `TPOT_WEB_PORT` | _(none)_ | T-Pot web interface port. |
+| `HONEYPOT_HOST` | `localhost` | Legacy honeypot host (for compatibility). |
+| `HONEYPOT_USER` | `luxieum` | SSH username for T-Pot access. |
+| `HONEYPOT_SSH_KEY` | `~/.ssh/id_rsa` | Path to SSH private key for T-Pot access (optional if using password). |
+| `HONEYPOT_SSH_PORT` | `64295` | SSH port for T-Pot access. |
+| `TPOT_HOST` | `24.11.0.176` | T-Pot honeypot server IP address. |
+| `TPOT_SSH_PORT` | `64295` | T-Pot SSH management port. |
+| `TPOT_WEB_PORT` | `64297` | T-Pot web interface port (Nginx). |
+| `TPOT_API_KEY` | _(none)_ | SSH password for T-Pot authentication. **Required for connection**. |
+| `TPOT_ELASTICSEARCH_PORT` | `64298` | Elasticsearch port (accessed via SSH tunnel). |
+| `TPOT_KIBANA_PORT` | `64296` | Kibana port (accessed via SSH tunnel). |
+
+**T-Pot Connection Details:**
+- Host: `24.11.0.176` (only accessible from IP `172.16.110.1`)
+- SSH Port: `64295`
+- Web UI: `https://24.11.0.176:64297` (admin/TpotSecure2024!)
+- Authentication: Password-based (stored in `TPOT_API_KEY`)
+
+**Monitored Honeypots:**
+- Cowrie (SSH/Telnet attacks)
+- Dionaea (Malware collection)
+- Suricata (Network IDS)
+- WordPot, ElasticPot, RedisHoneypot, Mailoney, SentryPeer
+
+See `docs/getting-started/tpot-integration.md` for complete setup instructions.
 
 ### AI & LLM Configuration
 
@@ -83,19 +99,13 @@ Example for containment agent:
 - `CONTAINMENT_AGENT_HMAC_KEY`
 - `CONTAINMENT_AGENT_SECRET`
 
-### Secrets Management
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `SECRETS_MANAGER_ENABLED` | `false` | When `true`, `backend/app/config.py` loads shared secrets from AWS Secrets Manager via `backend/app/secrets_manager.py`. |
-
 ### Policy Configuration
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `POLICIES_PATH` | `../policies` | Path to policy definition files. |
 
-Store real values in a secrets manager for staging/production and export them before starting the backend.
+Secrets are loaded exclusively from environment variables for local setups; cloud secret managers are no longer used.
 
 ## Frontend (`frontend/.env.local`)
 
@@ -106,8 +116,6 @@ Store real values in a secrets manager for staging/production and export them be
 
 ## Global Notes
 
-- The backend automatically calls `_load_secrets_on_init` in `backend/app/config.py`; ensure IAM
-  permissions are available when enabling AWS Secrets Manager.
 - APScheduler runs background jobs (`process_scheduled_unblocks`, `background_retrain_ml_models`) once
   the FastAPI app starts. Tune intervals in `backend/app/main.py` if environment-specific behaviour is
   required.

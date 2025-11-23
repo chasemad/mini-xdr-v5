@@ -18,7 +18,6 @@ from .config import settings
 from .external_intel import threat_intel
 from .ml_engine import ml_detector
 from .models import AdvancedResponseAction, Event, Incident, ResponseWorkflow
-from .secrets_manager import get_secure_env
 
 logger = logging.getLogger(__name__)
 

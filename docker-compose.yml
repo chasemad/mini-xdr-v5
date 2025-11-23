@@ -1,0 +1,132 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: mini-xdr-postgres
+    environment:
+      POSTGRES_DB: mini_xdr
+      POSTGRES_USER: xdr_user
+      POSTGRES_PASSWORD: local_dev_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xdr_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mini-xdr-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: mini-xdr-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mini-xdr-network
+
+  # Mini-XDR Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mini-xdr-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://xdr_user:local_dev_password@postgres:5432/mini_xdr
+      - REDIS_URL=redis://redis:6379
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - ML_MODELS_PATH=/app/models
+      - HONEYPOT_HOST=tpot
+      - HONEYPOT_SSH_PORT=64295
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - UI_ORIGIN=http://localhost:3000
+      # Authentication (required)
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-local-jwt-secret-key-for-development-only}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-local-encryption-key-for-development-only-32bytes}
+      # LLM Configuration - Set these in .env file
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - XAI_API_KEY=${XAI_API_KEY:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      # External Intelligence - Set these in .env file
+      - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY:-}
+      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
+      # Agent API Key
+      - AGENT_API_KEY=${AGENT_API_KEY:-mini-xdr-agent-key-2024}
+      - API_KEY=${API_KEY:-demo-minixdr-api-key}
+    volumes:
+      - ./models:/app/models:ro
+      - ./backend/app:/app/app:delegated
+      - ./policies:/app/policies:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - mini-xdr-network
+    restart: unless-stopped
+
+  # Mini-XDR Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8000
+        - NEXT_PUBLIC_API_BASE=http://localhost:8000
+        - NEXT_PUBLIC_API_KEY=demo-minixdr-api-key
+    container_name: mini-xdr-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_API_BASE=http://localhost:8000
+      - NEXT_PUBLIC_API_KEY=demo-minixdr-api-key
+      - NEXT_PUBLIC_CSP_ENABLED=false
+      - NEXT_PUBLIC_ENVIRONMENT=development
+      - NEXT_PUBLIC_DEBUG=true
+    depends_on:
+      - backend
+    networks:
+      - mini-xdr-network
+    restart: unless-stopped
+
+  # T-Pot Honeypot (Optional - requires additional setup)
+  # Uncomment when you have T-Pot configured
+  # tpot:
+  #   image: telekom/tpotce:latest
+  #   container_name: mini-xdr-tpot
+  #   ports:
+  #     - "64295:64295"  # SSH
+  #     - "64297:64297"  # Web UI
+  #   volumes:
+  #     - tpot_data:/data
+  #   cap_add:
+  #     - NET_ADMIN
+  #   networks:
+  #     - mini-xdr-network
+  #   restart: unless-stopped
+
+networks:
+  mini-xdr-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  # tpot_data:
+  #   driver: local

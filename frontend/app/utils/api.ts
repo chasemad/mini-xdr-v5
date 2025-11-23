@@ -3,19 +3,42 @@
  * Ensures consistent API URL usage across the application
  */
 
-// Get API base URL from environment variable with fallback
-export const getApiBaseUrl = (): string => {
-  if (typeof window !== 'undefined') {
-    // Client-side: use environment variable or current origin
-    return process.env.NEXT_PUBLIC_API_URL ||
-           process.env.NEXT_PUBLIC_API_BASE ||
-           (typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.hostname}:8000` : 'http://localhost:8000');
+// Normalize environment variables while preserving intentional empty strings
+const sanitizeEnvValue = (value: string | undefined): string | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed;
+};
+
+/**
+ * Resolve the raw API base URL from environment variables.
+ * Returns the value as-is (including empty string) when explicitly provided.
+ */
+export const resolveApiBaseUrl = (): string | null => {
+  const apiUrl = sanitizeEnvValue(process.env.NEXT_PUBLIC_API_URL);
+  if (apiUrl !== undefined) {
+    return apiUrl;
   }
 
-  // Server-side: use environment variable or default
-  return process.env.NEXT_PUBLIC_API_URL ||
-         process.env.NEXT_PUBLIC_API_BASE ||
-         'http://mini-xdr-backend-service:8000';
+  const apiBase = sanitizeEnvValue(process.env.NEXT_PUBLIC_API_BASE);
+  if (apiBase !== undefined) {
+    return apiBase;
+  }
+
+  return null;
+};
+
+// Get API base URL from environment variable with fallback
+export const getApiBaseUrl = (): string => {
+  const resolved = resolveApiBaseUrl();
+  if (resolved !== null) {
+    return resolved;
+  }
+
+  // Default to local backend for developer convenience
+  return 'http://localhost:8000';
 };
 
 // API base URL (cached)
@@ -24,7 +47,7 @@ export const API_BASE_URL = getApiBaseUrl();
 /**
  * Create a full API endpoint URL
  */
-export const apiUrl = (endpoint: string): string => {
+export const apiUrl = (endpoint: string, baseUrl: string = API_BASE_URL): string => {
   // Remove leading slash if present (we'll add it)
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
 
@@ -34,9 +57,14 @@ export const apiUrl = (endpoint: string): string => {
   }
 
   // Remove trailing slash from base URL if present
-  const base = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
+  const normalizedBase = (baseUrl || '').replace(/\/+$/, '');
 
-  return `${base}${cleanEndpoint}`;
+  // Empty base means intentionally use relative URL
+  if (!normalizedBase) {
+    return cleanEndpoint;
+  }
+
+  return `${normalizedBase}${cleanEndpoint}`;
 };
 
 /**

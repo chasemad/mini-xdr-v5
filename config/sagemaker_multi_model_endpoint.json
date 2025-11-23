@@ -1,0 +1,44 @@
+{
+  "deployment_type": "multi_model",
+  "deployment_date": "2025-11-04T19:38:31.355205",
+  "region": "us-east-1",
+  "account_id": "116912495274",
+  "bucket": "mini-xdr-ml-models-116912495274",
+  "endpoint_name": "mini-xdr-multi-model-endpoint",
+  "model_data_prefix": "s3://mini-xdr-ml-models-116912495274/multi-model-artifacts/",
+  "instance_type": "ml.t2.medium",
+  "models": {
+    "general": {
+      "model_name": "general",
+      "s3_uri": "s3://mini-xdr-ml-models-116912495274/multi-model-artifacts/general/model.tar.gz",
+      "target_model_path": "general/model.tar.gz"
+    },
+    "ddos": {
+      "model_name": "ddos",
+      "s3_uri": "s3://mini-xdr-ml-models-116912495274/multi-model-artifacts/ddos/model.tar.gz",
+      "target_model_path": "ddos/model.tar.gz"
+    },
+    "bruteforce": {
+      "model_name": "bruteforce",
+      "s3_uri": "s3://mini-xdr-ml-models-116912495274/multi-model-artifacts/bruteforce/model.tar.gz",
+      "target_model_path": "bruteforce/model.tar.gz"
+    },
+    "webattacks": {
+      "model_name": "webattacks",
+      "s3_uri": "s3://mini-xdr-ml-models-116912495274/multi-model-artifacts/webattacks/model.tar.gz",
+      "target_model_path": "webattacks/model.tar.gz"
+    }
+  },
+  "cost_estimate": {
+    "instance_type": "ml.t2.medium",
+    "hourly_cost": 0.05,
+    "monthly_cost_usd": 36,
+    "models_hosted": 4
+  },
+  "usage_instructions": {
+    "invoke_model": "Specify TargetModel header with model name (general, ddos, bruteforce, webattacks)",
+    "example": "invoke_endpoint(EndpointName=endpoint_name, TargetModel=\"general/model.tar.gz\", ...)"
+  },
+  "last_updated": "2025-11-04T19:41:12.681789",
+  "packaging_fix_applied": true
+}

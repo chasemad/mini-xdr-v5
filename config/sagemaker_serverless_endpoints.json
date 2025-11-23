@@ -1,0 +1,23 @@
+{
+  "deployment_type": "serverless",
+  "deployment_date": "2025-11-03T21:41:46.427274",
+  "region": "us-east-1",
+  "account_id": "116912495274",
+  "bucket": "mini-xdr-ml-models-116912495274",
+  "endpoints": {
+    "ddos": {
+      "endpoint_name": "mini-xdr-ddos-serverless",
+      "model_name": "mini-xdr-ddos-1762231176",
+      "memory_mb": 2048,
+      "max_concurrency": 10,
+      "s3_uri": "s3://mini-xdr-ml-models-116912495274/models/ddos/model.tar.gz",
+      "description": "DDoS attack specialist detector",
+      "deployment_type": "serverless"
+    }
+  },
+  "cost_estimate": {
+    "compute_per_second": 0.0008,
+    "memory_per_gb_second": 1.389e-05,
+    "estimated_monthly_cost_usd": 26
+  }
+}

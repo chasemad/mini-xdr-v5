@@ -72,13 +72,11 @@
 
 ## External Integrations
 
-- **Secrets Management**: AWS Secrets Manager integration (`backend/app/secrets_manager.py`) for secure
-  credential storage and retrieval.
+- **Secrets Management**: Environment variables (`.env`/`.env.local`) supply credentials; cloud secret
+  managers are not used in the local stack.
 - **Threat Intelligence**: External intel service (`backend/app/external_intel.py`) integrates with
   AbuseIPDB, VirusTotal, and other threat feeds.
 - **Honeypot Integration**: T-Pot verifier (`backend/app/tpot_verifier.py`) manages honeypot state
   and integration with deception networks.
-- **Cloud ML**: SageMaker client (`backend/app/sagemaker_client.py`) and endpoint manager
-  (`backend/app/sagemaker_endpoint_manager.py`) for cloud-based model deployment.
 - **Discovery Services**: Network discovery service (`backend/app/discovery_service.py`) integrates
   with asset management and vulnerability scanning systems.

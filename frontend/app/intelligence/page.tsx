@@ -9,6 +9,15 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { DashboardLayout } from "@/components/DashboardLayout";
 
 interface IOC {
@@ -74,6 +83,7 @@ export default function ThreatIntelligencePage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
+  const [loading, setLoading] = useState(true);
   const [newIOC, setNewIOC] = useState<{
     type: "ip" | "domain" | "hash" | "url" | "email" | "user_agent";
     value: string;
@@ -94,58 +104,64 @@ export default function ThreatIntelligencePage() {
 
   // Load threat intelligence data from backend
   useEffect(() => {
-    const loadIOCs = async () => {
+    const loadData = async () => {
+      setLoading(true);
       try {
-        const response = await fetch('/api/intelligence/iocs');
-        if (response.ok) {
-          const data = await response.json();
-          setIocs(data.iocs || []);
-        }
-      } catch (error) {
-        console.error('Failed to load IOCs:', error);
+        const loadIOCs = async () => {
+          try {
+            const response = await fetch('/api/intelligence/iocs');
+            if (response.ok) {
+              const data = await response.json();
+              setIocs(data.iocs || []);
+            }
+          } catch (error) {
+            console.error('Failed to load IOCs:', error);
+          }
+        };
+
+        const loadThreatFeeds = async () => {
+          try {
+            const response = await fetch('/api/intelligence/feeds');
+            if (response.ok) {
+              const data = await response.json();
+              setThreatFeeds(data.feeds || []);
+            }
+          } catch (error) {
+            console.error('Failed to load threat feeds:', error);
+          }
+        };
+
+        const loadThreatActors = async () => {
+          try {
+            const response = await fetch('/api/intelligence/actors');
+            if (response.ok) {
+              const data = await response.json();
+              setThreatActors(data.actors || []);
+            }
+          } catch (error) {
+            console.error('Failed to load threat actors:', error);
+          }
+        };
+
+        const loadCampaigns = async () => {
+          try {
+            const response = await fetch('/api/intelligence/campaigns');
+            if (response.ok) {
+              const data = await response.json();
+              setCampaigns(data.campaigns || []);
+            }
+          } catch (error) {
+            console.error('Failed to load campaigns:', error);
+          }
+        };
+
+        await Promise.all([loadIOCs(), loadThreatFeeds(), loadThreatActors(), loadCampaigns()]);
+      } finally {
+        setLoading(false);
       }
     };
 
-    const loadThreatFeeds = async () => {
-      try {
-        const response = await fetch('/api/intelligence/feeds');
-        if (response.ok) {
-          const data = await response.json();
-          setThreatFeeds(data.feeds || []);
-        }
-      } catch (error) {
-        console.error('Failed to load threat feeds:', error);
-      }
-    };
-
-    const loadThreatActors = async () => {
-      try {
-        const response = await fetch('/api/intelligence/actors');
-        if (response.ok) {
-          const data = await response.json();
-          setThreatActors(data.actors || []);
-        }
-      } catch (error) {
-        console.error('Failed to load threat actors:', error);
-      }
-    };
-
-    const loadCampaigns = async () => {
-      try {
-        const response = await fetch('/api/intelligence/campaigns');
-        if (response.ok) {
-          const data = await response.json();
-          setCampaigns(data.campaigns || []);
-        }
-      } catch (error) {
-        console.error('Failed to load campaigns:', error);
-      }
-    };
-
-    loadIOCs();
-    loadThreatFeeds();
-    loadThreatActors();
-    loadCampaigns();
+    loadData();
   }, []);
 
   const addIOC = async () => {
@@ -284,70 +300,66 @@ export default function ThreatIntelligencePage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3 max-h-96 overflow-y-auto">
-                    {filteredIOCs.map((ioc) => (
-                      <div key={ioc.id} className={`border rounded-lg p-4 ${ioc.false_positive ? 'bg-gray-50 opacity-75' : ''}`}>
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-3">
-                            <Badge variant="outline">{ioc.type.toUpperCase()}</Badge>
-                            <span className="font-mono text-sm font-medium">{ioc.value}</span>
-                            <Badge className={`${getThreatLevelColor(ioc.threat_level)} border`}>
-                              {ioc.threat_level.toUpperCase()}
-                            </Badge>
-                            {ioc.false_positive && (
-                              <Badge className="bg-gray-100 text-gray-800 border-gray-200">
-                                FALSE POSITIVE
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="text-right">
-                            <span className={`text-sm font-medium ${getConfidenceColor(ioc.confidence)}`}>
-                              {(ioc.confidence * 100).toFixed(0)}% confidence
-                            </span>
-                          </div>
-                        </div>
-
-                        {ioc.description && (
-                          <p className="text-gray-700 text-sm mb-2">{ioc.description}</p>
+                  <div className="rounded-md border overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Value</TableHead>
+                          <TableHead>Threat Level</TableHead>
+                          <TableHead>Confidence</TableHead>
+                          <TableHead>Source</TableHead>
+                          <TableHead>Tags</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {loading ? (
+                          Array.from({ length: 5 }).map((_, i) => (
+                            <TableRow key={i}>
+                              <TableCell><Skeleton className="h-6 w-12" /></TableCell>
+                              <TableCell><Skeleton className="h-6 w-32" /></TableCell>
+                              <TableCell><Skeleton className="h-6 w-16" /></TableCell>
+                              <TableCell><Skeleton className="h-6 w-12" /></TableCell>
+                              <TableCell><Skeleton className="h-6 w-24" /></TableCell>
+                              <TableCell><Skeleton className="h-6 w-20" /></TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          filteredIOCs.map((ioc) => (
+                            <TableRow key={ioc.id} className={ioc.false_positive ? 'opacity-50 bg-muted/50' : ''}>
+                              <TableCell>
+                                <Badge variant="outline">{ioc.type.toUpperCase()}</Badge>
+                              </TableCell>
+                              <TableCell className="font-mono font-medium text-sm">
+                                {ioc.value}
+                                {ioc.false_positive && <Badge variant="secondary" className="ml-2 text-xs">FP</Badge>}
+                              </TableCell>
+                              <TableCell>
+                                <Badge className={`${getThreatLevelColor(ioc.threat_level)} border`}>
+                                  {ioc.threat_level.toUpperCase()}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <span className={`font-medium ${getConfidenceColor(ioc.confidence)}`}>
+                                  {(ioc.confidence * 100).toFixed(0)}%
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground text-sm">{ioc.source}</TableCell>
+                              <TableCell>
+                                <div className="flex flex-wrap gap-1">
+                                  {ioc.tags.slice(0, 2).map((tag, idx) => (
+                                    <Badge key={idx} variant="outline" className="text-xs px-1">{tag}</Badge>
+                                  ))}
+                                  {ioc.tags.length > 2 && (
+                                    <Badge variant="secondary" className="text-xs px-1">+{ioc.tags.length - 2}</Badge>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))
                         )}
-
-                        <div className="grid grid-cols-2 gap-4 text-xs text-gray-600 mb-2">
-                          <div>
-                            <span className="font-medium">Source:</span> {ioc.source}
-                          </div>
-                          <div>
-                            <span className="font-medium">First Seen:</span> {new Date(ioc.first_seen).toLocaleDateString()}
-                          </div>
-                          {ioc.threat_actor && (
-                            <div>
-                              <span className="font-medium">Threat Actor:</span> {ioc.threat_actor}
-                            </div>
-                          )}
-                          {ioc.campaign && (
-                            <div>
-                              <span className="font-medium">Campaign:</span> {ioc.campaign}
-                            </div>
-                          )}
-                        </div>
-
-                        {ioc.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mb-2">
-                            {ioc.tags.map((tag, index) => (
-                              <Badge key={index} variant="outline" className="text-xs">
-                                #{tag}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-
-                        {ioc.ttps.length > 0 && (
-                          <div className="flex flex-wrap gap-1">
-                            <span className="text-xs text-gray-600 mr-2">TTPs:</span>
-                            {formatTTPs(ioc.ttps)}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 </CardContent>
               </Card>
@@ -434,7 +446,7 @@ export default function ThreatIntelligencePage() {
                       value={newIOC.description}
                       onChange={(e) => setNewIOC({...newIOC, description: e.target.value})}
                       placeholder="Description of the threat..."
-                      className="w-full h-20 p-2 border border-gray-300 rounded text-sm"
+                      className="w-full h-20 p-2 border border-gray-300 rounded text-sm bg-background"
                     />
                   </div>
 
@@ -684,7 +696,7 @@ export default function ThreatIntelligencePage() {
                 <div className="space-y-2">
                   {["ip", "domain", "hash", "url"].map(type => {
                     const count = iocs.filter(i => i.type === type).length;
-                    const percentage = (count / iocs.length) * 100;
+                    const percentage = iocs.length > 0 ? (count / iocs.length) * 100 : 0;
                     return (
                       <div key={type} className="space-y-1">
                         <div className="flex justify-between text-sm">

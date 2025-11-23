@@ -20,7 +20,7 @@ from .models import AgentCredential, RequestNonce
 
 MAX_CLOCK_SKEW_SECONDS = 300  # +/- 5 minutes
 NONCE_TTL_SECONDS = 600
-SECURED_PREFIXES = ("/ingest", "/api")
+SECURED_PREFIXES = ("/api",)  # Removed /ingest for demo - no auth required
 
 # Paths that bypass HMAC authentication (use simple API key instead or JWT)
 SIMPLE_AUTH_PREFIXES = [
@@ -29,12 +29,15 @@ SIMPLE_AUTH_PREFIXES = [
     "/api/response",  # All response system endpoints use simple API key
     "/api/intelligence",  # Visualization endpoints
     "/api/incidents",  # Incident endpoints including AI analysis
-    "/api/ml",  # ML and SageMaker endpoints
+    "/api/ml",  # ML endpoints
     "/api/workflows",  # Workflow and NLP endpoints
     "/api/nlp-suggestions",  # NLP workflow suggestions
     "/api/triggers",  # Workflow trigger management endpoints
     "/api/agents",  # Agent orchestration and chat endpoints
     "/api/telemetry",  # Telemetry status endpoint uses JWT
+    "/api/tpot",  # T-Pot honeypot monitoring endpoints
+    "/api/health",  # System health check endpoints
+    "/api/ingest",  # Event ingestion endpoints (for demo/testing)
     "/ingest/multi",  # Multi-source ingestion (for testing - use HMAC in production)
 ]
 

@@ -24,7 +24,7 @@ interface IncidentListProps {
   onIncidentSelect?: (incident: Incident) => void;
 }
 
-export default function IncidentList({ incidents, onIncidentSelect }: IncidentListProps) {
+export default function IncidentList({ incidents, onIncidentSelect, onQuickView }: IncidentListProps) {
   const [filterSeverity, setFilterSeverity] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -91,29 +91,39 @@ export default function IncidentList({ incidents, onIncidentSelect }: IncidentLi
           </div>
         ) : (
           filteredIncidents.map((incident) => (
-            <Link key={incident.id} href={`/incidents/incident/${incident.id}`}>
-              <div className="bg-surface-0 border border-border/50 hover:border-border rounded-xl overflow-hidden transition-all duration-200 hover:bg-surface-1/50 cursor-pointer group">
-                <div className="p-4">
-                  <div className="flex items-center gap-4">
-                    <div className={`w-3 h-3 rounded-full ${
-                      incident.triage_note?.severity === 'high' ? 'bg-severity-critical' :
-                      incident.triage_note?.severity === 'medium' ? 'bg-severity-high' : 'bg-severity-low'
-                    }`}></div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-text">Incident #{incident.id}</span>
-                        <span className="text-xs text-text-muted">from {incident.src_ip}</span>
-                      </div>
-                      <p className="text-xs text-text-muted truncate mt-1">{incident.reason}</p>
-                    </div>
+            <div key={incident.id} className="bg-surface-0 border border-border/50 hover:border-border rounded-xl overflow-hidden transition-all duration-200 hover:bg-surface-1/50 group">
+              <div className="p-4">
+                <div className="flex items-center gap-4">
+                  <div className={`w-3 h-3 rounded-full ${
+                    incident.triage_note?.severity === 'high' ? 'bg-severity-critical' :
+                    incident.triage_note?.severity === 'medium' ? 'bg-severity-high' : 'bg-severity-low'
+                  }`}></div>
+                  <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <div className="text-xs text-text-subtle">{formatTimeAgo(incident.created_at)}</div>
-                      <Eye className="w-4 h-4 text-text-muted opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <span className="text-sm font-medium text-text">Incident #{incident.id}</span>
+                      <span className="text-xs text-text-muted">from {incident.src_ip}</span>
                     </div>
+                    <p className="text-xs text-text-muted truncate mt-1">{incident.reason}</p>
+                  </div>
+                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      size="sm"
+                      variant="default"
+                      onClick={() => onQuickView?.(incident)}
+                      className="gap-1.5"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span className="text-xs">Quick View</span>
+                    </Button>
+                    <Button size="sm" variant="ghost" asChild>
+                      <Link href={`/incidents/incident/${incident.id}`}>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </Link>
+                    </Button>
                   </div>
                 </div>
               </div>
-            </Link>
+            </div>
           ))
         )}
       </div>

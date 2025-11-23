@@ -1,0 +1,128 @@
+# ============================================================================
+# Mini-XDR MCP Server Service - Production
+# ============================================================================
+# Exposes MCP server for internal backend communication and external AI access
+# ============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-server-service
+  namespace: mini-xdr
+  labels:
+    app: mini-xdr-mcp-server
+    component: mcp-server
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "http"
+spec:
+  type: ClusterIP  # Internal service by default
+  selector:
+    app: mini-xdr-mcp-server
+  ports:
+  - name: http
+    port: 3001
+    targetPort: 3001
+    protocol: TCP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800  # 3 hours for long-running MCP sessions
+
+---
+# ============================================================================
+# External LoadBalancer Service (Optional - for direct AI assistant access)
+# ============================================================================
+# Uncomment this to expose MCP server externally via AWS NLB
+# Only use if you want AI assistants to connect directly from internet
+# ============================================================================
+
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: mcp-server-external
+#   namespace: mini-xdr
+#   labels:
+#     app: mini-xdr-mcp-server
+#     component: mcp-server-external
+#   annotations:
+#     service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+#     service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+#     service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "http"
+#     service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+#     # Security: Restrict to specific IPs if needed
+#     # service.beta.kubernetes.io/load-balancer-source-ranges: "YOUR_IP/32"
+# spec:
+#   type: LoadBalancer
+#   selector:
+#     app: mini-xdr-mcp-server
+#   ports:
+#   - name: http
+#     port: 443  # Standard HTTPS port
+#     targetPort: 3001
+#     protocol: TCP
+#   sessionAffinity: ClientIP
+#   sessionAffinityConfig:
+#     clientIP:
+#       timeoutSeconds: 10800
+
+---
+# ============================================================================
+# Network Policy for MCP Server
+# ============================================================================
+# Controls traffic flow to/from MCP server
+# ============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mcp-server-network-policy
+  namespace: mini-xdr
+spec:
+  podSelector:
+    matchLabels:
+      app: mini-xdr-mcp-server
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from ALB/Ingress controller
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: TCP
+      port: 3001
+  # Allow traffic from within mini-xdr namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: mini-xdr
+    ports:
+    - protocol: TCP
+      port: 3001
+  egress:
+  # Allow outbound to backend service
+  - to:
+    - podSelector:
+        matchLabels:
+          app: mini-xdr-backend
+    ports:
+    - protocol: TCP
+      port: 8000
+  # Allow DNS resolution
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow outbound HTTPS for external API calls (if needed)
+  - to:
+    - podSelector: {}
+    ports:
+    - protocol: TCP
+      port: 443

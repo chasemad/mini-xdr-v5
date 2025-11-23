@@ -13,6 +13,15 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import Link from 'next/link'
 import {
   Workflow,
@@ -218,9 +227,11 @@ const WorkflowsPage: React.FC = () => {
   }, []) // Empty deps - this function doesn't depend on any state
 
   // Handle incident selection (memoized)
-  const handleIncidentSelect = useCallback((incidentId: number) => {
+  const handleIncidentSelect = useCallback((incidentId: number | null) => {
     console.log('[WorkflowsPage] Incident selected:', incidentId)
-    dispatch(appActions.setSelectedIncident(incidentId))
+    if (incidentId) {
+      dispatch(appActions.setSelectedIncident(incidentId))
+    }
   }, [dispatch])
 
   // Load triggers function (for manual refresh)
@@ -321,12 +332,12 @@ const WorkflowsPage: React.FC = () => {
 
   if (state.loading.incidents || state.loading.workflows) {
     return (
-      <div className="min-h-screen bg-gray-950">
+      <div className="min-h-screen bg-background">
         <div className="container mx-auto p-6">
           <div className="flex items-center justify-center h-[calc(100vh-12rem)]">
             <div className="text-center">
-              <RefreshCw className="w-12 h-12 text-blue-500 animate-spin mx-auto mb-4" />
-              <span className="text-lg text-gray-300">Loading workflow orchestration system...</span>
+              <RefreshCw className="w-12 h-12 text-primary animate-spin mx-auto mb-4" />
+              <span className="text-lg text-muted-foreground">Loading workflow orchestration system...</span>
             </div>
           </div>
         </div>
@@ -334,65 +345,138 @@ const WorkflowsPage: React.FC = () => {
     )
   }
 
+  const workflowCapabilities = [
+    {
+      id: "natural",
+      title: "Natural Language",
+      icon: MessageSquare,
+      color: "text-blue-500",
+      capabilities: ["AI Chat Interface", "GPT-4 Parsing", "Single Task Execution", "Multi-Step Workflows"]
+    },
+    {
+      id: "designer",
+      title: "Visual Designer",
+      icon: Workflow,
+      color: "text-purple-500",
+      capabilities: ["Drag & Drop Canvas", "68 Response Actions", "Real-time Validation", "Custom Workflows"]
+    },
+    {
+      id: "templates",
+      title: "Playbook Templates",
+      icon: Save,
+      color: "text-amber-500",
+      capabilities: ["Pre-built Playbooks", "Emergency Response", "Ransomware Defense", "DDoS Mitigation"]
+    },
+    {
+      id: "executor",
+      title: "Execution Engine",
+      icon: Play,
+      color: "text-green-500",
+      capabilities: ["Real-time Monitoring", "Progress Tracking", "Parallel Execution", "Failure Recovery"]
+    }
+  ];
+
   return (
     <DashboardLayout breadcrumbs={[{ label: "Workflows" }]}>
       <div className="space-y-6">
           {/* Header Section */}
-        <Card className="bg-gray-900 border-gray-800">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
-                  <Workflow className="h-8 w-8 text-blue-400" />
-                </div>
-                <div>
-                  <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-                    Workflow Automation Platform
-                    {state.websocket.connected ? (
-                      <Badge className="bg-green-500/10 text-green-400 border-green-500/30">
-                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2" />
-                        Real-time
-                      </Badge>
-                    ) : (
-                      <Badge className="bg-yellow-500/10 text-yellow-400 border-yellow-500/30">
-                        <Clock className="w-3 h-3 mr-1" />
-                        Polling
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight">Workflow Automation Platform</h2>
+            <p className="text-muted-foreground mt-2 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-primary" />
+              AI-powered response orchestration with natural language processing
+            </p>
+
+            <div className="flex items-center gap-4 mt-4">
+              {state.websocket.connected ? (
+                <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 px-3 py-1">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2" />
+                  Real-time Updates Active
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20 px-3 py-1">
+                  <Clock className="w-3 h-3 mr-2" />
+                  Polling Mode • 45s intervals
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          {/* Quick Stats Grid */}
+          <div className="grid grid-cols-4 gap-4">
+            <Card className="bg-background shadow-sm">
+               <CardContent className="p-4 text-center">
+                  <div className="text-2xl font-bold text-primary">{workflowStats.total}</div>
+                  <div className="text-xs text-muted-foreground mt-1">Total</div>
+               </CardContent>
+            </Card>
+            <Card className="bg-background shadow-sm">
+               <CardContent className="p-4 text-center">
+                  <div className="text-2xl font-bold text-green-500">{workflowStats.active}</div>
+                  <div className="text-xs text-muted-foreground mt-1">Active</div>
+               </CardContent>
+            </Card>
+            <Card className="bg-background shadow-sm">
+               <CardContent className="p-4 text-center">
+                  <div className="text-2xl font-bold text-purple-500">{workflowStats.completed}</div>
+                  <div className="text-xs text-muted-foreground mt-1">Completed</div>
+               </CardContent>
+            </Card>
+            <Card className="bg-background shadow-sm">
+               <CardContent className="p-4 text-center">
+                  <div className="text-2xl font-bold text-orange-500">{workflowStats.templates}</div>
+                  <div className="text-xs text-muted-foreground mt-1">Templates</div>
+               </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        {/* Workflow Capabilities Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {workflowCapabilities.map((workflow) => {
+            const Icon = workflow.icon;
+            const isActive = activeTab === workflow.id;
+
+            return (
+              <Card
+                key={workflow.id}
+                className={`bg-card transition-all duration-300 ease-in-out hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/20 border-muted cursor-pointer ${
+                  isActive ? 'ring-2 ring-primary shadow-lg shadow-primary/20' : ''
+                }`}
+                onClick={() => setActiveTab(workflow.id)}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className={`p-2 rounded-lg bg-background border ${workflow.color}`}>
+                      <Icon className="w-5 h-5" />
+                    </div>
+                    {isActive && (
+                      <Badge variant="default" className="text-xs">
+                        Active
                       </Badge>
                     )}
-                  </h1>
-                  <p className="text-gray-400 text-sm mt-1 flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-blue-400" />
-                    AI-powered response orchestration with natural language processing
-                  </p>
-                </div>
-              </div>
-
-              {/* Quick Stats Grid */}
-              <div className="grid grid-cols-4 gap-3">
-                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 text-center">
-                  <div className="text-2xl font-bold text-blue-400">{workflowStats.total}</div>
-                  <div className="text-xs text-gray-400 mt-1">Total</div>
-                </div>
-                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 text-center">
-                  <div className="text-2xl font-bold text-green-400">{workflowStats.active}</div>
-                  <div className="text-xs text-gray-400 mt-1">Active</div>
-                </div>
-                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 text-center">
-                  <div className="text-2xl font-bold text-purple-400">{workflowStats.completed}</div>
-                  <div className="text-xs text-gray-400 mt-1">Completed</div>
-                </div>
-                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 text-center">
-                  <div className="text-2xl font-bold text-orange-400">{workflowStats.templates}</div>
-                  <div className="text-xs text-gray-400 mt-1">Templates</div>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+                  </div>
+                  <CardTitle className="text-lg">{workflow.title}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-2">
+                    {workflow.capabilities.map((cap, i) => (
+                      <li key={i} className="text-xs text-muted-foreground flex items-center gap-2">
+                        <div className="w-1 h-1 rounded-full bg-primary/50" />
+                        {cap}
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
 
         {/* Error Messages */}
         {(state.errors.incidents || state.errors.workflows) && (
-          <Alert className="bg-red-500/10 border-red-500/30 text-red-400">
+          <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
               {state.errors.incidents || state.errors.workflows}
@@ -401,131 +485,143 @@ const WorkflowsPage: React.FC = () => {
         )}
 
         {/* Compact Incident Context Selector */}
-        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-3">
-          <div className="flex items-center gap-3">
-            <Target className="w-5 h-5 text-blue-400 flex-shrink-0" />
-            <div className="flex-1 flex items-center gap-3">
-              <span className="text-sm font-medium text-gray-300">Workflow Scope:</span>
-              <select
-                value={state.selectedIncident || 'none'}
-                onChange={(e) => {
-                  const value = e.target.value === 'none' ? null : parseInt(e.target.value)
-                  handleIncidentSelect(value)
-                }}
-                className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              >
-                <option value="none">None - General Workflow (Always-On)</option>
-                {state.incidents.filter(i => i.status === 'open').map(incident => (
-                  <option key={incident.id} value={incident.id}>
-                    Incident #{incident.id} - {incident.src_ip} - {incident.reason}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {state.selectedIncident ? (
-              <Badge className="bg-blue-600 text-white border-blue-500 flex-shrink-0">
-                <Sparkles className="w-3 h-3 mr-1" />
-                Incident-Specific
-              </Badge>
-            ) : (
-              <Badge className="bg-purple-600 text-white border-purple-500 flex-shrink-0">
-                <Zap className="w-3 h-3 mr-1" />
-                General Workflow
-              </Badge>
-            )}
-          </div>
-          {state.selectedIncident && (() => {
-            const incident = state.incidents.find(i => i.id === state.selectedIncident)
-            return incident ? (
-              <div className="mt-3 pt-3 border-t border-gray-700/50 flex items-center gap-4 text-xs text-gray-400">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-yellow-400" />
-                  <span className="font-medium text-white">Context:</span>
-                  <span>{incident.reason}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Globe className="w-4 h-4 text-blue-400" />
-                  <span>{incident.src_ip}</span>
-                </div>
-                {incident.risk_score && (
-                  <div className="flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4 text-red-400" />
-                    <span>Risk: {(incident.risk_score * 100).toFixed(0)}%</span>
-                  </div>
-                )}
-                <div className="ml-auto text-gray-500">
-                  {incident.num_events || 0} events
+        <Card className="bg-card border-border shadow-sm">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-4">
+              <Target className="w-5 h-5 text-primary flex-shrink-0" />
+              <div className="flex-1 flex items-center gap-3">
+                <span className="text-sm font-medium text-muted-foreground">Workflow Scope:</span>
+                <div className="flex-1 max-w-md">
+                  <Select
+                    value={state.selectedIncident ? state.selectedIncident.toString() : 'none'}
+                    onValueChange={(value) => {
+                      const incidentId = value === 'none' ? null : parseInt(value);
+                      handleIncidentSelect(incidentId);
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select incident scope" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None - General Workflow (Always-On)</SelectItem>
+                      <SelectGroup>
+                         <SelectLabel>Active Incidents</SelectLabel>
+                         {state.incidents.filter(i => i.status === 'open').map(incident => (
+                            <SelectItem key={incident.id} value={incident.id.toString()}>
+                              Incident #{incident.id} - {incident.src_ip}
+                            </SelectItem>
+                         ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
-            ) : null
-          })()}
-        </div>
+              {state.selectedIncident ? (
+                <Badge variant="default" className="flex-shrink-0 gap-1">
+                  <Sparkles className="w-3 h-3" />
+                  Incident-Specific
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="flex-shrink-0 gap-1">
+                  <Zap className="w-3 h-3" />
+                  General Workflow
+                </Badge>
+              )}
+            </div>
+
+            {state.selectedIncident && (() => {
+              const incident = state.incidents.find(i => i.id === state.selectedIncident)
+              return incident ? (
+                <div className="mt-3 pt-3 border-t border-border flex items-center gap-4 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-warning" />
+                    <span className="font-medium text-foreground">Context:</span>
+                    <span>{incident.reason}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-primary" />
+                    <span>{incident.src_ip}</span>
+                  </div>
+                  {incident.risk_score && (
+                    <div className="flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-destructive" />
+                      <span>Risk: {(incident.risk_score * 100).toFixed(0)}%</span>
+                    </div>
+                  )}
+                  <div className="ml-auto">
+                    {incident.num_events || 0} events
+                  </div>
+                </div>
+              ) : null
+            })()}
+          </CardContent>
+        </Card>
 
         {/* Main Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6 bg-gray-900 border border-gray-800 p-1">
+          <TabsList className="w-full justify-start border-b rounded-none h-auto p-0 bg-transparent space-x-2">
             <TabsTrigger
               value="natural"
-              className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-400"
+              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent pb-3 px-4"
             >
-              <MessageSquare className="h-4 w-4" />
+              <MessageSquare className="h-4 w-4 mr-2" />
               <span className="hidden sm:inline">Natural Language</span>
               <span className="sm:hidden">NLP</span>
             </TabsTrigger>
             <TabsTrigger
               value="designer"
-              className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-400"
+              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent pb-3 px-4"
             >
-              <Workflow className="h-4 w-4" />
+              <Workflow className="h-4 w-4 mr-2" />
               <span className="hidden sm:inline">Designer</span>
             </TabsTrigger>
             <TabsTrigger
               value="templates"
-              className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-400"
+              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent pb-3 px-4"
             >
-              <Save className="h-4 w-4" />
+              <Save className="h-4 w-4 mr-2" />
               <span className="hidden sm:inline">Templates</span>
             </TabsTrigger>
             <TabsTrigger
               value="executor"
-              className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-400"
+              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent pb-3 px-4"
             >
-              <Play className="h-4 w-4" />
+              <Play className="h-4 w-4 mr-2" />
               <span className="hidden sm:inline">Executor</span>
             </TabsTrigger>
             <TabsTrigger
               value="analytics"
-              className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-400"
+              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent pb-3 px-4"
             >
-              <Activity className="h-4 w-4" />
+              <Activity className="h-4 w-4 mr-2" />
               <span className="hidden sm:inline">Analytics</span>
             </TabsTrigger>
             <TabsTrigger
               value="triggers"
-              className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-400"
+              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent pb-3 px-4"
             >
-              <Settings className="h-4 w-4" />
+              <Settings className="h-4 w-4 mr-2" />
               <span className="hidden sm:inline">Auto Triggers</span>
             </TabsTrigger>
           </TabsList>
 
           {/* Natural Language Tab - Enhanced with workflow creation and execution */}
           <TabsContent value="natural" className="space-y-4 mt-6">
-            <Card className="bg-gray-900 border-gray-800">
+            <Card>
               <CardHeader>
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-500/10 rounded-lg border border-blue-500/20">
-                    <Brain className="h-5 w-5 text-blue-400" />
+                  <div className="p-2 bg-primary/10 rounded-lg border border-primary/20">
+                    <Brain className="h-5 w-5 text-primary" />
                   </div>
                   <div>
-                    <CardTitle className="text-white flex items-center gap-2">
+                    <CardTitle className="flex items-center gap-2">
                       AI-Powered Workflow Chat
-                      <Badge className="bg-green-500/10 text-green-400 border-green-500/30">
-                        <Sparkles className="w-3 h-3 mr-1" />
+                      <Badge variant="secondary" className="gap-1">
+                        <Sparkles className="w-3 h-3" />
                         GPT-4 Enhanced
                       </Badge>
                     </CardTitle>
-                    <CardDescription className="text-gray-400 mt-1">
+                    <CardDescription>
                       Chat with AI to create workflows, execute single tasks, or get response recommendations
                     </CardDescription>
                   </div>
@@ -542,25 +638,25 @@ const WorkflowsPage: React.FC = () => {
 
             {/* Feature Highlights */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card className="bg-gray-900 border-blue-500/30">
+              <Card>
                 <CardContent className="p-4">
-                  <Zap className="w-8 h-8 text-blue-400 mb-2" />
-                  <h3 className="font-semibold text-white mb-1">Instant Execution</h3>
-                  <p className="text-sm text-gray-400">Execute single tasks or create complex workflows instantly</p>
+                  <Zap className="w-8 h-8 text-primary mb-2" />
+                  <h3 className="font-semibold text-foreground mb-1">Instant Execution</h3>
+                  <p className="text-sm text-muted-foreground">Execute single tasks or create complex workflows instantly</p>
                 </CardContent>
               </Card>
-              <Card className="bg-gray-900 border-purple-500/30">
+              <Card>
                 <CardContent className="p-4">
-                  <Brain className="w-8 h-8 text-purple-400 mb-2" />
-                  <h3 className="font-semibold text-white mb-1">AI Understanding</h3>
-                  <p className="text-sm text-gray-400">GPT-4 powered parsing with 90%+ accuracy</p>
+                  <Brain className="w-8 h-8 text-purple-500 mb-2" />
+                  <h3 className="font-semibold text-foreground mb-1">AI Understanding</h3>
+                  <p className="text-sm text-muted-foreground">GPT-4 powered parsing with 90%+ accuracy</p>
                 </CardContent>
               </Card>
-              <Card className="bg-gray-900 border-green-500/30">
+              <Card>
                 <CardContent className="p-4">
-                  <CheckCircle2 className="w-8 h-8 text-green-400 mb-2" />
-                  <h3 className="font-semibold text-white mb-1">Safety First</h3>
-                  <p className="text-sm text-gray-400">Automatic approval workflows for critical actions</p>
+                  <CheckCircle2 className="w-8 h-8 text-green-500 mb-2" />
+                  <h3 className="font-semibold text-foreground mb-1">Safety First</h3>
+                  <p className="text-sm text-muted-foreground">Automatic approval workflows for critical actions</p>
                 </CardContent>
               </Card>
             </div>
@@ -568,15 +664,15 @@ const WorkflowsPage: React.FC = () => {
 
           {/* Designer Tab */}
           <TabsContent value="designer" className="space-y-4 mt-6">
-            <Card className="bg-gray-900 border-gray-800">
+            <Card>
               <CardHeader>
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-purple-500/10 rounded-lg border border-purple-500/20">
-                    <Workflow className="h-5 w-5 text-purple-400" />
+                    <Workflow className="h-5 w-5 text-purple-500" />
                   </div>
                   <div>
-                    <CardTitle className="text-white">Visual Workflow Designer</CardTitle>
-                    <CardDescription className="text-gray-400 mt-1">
+                    <CardTitle>Visual Workflow Designer</CardTitle>
+                    <CardDescription>
                       Drag-and-drop interface with 68 pre-built response actions
                     </CardDescription>
                   </div>
@@ -604,15 +700,15 @@ const WorkflowsPage: React.FC = () => {
 
           {/* Executor Tab */}
           <TabsContent value="executor" className="space-y-4 mt-6">
-            <Card className="bg-gray-900 border-gray-800">
+            <Card>
               <CardHeader>
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-green-500/10 rounded-lg border border-green-500/20">
-                    <Play className="h-5 w-5 text-green-400" />
+                    <Play className="h-5 w-5 text-green-500" />
                   </div>
                   <div>
-                    <CardTitle className="text-white">Workflow Execution Monitor</CardTitle>
-                    <CardDescription className="text-gray-400 mt-1">
+                    <CardTitle>Workflow Execution Monitor</CardTitle>
+                    <CardDescription>
                       Real-time workflow execution with progress tracking
                     </CardDescription>
                   </div>
@@ -634,32 +730,32 @@ const WorkflowsPage: React.FC = () => {
           {/* Analytics Tab */}
           <TabsContent value="analytics" className="space-y-4 mt-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card className="bg-gray-900 border-blue-500/30">
+              <Card>
                 <CardContent className="p-6 text-center">
-                  <TrendingUp className="w-8 h-8 text-blue-400 mx-auto mb-3" />
-                  <div className="text-3xl font-bold text-blue-400 mb-1">{workflowStats.total}</div>
-                  <div className="text-sm text-gray-400">Total Workflows</div>
+                  <TrendingUp className="w-8 h-8 text-primary mx-auto mb-3" />
+                  <div className="text-3xl font-bold text-primary mb-1">{workflowStats.total}</div>
+                  <div className="text-sm text-muted-foreground">Total Workflows</div>
                 </CardContent>
               </Card>
-              <Card className="bg-gray-900 border-green-500/30">
+              <Card>
                 <CardContent className="p-6 text-center">
-                  <Activity className="w-8 h-8 text-green-400 mx-auto mb-3" />
-                  <div className="text-3xl font-bold text-green-400 mb-1">{workflowStats.active}</div>
-                  <div className="text-sm text-gray-400">Active Now</div>
+                  <Activity className="w-8 h-8 text-green-500 mx-auto mb-3" />
+                  <div className="text-3xl font-bold text-green-500 mb-1">{workflowStats.active}</div>
+                  <div className="text-sm text-muted-foreground">Active Now</div>
                 </CardContent>
               </Card>
-              <Card className="bg-gray-900 border-purple-500/30">
+              <Card>
                 <CardContent className="p-6 text-center">
-                  <CheckCircle2 className="w-8 h-8 text-purple-400 mx-auto mb-3" />
-                  <div className="text-3xl font-bold text-purple-400 mb-1">{workflowStats.completed}</div>
-                  <div className="text-sm text-gray-400">Completed</div>
+                  <CheckCircle2 className="w-8 h-8 text-purple-500 mx-auto mb-3" />
+                  <div className="text-3xl font-bold text-purple-500 mb-1">{workflowStats.completed}</div>
+                  <div className="text-sm text-muted-foreground">Completed</div>
                 </CardContent>
               </Card>
-              <Card className="bg-gray-900 border-orange-500/30">
+              <Card>
                 <CardContent className="p-6 text-center">
-                  <Save className="w-8 h-8 text-orange-400 mx-auto mb-3" />
-                  <div className="text-3xl font-bold text-orange-400 mb-1">{workflowStats.templates}</div>
-                  <div className="text-sm text-gray-400">Templates</div>
+                  <Save className="w-8 h-8 text-orange-500 mx-auto mb-3" />
+                  <div className="text-3xl font-bold text-orange-500 mb-1">{workflowStats.templates}</div>
+                  <div className="text-sm text-muted-foreground">Templates</div>
                 </CardContent>
               </Card>
             </div>
@@ -667,10 +763,10 @@ const WorkflowsPage: React.FC = () => {
 
           {/* Auto Triggers Tab */}
           <TabsContent value="triggers" className="space-y-4 mt-6">
-            <Card className="bg-gray-900 border-gray-800">
+            <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Settings className="h-5 w-5 text-blue-400" />
+                  <Settings className="h-5 w-5 text-primary" />
                   Automation & Triggers Management
                 </CardTitle>
                 <CardDescription>

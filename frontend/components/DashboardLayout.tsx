@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -18,8 +18,15 @@ import {
   LogOut,
   User,
   ChevronRight,
+  Shield,
+  Bot,
+  Bell
 } from "lucide-react";
 import { useAuth } from "../app/contexts/AuthContext";
+import { CopilotSidebar } from "./layout/CopilotSidebar";
+import { useDashboard } from "../app/contexts/DashboardContext";
+import { Button } from "./ui/button";
+import { cn } from "@/lib/utils";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -33,6 +40,7 @@ interface NavigationItem {
 const navigation: NavigationItem[] = [
   { name: "Dashboard", href: "/", icon: Home },
   { name: "Incidents", href: "/incidents", icon: AlertTriangle },
+  { name: "Honeypot", href: "/honeypot", icon: Shield, roles: ["analyst", "soc_lead", "admin"] },
   { name: "Agents", href: "/agents", icon: Activity, roles: ["analyst", "soc_lead", "admin"] },
   { name: "Threat Intel", href: "/intelligence", icon: Brain, roles: ["analyst", "soc_lead", "admin"] },
   { name: "Investigations", href: "/investigations", icon: Search, roles: ["analyst", "soc_lead", "admin"] },
@@ -56,6 +64,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   const pathname = usePathname();
   const router = useRouter();
   const { user, organization, logout } = useAuth();
+  const { isCopilotOpen, toggleCopilot, copilotContext } = useDashboard();
   const [telemetry, setTelemetry] = useState<{ hasLogs: boolean } | null>(null);
 
   useEffect(() => {
@@ -77,7 +86,6 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     fetchTelemetry();
   }, []);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
@@ -90,7 +98,6 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [userDropdownOpen]);
 
-  // Filter navigation based on user role
   const roleHierarchy: Record<string, number> = {
     viewer: 1,
     analyst: 2,
@@ -101,13 +108,10 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   const userRoleLevel = roleHierarchy[user?.role || "viewer"] || 1;
 
   const filteredNavigation = navigation.filter((item) => {
-    if (!item.roles) return true; // Available to all
-
-    // Check if user's role meets the minimum requirement
+    if (!item.roles) return true;
     const minRequiredLevel = Math.min(
       ...item.roles.map((role) => roleHierarchy[role] || 99)
     );
-
     return userRoleLevel >= minRequiredLevel;
   });
 
@@ -117,36 +121,33 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black">
+    <div className="min-h-screen bg-background text-foreground flex">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          className="fixed inset-0 bg-black/80 z-40 lg:hidden backdrop-blur-sm"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <aside
-        className={`
-          fixed inset-y-0 left-0 z-50 w-64 bg-gray-900/95 backdrop-blur-sm border-r border-gray-800
-          transform transition-transform duration-300 ease-in-out
-          lg:translate-x-0
-          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
-        `}
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 w-64 bg-card border-r border-border overflow-y-auto",
+          "transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:h-screen",
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        )}
       >
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="flex items-center justify-between px-6 py-5 border-b border-gray-800">
-            <Link href="/" className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                <Shield className="w-5 h-5 text-white" />
-              </div>
-              <span className="text-xl font-bold text-white">Mini-XDR</span>
-            </Link>
+          <div className="flex items-center gap-3 px-6 h-16 border-b border-border">
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+              <Shield className="w-5 h-5 text-primary-foreground" />
+            </div>
+            <span className="text-lg font-bold tracking-tight">Mini-XDR</span>
             <button
               onClick={() => setSidebarOpen(false)}
-              className="lg:hidden text-gray-400 hover:text-white"
+              className="ml-auto lg:hidden text-muted-foreground hover:text-foreground"
             >
               <X className="w-5 h-5" />
             </button>
@@ -154,18 +155,18 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
 
           {/* Organization info */}
           {organization && (
-            <div className="px-6 py-4 border-b border-gray-800">
-              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">
+            <div className="px-6 py-4">
+              <div className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-1">
                 Organization
               </div>
-              <div className="text-sm font-medium text-gray-200 truncate">
+              <div className="text-sm font-medium truncate">
                 {organization.name}
               </div>
             </div>
           )}
 
           {/* Navigation */}
-          <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+          <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
             {filteredNavigation.map((item) => {
               const Icon = item.icon;
               const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
@@ -174,18 +175,15 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 <Link
                   key={item.name}
                   href={item.href}
-                  className={`
-                    flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
-                    transition-colors duration-150
-                    ${
-                      isActive
-                        ? "bg-blue-600 text-white"
-                        : "text-gray-400 hover:text-white hover:bg-gray-800"
-                    }
-                  `}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-300 ease-in-out border border-transparent",
+                    isActive
+                      ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
+                      : "text-muted-foreground hover:bg-accent/50 hover:text-primary hover:border-primary/10 hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-0.5"
+                  )}
                   onClick={() => setSidebarOpen(false)}
                 >
-                  <Icon className="w-5 h-5" />
+                  <Icon className="w-4 h-4" />
                   {item.name}
                 </Link>
               );
@@ -193,172 +191,107 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
           </nav>
 
           {/* User menu */}
-          <div className="border-t border-gray-800 p-4">
+          <div className="border-t border-border p-4">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                <User className="w-5 h-5 text-white" />
+              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                <User className="w-4 h-4 text-muted-foreground" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-white truncate">
+                <div className="text-sm font-medium truncate">
                   {user?.full_name || user?.email}
                 </div>
-                <div className="text-xs text-gray-400 capitalize">{user?.role}</div>
+                <div className="text-xs text-muted-foreground capitalize">{user?.role}</div>
               </div>
             </div>
-            <button
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-2 text-muted-foreground"
               onClick={handleLogout}
-              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
             >
               <LogOut className="w-4 h-4" />
               Sign Out
-            </button>
+            </Button>
           </div>
         </div>
       </aside>
 
       {/* Main content */}
-      <div className="lg:pl-64">
+      <div className="flex-1 flex flex-col min-w-0 bg-muted/10">
         {/* Top bar */}
-        <header className="sticky top-0 z-30 bg-gray-900/95 backdrop-blur-sm border-b border-gray-800">
-          <div className="flex items-center justify-between px-4 py-4 lg:px-6">
-            <div className="flex items-center gap-4">
-              {/* Mobile menu button */}
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="lg:hidden text-gray-400 hover:text-white"
-              >
-                <Menu className="w-6 h-6" />
-              </button>
+        <header className="sticky top-0 z-30 h-16 bg-background/80 backdrop-blur-md border-b border-border px-4 lg:px-8 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="lg:hidden text-muted-foreground hover:text-foreground"
+            >
+              <Menu className="w-6 h-6" />
+            </button>
 
-              {/* Breadcrumbs */}
-              {breadcrumbs && breadcrumbs.length > 0 && (
-                <nav className="flex items-center gap-2 text-sm">
-                  {breadcrumbs.map((crumb, index) => (
-                    <React.Fragment key={index}>
-                      {index > 0 && (
-                        <ChevronRight className="w-4 h-4 text-gray-600" />
-                      )}
-                      {crumb.href ? (
-                        <Link
-                          href={crumb.href}
-                          className="text-gray-400 hover:text-white transition-colors"
-                        >
-                          {crumb.label}
-                        </Link>
-                      ) : (
-                        <span className="text-gray-200 font-medium">
-                          {crumb.label}
-                        </span>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </nav>
-              )}
-            </div>
+            {breadcrumbs && breadcrumbs.length > 0 && (
+              <nav className="hidden md:flex items-center gap-2 text-sm">
+                {breadcrumbs.map((crumb, index) => (
+                  <React.Fragment key={index}>
+                    {index > 0 && (
+                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                    )}
+                    {crumb.href ? (
+                      <Link
+                        href={crumb.href}
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {crumb.label}
+                      </Link>
+                    ) : (
+                      <span className="font-medium text-foreground">
+                        {crumb.label}
+                      </span>
+                    )}
+                  </React.Fragment>
+                ))}
+              </nav>
+            )}
+          </div>
 
-            {/* Top bar actions */}
-            <div className="flex items-center gap-3">
-              {organization && organization.onboarding_status !== 'completed' && (
-                <Link
-                  href="/onboarding"
-                  className="inline-flex items-center rounded-lg px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-sm font-medium"
-                >
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" className="text-muted-foreground">
+              <Bell className="w-5 h-5" />
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn("gap-2", isCopilotOpen && "bg-accent text-accent-foreground")}
+              onClick={toggleCopilot}
+            >
+              <Bot className="w-4 h-4" />
+              <span className="hidden sm:inline">Copilot</span>
+            </Button>
+
+            {organization && organization.onboarding_status !== 'completed' && (
+              <Button asChild variant="default" size="sm">
+                <Link href="/onboarding">
                   Start setup
                 </Link>
-              )}
-              {organization && organization.onboarding_status === 'completed' && telemetry && !telemetry.hasLogs && (
-                <button
-                  className="inline-flex items-center rounded-lg px-3 py-2 bg-gray-700 text-gray-200 cursor-default text-sm"
-                  title="Waiting for first events"
-                >
-                  Awaiting data
-                </button>
-              )}
-
-              {/* User Dropdown */}
-              <div className="relative" data-user-dropdown>
-                <button
-                  onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                  className="flex items-center gap-2 p-2 hover:bg-gray-800 rounded-lg transition-colors"
-                >
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                    <User className="w-4 h-4 text-white" />
-                  </div>
-                  <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${userDropdownOpen ? 'rotate-90' : ''}`} />
-                </button>
-
-                {/* Dropdown Menu */}
-                {userDropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-64 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50">
-                    {/* User Info */}
-                    <div className="px-4 py-3 border-b border-gray-700">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                          <User className="w-5 h-5 text-white" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-white truncate">
-                            {user?.full_name || user?.email}
-                          </div>
-                          <div className="text-xs text-gray-400 capitalize">{user?.role}</div>
-                        </div>
-                      </div>
-                      {organization && (
-                        <div className="mt-2 pt-2 border-t border-gray-700">
-                          <div className="text-xs text-gray-500">Organization</div>
-                          <div className="text-sm text-gray-300 truncate">{organization.name}</div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Menu Items */}
-                    <div className="py-2">
-                      <Link
-                        href="/settings"
-                        className="flex items-center gap-3 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
-                        onClick={() => setUserDropdownOpen(false)}
-                      >
-                        <Settings className="w-4 h-4" />
-                        Settings
-                      </Link>
-                      <button
-                        onClick={() => {
-                          setUserDropdownOpen(false);
-                          handleLogout();
-                        }}
-                        className="flex items-center gap-3 w-full px-4 py-2 text-sm text-red-400 hover:bg-gray-700 transition-colors"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        Sign Out
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
+              </Button>
+            )}
           </div>
         </header>
 
         {/* Page content */}
-        <main className="p-4 lg:p-6">{children}</main>
+        <main className="flex-1 p-4 lg:p-8 overflow-y-auto">
+          <div className="max-w-7xl mx-auto space-y-6">
+             {children}
+          </div>
+        </main>
       </div>
+
+      {/* Copilot Sidebar */}
+      <CopilotSidebar
+        isOpen={isCopilotOpen}
+        onClose={toggleCopilot}
+        selectedIncidentId={copilotContext?.incidentId}
+        incidentData={copilotContext?.incidentData}
+      />
     </div>
   );
 };
-
-function Shield(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </svg>
-  );
-}

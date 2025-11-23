@@ -1,21 +1,31 @@
-const BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
+import { apiUrl, getApiKey, resolveApiBaseUrl } from "@/app/utils/api";
+
+const API_KEY = getApiKey();
+const BASE_OVERRIDE = resolveApiBaseUrl();
 
 interface RequestOptions {
   method?: string;
   headers?: Record<string, string>;
   body?: unknown;
   skipAuth?: boolean;  // Option to skip JWT auth for login/register
+  suppressLogoutOn401?: boolean; // Prevent auto-logout/redirect on 401 for background probes
 }
 
+const buildRequestUrl = (endpoint: string): string => {
+  if (BASE_OVERRIDE !== null) {
+    return apiUrl(endpoint, BASE_OVERRIDE);
+  }
+  return apiUrl(endpoint);
+};
+
 async function apiRequest(endpoint: string, options: RequestOptions = {}) {
-  const url = `${BASE}${endpoint}`;
-  
+  const url = buildRequestUrl(endpoint);
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...options.headers,
   };
-  
+
   // Add JWT token if available and not skipped
   if (!options.skipAuth) {
     if (typeof window !== 'undefined') {
@@ -25,26 +35,30 @@ async function apiRequest(endpoint: string, options: RequestOptions = {}) {
       }
     }
   }
-  
+
   if (API_KEY) {
     headers["x-api-key"] = API_KEY;
   }
-  
+
   const config: RequestInit = {
     method: options.method || "GET",
     headers,
     cache: "no-store",
   };
-  
+
   if (options.body) {
     config.body = JSON.stringify(options.body);
   }
-  
+
   try {
     const response = await fetch(url, config);
-    
+
     // Handle 401 Unauthorized - redirect to login
     if (response.status === 401 && typeof window !== 'undefined') {
+      if (options.suppressLogoutOn401) {
+        // Return null quietly for background/optional probes
+        return null as any;
+      }
       console.warn('Authentication expired or invalid, redirecting to login...');
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
@@ -53,13 +67,13 @@ async function apiRequest(endpoint: string, options: RequestOptions = {}) {
       }
       throw new Error('Authentication required');
     }
-    
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`API Error: ${response.status} ${response.statusText}`, errorText);
       throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorText}`);
     }
-    
+
     const data = await response.json();
     console.log(`✅ API Success: ${options.method || 'GET'} ${endpoint}`, data);
     return data;
@@ -126,7 +140,7 @@ export async function unblockIncident(id: number) {
 }
 
 export async function containIncident(id: number, durationSeconds?: number) {
-  const url = durationSeconds 
+  const url = durationSeconds
     ? `/api/incidents/${id}/contain?duration_seconds=${durationSeconds}`
     : `/api/incidents/${id}/contain`;
   return apiRequest(url, { method: "POST" });
@@ -155,7 +169,7 @@ export async function getHealth() {
 
 export async function socBlockIP(incidentId: number, durationSeconds?: number) {
   const body = durationSeconds ? { duration_seconds: durationSeconds } : {};
-  return apiRequest(`/api/incidents/${incidentId}/actions/block-ip`, { 
+  return apiRequest(`/api/incidents/${incidentId}/actions/block-ip`, {
     method: "POST",
     body: body
   });
@@ -166,15 +180,15 @@ export async function socUnblockIP(incidentId: number) {
 }
 
 export async function getBlockStatus(incidentId: number) {
-  return apiRequest(`/api/incidents/${incidentId}/block-status`);
+  return apiRequest(`/api/incidents/${incidentId}/block-status`, { suppressLogoutOn401: true });
 }
 
 export async function socIsolateHost(incidentId: number, isolationLevel?: string, durationSeconds?: number) {
   const body: { isolation_level?: string; duration_seconds?: number } = {};
   if (isolationLevel) body.isolation_level = isolationLevel;
   if (durationSeconds) body.duration_seconds = durationSeconds;
-  
-  return apiRequest(`/api/incidents/${incidentId}/actions/isolate-host`, { 
+
+  return apiRequest(`/api/incidents/${incidentId}/actions/isolate-host`, {
     method: "POST",
     body: Object.keys(body).length > 0 ? body : undefined
   });
@@ -224,7 +238,30 @@ export async function socCreateCase(incidentId: number) {
 export async function agentOrchestrate(query: string, incident_id?: number, context?: Record<string, unknown>) {
   return apiRequest("/api/agents/orchestrate", {
     method: "POST",
-    body: { query, incident_id, context }
+    body: {
+      query,
+      incident_id,
+      context,
+      agent_type: "copilot" // Use new copilot handler
+    }
+  });
+}
+
+// Agent Action Confirmation API
+export async function confirmAgentAction(
+  pending_action_id: string,
+  approved: boolean,
+  incident_id?: number,
+  context?: Record<string, unknown>
+) {
+  return apiRequest("/api/agents/confirm-action", {
+    method: "POST",
+    body: {
+      pending_action_id,
+      approved,
+      incident_id,
+      context
+    }
   });
 }
 
@@ -236,7 +273,7 @@ export async function getAvailableResponseActions(category?: string) {
   if (category && category !== 'all') {
     params.append('category', category);
   }
-  
+
   return apiRequest(`/api/response/actions${params.toString() ? '?' + params.toString() : ''}`);
 }
 
@@ -321,7 +358,7 @@ export async function listResponseWorkflows(filters?: {
   if (filters?.incident_id) params.append('incident_id', filters.incident_id.toString());
   if (filters?.status) params.append('status', filters.status);
   if (filters?.limit) params.append('limit', filters.limit.toString());
-  
+
   return apiRequest(`/api/response/workflows${params.toString() ? '?' + params.toString() : ''}`);
 }
 
@@ -338,7 +375,7 @@ export async function getResponseImpactMetrics(filters?: {
   if (filters?.workflow_id) params.append('workflow_id', filters.workflow_id);
   if (filters?.incident_id) params.append('incident_id', filters.incident_id.toString());
   if (filters?.days_back) params.append('days_back', filters.days_back.toString());
-  
+
   return apiRequest(`/api/response/metrics/impact${params.toString() ? '?' + params.toString() : ''}`);
 }
 
@@ -365,7 +402,7 @@ export async function getPlaybookTemplates(category?: string) {
   if (category && category !== 'all') {
     params.append('category', category);
   }
-  
+
   return apiRequest(`/api/workflows/templates${params.toString() ? '?' + params.toString() : ''}`);
 }
 

@@ -5,7 +5,6 @@ Integration Manager for cloud provider credentials and lifecycle management
 import base64
 import json
 import logging
-import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -13,11 +12,14 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import IntegrationCredentials
-from ..secrets_manager import secrets_manager
-from .aws import AWSIntegration
 from .azure import AzureIntegration
 from .base import CloudIntegration
 from .gcp import GCPIntegration
+
+try:
+    from .aws import AWSIntegration  # type: ignore
+except Exception:  # pragma: no cover - optional
+    AWSIntegration = None
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +31,11 @@ class IntegrationManager:
         self.organization_id = organization_id
         self.db = db
         self.integrations = {
-            "aws": AWSIntegration,
             "azure": AzureIntegration,
             "gcp": GCPIntegration,
         }
+        if AWSIntegration:
+            self.integrations["aws"] = AWSIntegration
         logger.info(f"Initialized IntegrationManager for org {organization_id}")
 
     async def setup_integration(
@@ -306,9 +309,9 @@ class IntegrationManager:
         Encrypt sensitive credential data
 
         In production, this should use:
-        - AWS KMS for key management
+        - A proper key management service
         - Organization-specific encryption keys
-        - Proper key rotation
+        - Key rotation and audit trails
 
         For MVP, we'll use a simple approach with base64 encoding
         (Note: This is NOT production-ready encryption!)
@@ -380,7 +383,7 @@ class IntegrationManager:
             else:
                 return "unknown"
 
-        elif provider == "azure":
+        if provider == "azure":
             if "client_id" in credentials and "client_secret" in credentials:
                 return "service_principal"
             else:
@@ -393,41 +396,3 @@ class IntegrationManager:
                 return "unknown"
 
         return "unknown"
-
-    def _get_org_encryption_key(self) -> bytes:
-        """
-        Get organization-specific encryption key
-
-        In production, this should:
-        - Use AWS KMS or similar
-        - Generate unique keys per organization
-        - Support key rotation
-        - Store keys securely
-
-        For MVP, we'll use a simple master key from environment
-        """
-        # Production approach:
-        # key_id = f"org-{self.organization_id}-encryption-key"
-        # return kms_client.get_data_key(KeyId=key_id)
-
-        # MVP approach: Use master key from environment or Secrets Manager
-        master_key = os.getenv("INTEGRATION_ENCRYPTION_KEY")
-        if not master_key:
-            # Try to get from Secrets Manager
-            master_key = secrets_manager.get_secret(
-                "mini-xdr/integration-encryption-key"
-            )
-
-        if not master_key:
-            # Generate a default key (NOT for production!)
-            logger.warning("Using default encryption key - NOT for production!")
-            master_key = "mini-xdr-default-key-change-in-production-" + str(
-                self.organization_id
-            )
-
-        # In production, use proper key derivation
-        # from cryptography.hazmat.primitives import hashes
-        # from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-        # ...
-
-        return master_key.encode()[:32]  # Simplified for MVP

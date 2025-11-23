@@ -1,0 +1,461 @@
+"use client";
+
+import React, { use, useState } from "react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Clock, Shield, AlertTriangle, User, CheckCircle, MoreVertical, Activity, Share2, Search, MessageSquare, Send, BrainCircuit, ChevronDown, ChevronUp, Bot, History, Zap, Terminal, Menu, Play } from "lucide-react";
+import { useIncidentRealtime } from "@/app/hooks/useIncidentRealtime";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+
+import ThreatScoreCard from "@/components/v2/ThreatScoreCard";
+import InteractiveTimeline from "@/components/v2/InteractiveTimeline";
+import ActionCard from "@/components/v2/ActionCard";
+import ActionHistorySheet from "@/components/v2/ActionHistorySheet";
+import AgentCapabilitiesSheet from "@/components/v2/AgentCapabilitiesSheet";
+
+export default function RedesignedIncidentPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  const incidentId = parseInt(id);
+  const router = useRouter();
+  const [isAgentActionsOpen, setIsAgentActionsOpen] = useState(true);
+  const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isCapabilitiesOpen, setIsCapabilitiesOpen] = useState(false);
+  const [selectedAgentAction, setSelectedAgentAction] = useState<any>(null);
+
+  const {
+    incident,
+    loading,
+    refreshIncident
+  } = useIncidentRealtime({
+    incidentId,
+    autoRefresh: false,
+    refreshInterval: 10000
+  });
+
+  // Mock Fallback for Testing
+  const mockIncident = {
+      id: 123,
+      status: 'open',
+      risk_score: 85,
+      src_ip: '45.142.212.61',
+      created_at: new Date().toISOString(),
+      triage_note: {
+          rationale: ['Known Malicious IP', 'Brute Force Pattern', 'High Volume Traffic'],
+          summary: "Multiple failed SSH login attempts detected from a known malicious IP address. The traffic pattern matches distinct brute-force signatures.",
+          recommendation: "Immediate IP Block and Firewall Rule Update"
+      },
+      agent_actions: [
+          { action: "Analyzed IP Reputation", status: "completed", timestamp: new Date(Date.now() - 1000 * 300).toISOString(), execution_method: "automated", detail: "IP found in AbuseIPDB with 100% confidence score." },
+          { action: "Correlated with Threat Feeds", status: "completed", timestamp: new Date(Date.now() - 1000 * 240).toISOString(), execution_method: "automated", detail: "Matched known C2 server list from AlienVault OTX." },
+          { action: "Checked Active Sessions", status: "completed", timestamp: new Date(Date.now() - 1000 * 180).toISOString(), execution_method: "automated", detail: "No active established sessions found for source IP." },
+      ],
+      detailed_events: Array.from({ length: 20 }).map((_, i) => ({
+          ts: new Date(Date.now() - 1000 * 60 * i).toISOString(),
+          eventid: i % 3 === 0 ? 'SSH_FAIL' : 'NET_FLOW',
+          message: i % 3 === 0 ? `Failed password for invalid user admin from ${'45.142.212.61'} port ${45000+i} ssh2` : `Connection attempt from ${'45.142.212.61'}`
+      }))
+  };
+
+  const activeIncident = (!loading && incident) ? incident : mockIncident;
+
+  // Mock Action History Data
+  const allActions = [
+      ...(activeIncident.agent_actions || []).map((a: any) => ({ ...a, agent_type: 'edr', id: Math.random().toString(36).substr(2, 9) })),
+      { id: "101", action: "Block IP in Firewall", status: "completed", timestamp: new Date(Date.now() - 1000 * 120).toISOString(), execution_method: "automated", detail: "Added deny rule for 45.142.212.61 to edge firewall.", result_data: { rule_id: "DENY-4421", firewall: "AWS-WAF" } },
+      { id: "102", action: "Isolate Host", status: "failed", timestamp: new Date(Date.now() - 1000 * 60).toISOString(), execution_method: "automated", error_details: { code: "PERMISSION_DENIED", message: "Agent offline" } }
+  ];
+
+  if (loading && !incident) {
+    // Fallback for initial load only
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-background text-foreground">
+        <div className="flex flex-col items-center gap-4">
+          <Activity className="w-12 h-12 animate-pulse text-primary" />
+          <p className="text-muted-foreground">Loading Incident Intelligence...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const timeActive = "2h 15m"; 
+  
+  const riskFactors = activeIncident.triage_note?.rationale?.map((r: string) => ({
+    label: r,
+    score: 10,
+    type: 'negative' as const
+  })) || [];
+
+  return (
+    <div className="h-screen w-full bg-background text-foreground flex flex-col overflow-hidden relative">
+      
+      {/* Action History Sheet */}
+      <ActionHistorySheet 
+         isOpen={isHistoryOpen} 
+         onClose={() => setIsHistoryOpen(false)} 
+         actions={allActions}
+         onRollback={(id) => alert(`Rollback requested for action ${id}`)}
+      />
+
+      {/* Agent Capabilities Sheet */}
+      <AgentCapabilitiesSheet 
+         isOpen={isCapabilitiesOpen}
+         onClose={() => setIsCapabilitiesOpen(false)}
+         onExecute={(actionId) => {
+            alert(`Executing: ${actionId}`);
+            // In production, this would call the backend API
+         }}
+      />
+
+      {/* Selected Agent Action Detail (if clicked from list) */}
+      {selectedAgentAction && (
+         <ActionHistorySheet 
+            isOpen={!!selectedAgentAction} 
+            onClose={() => setSelectedAgentAction(null)} 
+            actions={[selectedAgentAction]}
+         />
+      )}
+
+      {/* A. Global Command Header */}
+      <header className="border-b bg-card px-6 py-3 flex items-center justify-between shrink-0 z-20 shadow-sm">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={() => router.push('/incidents')} className="mr-2">
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+            <div>
+              <h1 className="text-xl font-bold flex items-center gap-3">
+                Incident #{activeIncident.id}
+                <Badge variant={activeIncident.status === 'open' ? 'destructive' : activeIncident.status === 'investigating' ? 'secondary' : 'outline'} className="uppercase">
+                  {activeIncident.status}
+                </Badge>
+              </h1>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-mono">{activeIncident.src_ip}</Badge>
+                <span>•</span>
+                <span>Created {new Date(activeIncident.created_at).toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 bg-muted/30 px-4 py-1.5 rounded-full border border-border/50">
+            <Clock className="w-4 h-4 text-orange-500" />
+            <span className="text-sm font-medium font-mono">{timeActive}</span>
+            <span className="text-xs text-muted-foreground">Time Active</span>
+        </div>
+
+        <div className="flex items-center gap-3">
+           {/* Global Copilot Trigger */}
+          <Button 
+            variant={isCopilotOpen ? "default" : "outline"} 
+            size="sm" 
+            className="gap-2 mr-2 hidden md:flex"
+            onClick={() => setIsCopilotOpen(!isCopilotOpen)}
+          >
+             <Bot className="w-4 h-4" />
+             Copilot
+          </Button>
+
+          <Separator orientation="vertical" className="h-8" />
+          
+          <div className="flex items-center gap-2 mr-2">
+             <Avatar className="h-8 w-8 border">
+                <AvatarFallback>AI</AvatarFallback>
+             </Avatar>
+             <div className="flex flex-col text-xs hidden lg:flex">
+                <span className="font-medium">System Assignee</span>
+                <span className="text-muted-foreground">Auto-Pilot</span>
+             </div>
+          </div>
+          
+          <Button variant="destructive" size="sm" className="gap-2">
+             <AlertTriangle className="w-4 h-4" />
+             Escalate
+          </Button>
+          <Button variant="outline" size="sm" className="gap-2">
+             <CheckCircle className="w-4 h-4" />
+             Close
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+               <Button variant="ghost" size="icon">
+                 <MoreVertical className="w-4 h-4" />
+               </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+               <DropdownMenuItem onClick={() => setIsHistoryOpen(true)}>
+                  <History className="w-4 h-4 mr-2" />
+                  View Action History
+               </DropdownMenuItem>
+               <DropdownMenuItem>
+                  <Share2 className="w-4 h-4 mr-2" />
+                  Share Incident
+               </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </header>
+
+      {/* Main Grid Layout */}
+      <main className="flex-1 grid grid-cols-[20%_50%_30%] overflow-hidden divide-x divide-border">
+        
+        {/* B. Column 1: Context & Intelligence */}
+        <aside className="h-full overflow-y-auto bg-card/50 p-4 flex flex-col gap-6">
+           {/* AI Threat Score */}
+           <ThreatScoreCard 
+             score={activeIncident.risk_score || 0} 
+             factors={riskFactors} 
+           />
+
+           {/* Enhanced AI Analysis Section */}
+           <div className="space-y-3">
+              <h3 className="text-sm font-semibold flex items-center gap-2 text-primary">
+                <BrainCircuit className="w-4 h-4" />
+                AI Analysis
+              </h3>
+              <Card className="bg-primary/5 border-primary/10">
+                 <CardContent className="p-4 space-y-4">
+                    <div>
+                        <h4 className="text-xs font-semibold text-foreground mb-1">Summary</h4>
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                            {activeIncident.triage_note?.summary || "Automated analysis detected anomalous behavior consistent with known attack patterns."}
+                        </p>
+                    </div>
+                    <Separator className="bg-primary/10" />
+                    <div>
+                        <h4 className="text-xs font-semibold text-foreground mb-1">Recommendation</h4>
+                        <p className="text-xs font-medium text-primary">
+                            {activeIncident.triage_note?.recommendation || "Investigate source IP and block if malicious."}
+                        </p>
+                    </div>
+                    <Separator className="bg-primary/10" />
+                    <div>
+                        <h4 className="text-xs font-semibold text-foreground mb-1">Why this Action?</h4>
+                        <ul className="space-y-1">
+                           <li className="text-[10px] text-muted-foreground flex gap-2">
+                              <span className="text-primary">•</span>
+                              Source IP has a high confidence abuse score (98%).
+                           </li>
+                           <li className="text-[10px] text-muted-foreground flex gap-2">
+                              <span className="text-primary">•</span>
+                              Attack pattern matches known botnet signatures.
+                           </li>
+                        </ul>
+                    </div>
+                 </CardContent>
+              </Card>
+           </div>
+
+           {/* Entity Card */}
+           <Card>
+             <CardHeader className="pb-2">
+               <CardTitle className="text-sm font-medium text-muted-foreground">Primary Entity</CardTitle>
+             </CardHeader>
+             <CardContent>
+                <div className="flex items-center gap-3 mb-3">
+                   <div className="p-2 bg-muted rounded-md">
+                      <Shield className="w-5 h-5 text-primary" />
+                   </div>
+                   <div>
+                      <div className="font-mono text-sm font-bold">{activeIncident.src_ip}</div>
+                      <div className="text-xs text-muted-foreground">External IP</div>
+                   </div>
+                </div>
+             </CardContent>
+           </Card>
+        </aside>
+
+        {/* C. Column 2: Investigation Workspace */}
+        <section className="h-full flex flex-col overflow-hidden bg-background relative">
+          
+          {/* Visual Timeline */}
+          <div className="h-48 border-b bg-muted/10 p-4 flex flex-col">
+             <div className="flex justify-between items-center mb-2 shrink-0">
+                <h3 className="text-sm font-medium">Event Timeline</h3>
+                <div className="flex gap-2">
+                   <Badge variant="outline" className="text-[10px] cursor-pointer hover:bg-muted">1h</Badge>
+                   <Badge variant="outline" className="text-[10px] cursor-pointer hover:bg-muted">24h</Badge>
+                </div>
+             </div>
+             <div className="flex-1 min-h-0">
+                <InteractiveTimeline events={activeIncident.detailed_events || []} />
+             </div>
+          </div>
+
+          {/* AI Agent Actions (Collapsible) */}
+          <div className="border-b bg-muted/5">
+            <Collapsible open={isAgentActionsOpen} onOpenChange={setIsAgentActionsOpen}>
+                <div className="flex items-center justify-between px-4 py-2">
+                    <h3 className="text-xs font-semibold flex items-center gap-2 text-muted-foreground">
+                        <Bot className="w-3 h-3" />
+                        AI Agent Actions
+                    </h3>
+                    <div className="flex items-center gap-2">
+                       <Button variant="ghost" size="sm" className="h-6 text-[10px] text-muted-foreground hover:text-primary" onClick={() => setIsHistoryOpen(true)}>
+                          View All History
+                       </Button>
+                       <CollapsibleTrigger asChild>
+                           <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                               {isAgentActionsOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                           </Button>
+                       </CollapsibleTrigger>
+                    </div>
+                </div>
+                <CollapsibleContent>
+                    <div className="px-4 pb-3 space-y-1">
+                        {activeIncident.agent_actions?.map((action: any, idx: number) => (
+                            <button
+                               key={idx}
+                               onClick={() => setSelectedAgentAction(action)}
+                               className="w-full flex items-center gap-2 text-xs p-2 rounded-md hover:bg-primary/10 hover:border-primary/20 border border-transparent transition-all group"
+                            >
+                                <CheckCircle className="w-3 h-3 text-green-500 shrink-0" />
+                                <span className="font-medium flex-1 text-left group-hover:text-primary">{action.action}</span>
+                                <span className="text-muted-foreground text-[10px]">{new Date(action.timestamp).toLocaleTimeString()}</span>
+                            </button>
+                        )) || <div className="text-xs text-muted-foreground italic px-2 py-1">No agent actions recorded.</div>}
+                    </div>
+                </CollapsibleContent>
+            </Collapsible>
+          </div>
+
+          {/* Graph Toggle / Events Area */}
+          <div className="flex-1 flex flex-col min-h-0">
+             <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/20">
+                <div className="flex gap-1">
+                   <Button variant="ghost" size="sm" className="h-8 text-xs font-medium bg-background shadow-sm">Events</Button>
+                   <Button variant="ghost" size="sm" className="h-8 text-xs font-medium text-muted-foreground">Graph</Button>
+                </div>
+                <div className="relative w-64">
+                   <Search className="absolute left-2 top-1.5 w-4 h-4 text-muted-foreground" />
+                   <Input 
+                      className="w-full h-8 pl-8 pr-4 text-xs bg-background border-muted focus-visible:ring-1"
+                      placeholder="Filter logs..."
+                   />
+                </div>
+             </div>
+             
+             <ScrollArea className="flex-1">
+                <div className="divide-y divide-border/50">
+                   {activeIncident.detailed_events?.map((event: any, idx: number) => (
+                      <div key={idx} className="p-2 px-4 hover:bg-muted/40 text-xs font-mono flex gap-4 items-start group transition-colors">
+                         <span className="text-muted-foreground w-24 shrink-0 opacity-70 group-hover:opacity-100">
+                            {new Date(event.ts).toLocaleTimeString()}
+                         </span>
+                         <div className="flex-1">
+                            <span className="text-primary font-bold mr-2 opacity-80">[{event.eventid}]</span>
+                            <span className="text-foreground/90">{event.message}</span>
+                         </div>
+                      </div>
+                   )) || <div className="p-8 text-center text-muted-foreground">No events found</div>}
+                </div>
+             </ScrollArea>
+          </div>
+        </section>
+
+        {/* D. Column 3: Response & Automation */}
+        <aside className="h-full overflow-y-auto bg-card/30 p-4 flex flex-col gap-6">
+           
+           {/* Quick Actions */}
+           <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                 <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-primary" />
+                    Quick Actions
+                 </h3>
+                 <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-7 text-[10px] text-primary hover:text-primary/80"
+                    onClick={() => setIsCapabilitiesOpen(true)}
+                 >
+                    <Zap className="w-3 h-3 mr-1" />
+                    More Actions
+                 </Button>
+              </div>
+              
+              <ActionCard 
+                 title="Block Source IP"
+                 description={`Stop all traffic from ${activeIncident.src_ip}.`}
+                 confidence={98}
+                 impact="Low"
+                 impactDescription="This will disconnect 0 other active sessions. No internal services affected."
+                 onExecute={async () => {
+                    await new Promise(r => setTimeout(r, 2000));
+                    alert("Action executed: Block IP");
+                 }}
+              />
+              
+              <ActionCard 
+                 title="Isolate Host"
+                 description="Quarantine the affected host from the network."
+                 confidence={85}
+                 impact="High"
+                 impactDescription="This will disrupt all network services on the host."
+                 onExecute={async () => {
+                    await new Promise(r => setTimeout(r, 2000));
+                    alert("Action executed: Isolate Host");
+                 }}
+              />
+           </div>
+
+           {/* Playbook Progress */}
+           <div className="space-y-3">
+               <h3 className="text-sm font-semibold">Auto-Remediation</h3>
+               <div className="space-y-4 pl-2 relative border-l-2 border-muted ml-2 py-2">
+                  <div className="relative pl-6">
+                     <div className="absolute -left-[21px] top-0 w-4 h-4 rounded-full bg-green-500 border-2 border-background"></div>
+                     <p className="text-xs font-medium">Detection</p>
+                     <p className="text-[10px] text-muted-foreground">Triggered by SSH anomaly</p>
+                  </div>
+                  <div className="relative pl-6">
+                     <div className="absolute -left-[21px] top-0 w-4 h-4 rounded-full bg-blue-500 border-2 border-background animate-pulse"></div>
+                     <p className="text-xs font-medium">Containment</p>
+                     <p className="text-[10px] text-muted-foreground">In Progress...</p>
+                  </div>
+               </div>
+           </div>
+
+           {/* Copilot / Notes Section */}
+           {isCopilotOpen && (
+               <div className="flex-1 flex flex-col min-h-[300px] bg-card border rounded-md shadow-lg overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
+                  <div className="bg-primary/10 px-3 py-2 border-b flex items-center justify-between">
+                     <div className="flex items-center gap-2">
+                        <Bot className="w-4 h-4 text-primary" />
+                        <span className="text-xs font-medium">Security Copilot</span>
+                     </div>
+                     <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setIsCopilotOpen(false)}>
+                         <ChevronDown className="w-3 h-3" />
+                     </Button>
+                  </div>
+                  <div className="flex-1 p-3 overflow-y-auto space-y-3">
+                     <div className="flex gap-2">
+                        <Avatar className="w-6 h-6 shrink-0">
+                           <AvatarFallback className="bg-primary text-primary-foreground text-[10px]">AI</AvatarFallback>
+                        </Avatar>
+                        <div className="bg-muted p-2 rounded-lg rounded-tl-none text-xs">
+                           Based on the logs, this appears to be a brute force attack. Recommendation: Block IP immediately.
+                        </div>
+                     </div>
+                  </div>
+                  <div className="p-2 border-t bg-background flex gap-2">
+                     <Input className="h-8 text-xs" placeholder="Ask Copilot..." />
+                     <Button size="icon" className="h-8 w-8 shrink-0">
+                        <Send className="w-3 h-3" />
+                     </Button>
+                  </div>
+               </div>
+           )}
+        </aside>
+      </main>
+    </div>
+  );
+}

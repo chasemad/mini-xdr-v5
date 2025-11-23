@@ -198,3 +198,297 @@ async def agent_check_in(request: Dict, db: AsyncSession = Depends(get_db)):
         # Heartbeat request
         heartbeat_request = AgentHeartbeatRequest(**request)
         return await agent_heartbeat(heartbeat_request, db)
+
+
+# =============================================================================
+# AI Agent Coordination Endpoints (Phase 2)
+# =============================================================================
+
+
+class CoordinationHubStatusResponse(BaseModel):
+    """Response model for coordination hub status"""
+
+    status: str
+    total_incidents_coordinated: int
+    active_agents: List[str]
+    coordination_metrics: Dict
+    last_coordination_timestamp: Optional[str] = None
+
+
+class AIAgentStatusResponse(BaseModel):
+    """Response model for AI agent status"""
+
+    agent_name: str
+    status: str
+    decisions_count: int
+    performance_metrics: Dict
+    last_active_timestamp: Optional[str] = None
+
+
+class AgentDecisionResponse(BaseModel):
+    """Response model for agent decisions"""
+
+    agent_name: str
+    decisions: List[Dict]
+    total_count: int
+
+
+class IncidentCoordinationResponse(BaseModel):
+    """Response model for incident agent coordination"""
+
+    incident_id: int
+    coordination_status: str
+    participating_agents: List[str]
+    agent_decisions: Dict
+    coordination_timeline: List[Dict]
+    recommendations: List[str]
+
+
+@router.get("/coordination-hub/status")
+async def get_coordination_hub_status(db: AsyncSession = Depends(get_db)):
+    """
+    Get overall coordination hub status (Phase 2)
+
+    Returns coordination hub metrics including active agents, coordination count,
+    and performance statistics.
+    """
+    try:
+        from .agents.coordination_hub import get_coordination_hub
+
+        # Get coordination hub instance and status
+        hub = await get_coordination_hub()
+        status = hub.get_coordination_status()
+
+        return CoordinationHubStatusResponse(
+            status="operational",
+            total_incidents_coordinated=status.get("total_coordinations", 0),
+            active_agents=status.get("active_agents", []),
+            coordination_metrics=status.get("metrics", {}),
+            last_coordination_timestamp=status.get(
+                "last_coordination_time", datetime.now(timezone.utc).isoformat()
+            ),
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get coordination hub status: {e}")
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve coordination hub status"
+        )
+
+
+@router.get("/ai/{agent_name}/status")
+async def get_ai_agent_status(agent_name: str, db: AsyncSession = Depends(get_db)):
+    """
+    Get status for a specific AI agent (Phase 2)
+
+    Available agents: attribution, containment, forensics, deception, dlp,
+    hunting, response_optimizer, effectiveness_tracker
+    """
+    try:
+        # Map agent names to their instances
+        agent_map = {}
+
+        try:
+            from .agents import (
+                attribution_tracker,
+                containment_orchestrator,
+                deception_manager,
+                forensics_investigator,
+            )
+
+            agent_map.update(
+                {
+                    "attribution": attribution_tracker,
+                    "containment": containment_orchestrator,
+                    "forensics": forensics_investigator,
+                    "deception": deception_manager,
+                }
+            )
+        except ImportError as e:
+            logger.warning(f"Some agents not available: {e}")
+
+        if agent_name not in agent_map:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Agent '{agent_name}' not found. Available: {list(agent_map.keys())}",
+            )
+
+        agent = agent_map[agent_name]
+
+        # Get agent performance metrics if available
+        performance_metrics = {}
+        if hasattr(agent, "get_performance_metrics"):
+            performance_metrics = agent.get_performance_metrics()
+
+        # Get decision count
+        decisions_count = 0
+        if hasattr(agent, "decision_history"):
+            decisions_count = len(agent.decision_history)
+
+        return AIAgentStatusResponse(
+            agent_name=agent_name,
+            status="operational",
+            decisions_count=decisions_count,
+            performance_metrics=performance_metrics,
+            last_active_timestamp=datetime.now(timezone.utc).isoformat(),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get AI agent status for {agent_name}: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to retrieve agent status: {str(e)}"
+        )
+
+
+@router.get("/ai/{agent_name}/decisions")
+async def get_ai_agent_decisions(
+    agent_name: str, limit: int = 50, db: AsyncSession = Depends(get_db)
+):
+    """
+    Get recent decisions made by a specific AI agent (Phase 2)
+
+    Returns the decision history for the specified agent.
+    """
+    try:
+        # Map agent names to their instances
+        agent_map = {}
+
+        try:
+            from .agents import (
+                attribution_tracker,
+                containment_orchestrator,
+                deception_manager,
+                forensics_investigator,
+            )
+
+            agent_map.update(
+                {
+                    "attribution": attribution_tracker,
+                    "containment": containment_orchestrator,
+                    "forensics": forensics_investigator,
+                    "deception": deception_manager,
+                }
+            )
+        except ImportError as e:
+            logger.warning(f"Some agents not available: {e}")
+
+        if agent_name not in agent_map:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Agent '{agent_name}' not found. Available: {list(agent_map.keys())}",
+            )
+
+        agent = agent_map[agent_name]
+
+        # Get decision history
+        decisions = []
+        if hasattr(agent, "decision_history"):
+            decisions = agent.decision_history[-limit:]  # Get last N decisions
+
+        # Convert dataclass decisions to dict
+        decisions_list = []
+        for decision in decisions:
+            if hasattr(decision, "__dict__"):
+                decisions_list.append(decision.__dict__)
+            elif isinstance(decision, dict):
+                decisions_list.append(decision)
+            else:
+                decisions_list.append({"raw_decision": str(decision)})
+
+        return AgentDecisionResponse(
+            agent_name=agent_name,
+            decisions=decisions_list,
+            total_count=len(decisions),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get decisions for {agent_name}: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to retrieve decisions: {str(e)}"
+        )
+
+
+@router.get("/incidents/{incident_id}/coordination")
+async def get_incident_agent_coordination(
+    incident_id: int, db: AsyncSession = Depends(get_db)
+):
+    """
+    Get agent coordination details for a specific incident (Phase 2)
+
+    Returns which agents were involved, their decisions, and coordination timeline.
+    """
+    try:
+        from sqlalchemy import select
+
+        from .models import Incident
+
+        # Fetch incident
+        stmt = select(Incident).where(Incident.id == incident_id)
+        result = await db.execute(stmt)
+        incident = result.scalar_one_or_none()
+
+        if not incident:
+            raise HTTPException(
+                status_code=404, detail=f"Incident {incident_id} not found"
+            )
+
+        # Extract agent coordination data from incident
+        participating_agents = []
+        agent_decisions = {}
+        coordination_timeline = []
+        recommendations = []
+
+        # Check triage_note for agent data
+        if incident.triage_note and isinstance(incident.triage_note, dict):
+            triage = incident.triage_note
+
+            # Extract agent participation
+            if "agents" in triage:
+                participating_agents = list(triage["agents"].keys())
+                agent_decisions = triage["agents"]
+
+            # Extract recommendations
+            if "recommendation" in triage:
+                recommendations.append(triage["recommendation"])
+            if "action_plan" in triage:
+                recommendations.extend(triage.get("action_plan", []))
+
+        # Check for Council data
+        coordination_status = "standard"
+        if incident.council_verdict:
+            coordination_status = "council_verified"
+
+            # Add Council data to timeline
+            if incident.council_reasoning:
+                coordination_timeline.append(
+                    {
+                        "timestamp": incident.created_at.isoformat()
+                        if incident.created_at
+                        else None,
+                        "event": "council_verification",
+                        "details": incident.council_reasoning,
+                        "verdict": incident.council_verdict,
+                    }
+                )
+
+        return IncidentCoordinationResponse(
+            incident_id=incident_id,
+            coordination_status=coordination_status,
+            participating_agents=participating_agents,
+            agent_decisions=agent_decisions,
+            coordination_timeline=coordination_timeline,
+            recommendations=recommendations,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get coordination for incident {incident_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve incident coordination: {str(e)}",
+        )

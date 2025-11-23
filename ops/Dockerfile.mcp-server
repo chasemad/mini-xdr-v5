@@ -1,0 +1,93 @@
+# ============================================================================
+# Mini-XDR MCP Server Dockerfile - Production
+# ============================================================================
+# Model Context Protocol server for AI assistant integration
+# Exposes 37 tools for incident management, threat hunting, and orchestration
+# ============================================================================
+
+FROM node:20-slim AS base
+
+# Build arguments for metadata
+ARG BUILD_DATE
+ARG VCS_REF
+ARG VERSION=1.0.0
+
+LABEL org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.title="mini-xdr-mcp-server" \
+      org.opencontainers.image.description="Mini-XDR Model Context Protocol Server for AI Integration"
+
+# Set working directory
+WORKDIR /app
+
+# ============================================================================
+# STAGE 1: Install system dependencies
+# ============================================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Network utilities for health checks
+    curl \
+    # Build tools for native modules
+    build-essential \
+    python3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# ============================================================================
+# STAGE 2: Install Node.js dependencies
+# ============================================================================
+# Copy package files
+COPY backend/package.json backend/package-lock.json ./
+
+# Install dependencies
+RUN npm ci --only=production && \
+    npm cache clean --force
+
+# ============================================================================
+# STAGE 3: Copy TypeScript source and compile
+# ============================================================================
+# Copy TypeScript configuration
+COPY backend/tsconfig.json ./
+
+# Copy MCP server source
+COPY backend/app/mcp_server.ts ./app/
+
+# Install TypeScript and dev dependencies for build
+RUN npm install --save-dev typescript @types/node ts-node && \
+    npx tsc app/mcp_server.ts --outDir dist --module commonjs --target ES2020 --esModuleInterop --resolveJsonModule --skipLibCheck && \
+    # Clean up dev dependencies after build
+    npm uninstall typescript @types/node ts-node
+
+# ============================================================================
+# STAGE 4: Security hardening
+# ============================================================================
+# Create non-root user
+RUN groupadd -r -g 1000 mcp && \
+    useradd -r -u 1000 -g mcp -m -s /bin/bash mcp && \
+    chown -R mcp:mcp /app
+
+# Set environment variables
+ENV NODE_ENV=production \
+    API_BASE=http://backend-service:8000 \
+    PORT=3001
+
+# Switch to non-root user
+USER mcp
+
+# ============================================================================
+# STAGE 5: Runtime configuration
+# ============================================================================
+# Expose MCP server port
+EXPOSE 3001
+
+# Health check endpoint (if running in HTTP mode)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:3001/health || exit 1
+
+# Start MCP server
+# Note: For stdio transport, the command will be overridden by Kubernetes
+CMD ["node", "dist/app/mcp_server.js"]
+
+# ============================================================================
+# Image size: ~200MB (Node.js slim + dependencies)
+# ============================================================================

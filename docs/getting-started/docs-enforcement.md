@@ -101,7 +101,7 @@ New API endpoints found in backend/app/alerts.py:
 
 ### Infrastructure Changes
 - **Files**: `infrastructure/`, `k8s/`, `scripts/*.sh`
-- **Required Docs**: `docs/deployment/overview.md`, AWS/Azure deployment docs
+- **Required Docs**: `docs/deployment/overview.md`, Kubernetes/local deployment docs (AWS materials archived)
 - **Validates**: New infrastructure components
 
 ### Security Changes

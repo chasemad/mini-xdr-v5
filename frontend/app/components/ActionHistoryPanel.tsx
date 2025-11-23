@@ -4,6 +4,23 @@ import { useMemo, useState, useEffect } from "react";
 import { Shield, Clock, RefreshCw, User, HardDrive, Lock, Undo2 } from "lucide-react";
 import { apiUrl, getApiKey } from "@/app/utils/api";
 
+// Helper to get auth headers with JWT token
+const getAuthHeaders = (): Record<string, string> => {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "x-api-key": getApiKey(),
+  };
+
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  }
+
+  return headers;
+};
+
 interface Action {
   id: number;
   created_at: string;
@@ -247,7 +264,9 @@ export default function ActionHistoryPanel({
   useEffect(() => {
     const fetchAgentActions = async () => {
       try {
-        const response = await fetch(apiUrl(`/api/agents/actions/${incidentId}`));
+        const response = await fetch(apiUrl(`/api/agents/actions/${incidentId}`), {
+          headers: getAuthHeaders()
+        });
         if (response.ok) {
           const data = await response.json();
           setAgentActions(data);
@@ -334,9 +353,7 @@ export default function ActionHistoryPanel({
     try {
       const response = await fetch(apiUrl(`/api/incidents/${incidentId}/verify-actions`), {
         method: "POST",
-        headers: {
-          "x-api-key": getApiKey(),
-        },
+        headers: getAuthHeaders(),
       });
 
       if (response.ok) {
@@ -362,14 +379,17 @@ export default function ActionHistoryPanel({
 
     try {
       const response = await fetch(apiUrl(`/api/agents/rollback/${action.rollbackId}`), {
-        method: "POST"
+        method: "POST",
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {
         const result = await response.json();
         console.log("Rollback result:", result);
         // Refresh agent actions
-        const agentResponse = await fetch(apiUrl(`/api/agents/actions/${incidentId}`));
+        const agentResponse = await fetch(apiUrl(`/api/agents/actions/${incidentId}`), {
+          headers: getAuthHeaders()
+        });
         if (agentResponse.ok) {
           const data = await agentResponse.json();
           setAgentActions(data);

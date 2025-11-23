@@ -17,7 +17,6 @@ from .config import settings
 from .external_intel import threat_intel
 from .ml_engine import ml_detector
 from .models import AdvancedResponseAction, Event, Incident, ResponseWorkflow
-from .secrets_manager import get_secure_env
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +67,7 @@ class AIResponseAdvisor:
             if self.llm_provider == "openai":
                 import openai
 
-                api_key = get_secure_env("OPENAI_API_KEY", "mini-xdr/openai-api-key")
+                api_key = settings.openai_api_key
                 if api_key:
                     self.openai_client = openai.AsyncOpenAI(api_key=api_key)
                     self.initialized = True

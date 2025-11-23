@@ -3,35 +3,40 @@ Seamless onboarding v2 API routes
 """
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Dict, List, Optional, Any
-from pydantic import BaseModel
+from typing import Any, Dict, List, Optional
 
-from ..db import get_db
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from ..auth import get_current_user
-from ..models import User, Organization
+from ..db import get_db
 from ..integrations.manager import IntegrationManager
+from ..models import Organization, User
 from .auto_discovery import AutoDiscoveryEngine
 from .smart_deployment import SmartDeploymentEngine
 from .validation import OnboardingValidator
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/onboarding/v2", tags=["Onboarding V2"])
+ALLOWED_PROVIDERS = {"aws", "azure", "gcp"}
 
 
 # ============================================================================
 # Pydantic Models
 # ============================================================================
 
+
 class QuickStartRequest(BaseModel):
     """Request model for quick-start onboarding"""
+
     provider: str  # aws, azure, gcp
     credentials: Dict[str, Any]
 
 
 class IntegrationSetupRequest(BaseModel):
     """Request model for integration setup"""
+
     provider: str
     credentials: Dict[str, Any]
 
@@ -39,6 +44,7 @@ class IntegrationSetupRequest(BaseModel):
 # ============================================================================
 # Helper Functions
 # ============================================================================
+
 
 async def get_organization(user: User, db: AsyncSession) -> Organization:
     """Get user's organization"""
@@ -56,13 +62,21 @@ async def get_organization(user: User, db: AsyncSession) -> Organization:
 
 async def update_org_onboarding_status(org_id: int, status: str, db: AsyncSession):
     """Update organization onboarding status"""
-    from sqlalchemy import update
-    from ..models import Organization
     from datetime import datetime, timezone
 
-    stmt = update(Organization).where(Organization.id == org_id).values(
-        onboarding_status=status,
-        onboarding_completed_at=datetime.now(timezone.utc) if status == "completed" else None
+    from sqlalchemy import update
+
+    from ..models import Organization
+
+    stmt = (
+        update(Organization)
+        .where(Organization.id == org_id)
+        .values(
+            onboarding_status=status,
+            onboarding_completed_at=datetime.now(timezone.utc)
+            if status == "completed"
+            else None,
+        )
     )
     await db.execute(stmt)
     await db.commit()
@@ -71,6 +85,7 @@ async def update_org_onboarding_status(org_id: int, status: str, db: AsyncSessio
 # ============================================================================
 # Background Task
 # ============================================================================
+
 
 async def auto_discover_and_deploy(org_id: int, provider: str, db: AsyncSession):
     """
@@ -110,12 +125,13 @@ async def auto_discover_and_deploy(org_id: int, provider: str, db: AsyncSession)
 # API Endpoints
 # ============================================================================
 
+
 @router.post("/quick-start")
 async def quick_start_onboarding(
     request: QuickStartRequest,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     One-click onboarding with cloud integration
@@ -126,16 +142,24 @@ async def quick_start_onboarding(
     3. Deploying agents automatically
     4. Validating the deployment
     """
-    logger.info(f"Quick-start onboarding requested for {request.provider} by user {current_user.email}")
+    logger.info(
+        f"Quick-start onboarding requested for {request.provider} by user {current_user.email}"
+    )
 
     # Get organization
     org = await get_organization(current_user, db)
+
+    if request.provider not in ALLOWED_PROVIDERS:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported provider. Supported providers: aws, azure, gcp.",
+        )
 
     # Verify seamless onboarding is enabled
     if org.onboarding_flow_version != "seamless":
         raise HTTPException(
             status_code=409,
-            detail="Seamless onboarding not enabled for this organization. Contact support to enable it."
+            detail="Seamless onboarding not enabled for this organization. Contact support to enable it.",
         )
 
     # Initialize integration manager
@@ -143,12 +167,19 @@ async def quick_start_onboarding(
 
     # Validate and store credentials
     try:
-        success = await integration_mgr.setup_integration(request.provider, request.credentials)
+        success = await integration_mgr.setup_integration(
+            request.provider, request.credentials
+        )
         if not success:
-            raise HTTPException(status_code=400, detail=f"Failed to authenticate with {request.provider}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to authenticate with {request.provider}",
+            )
     except Exception as e:
         logger.error(f"Integration setup failed: {e}")
-        raise HTTPException(status_code=400, detail=f"Integration setup failed: {str(e)}")
+        raise HTTPException(
+            status_code=400, detail=f"Integration setup failed: {str(e)}"
+        )
 
     # Update org status to in_progress
     await update_org_onboarding_status(org.id, "in_progress", db)
@@ -161,14 +192,13 @@ async def quick_start_onboarding(
         "message": f"Auto-discovery started for {request.provider}. This may take a few minutes.",
         "estimated_completion": "5-10 minutes",
         "provider": request.provider,
-        "organization_id": org.id
+        "organization_id": org.id,
     }
 
 
 @router.get("/progress")
 async def get_onboarding_progress(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     """
     Get real-time onboarding progress
@@ -190,27 +220,33 @@ async def get_onboarding_progress(
     validator = OnboardingValidator(org.id, db)
 
     # Only run validation if deployment is complete
-    if deployment_status['status'] == 'completed':
+    if deployment_status["status"] == "completed":
         await validator.validate_deployment()
 
     validation_status = await validator.get_status()
 
     # Calculate overall progress
     overall_progress = (
-        discovery_status['progress'] * 0.33 +
-        deployment_status['progress'] * 0.33 +
-        validation_status['progress'] * 0.34
+        discovery_status["progress"] * 0.33
+        + deployment_status["progress"] * 0.33
+        + validation_status["progress"] * 0.34
     )
 
     # Determine overall status
-    if validation_status['status'] == 'completed':
-        overall_status = 'completed'
-    elif discovery_status['status'] == 'failed' or deployment_status['status'] == 'failed':
-        overall_status = 'failed'
-    elif discovery_status['status'] == 'discovering' or deployment_status['status'] == 'deploying':
-        overall_status = 'in_progress'
+    if validation_status["status"] == "completed":
+        overall_status = "completed"
+    elif (
+        discovery_status["status"] == "failed"
+        or deployment_status["status"] == "failed"
+    ):
+        overall_status = "failed"
+    elif (
+        discovery_status["status"] == "discovering"
+        or deployment_status["status"] == "deploying"
+    ):
+        overall_status = "in_progress"
     else:
-        overall_status = 'not_started'
+        overall_status = "not_started"
 
     return {
         "overall_status": overall_status,
@@ -218,14 +254,13 @@ async def get_onboarding_progress(
         "discovery": discovery_status,
         "deployment": deployment_status,
         "validation": validation_status,
-        "organization_id": org.id
+        "organization_id": org.id,
     }
 
 
 @router.get("/validation/summary")
 async def get_validation_summary(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     """Get detailed validation summary"""
     org = await get_organization(current_user, db)
@@ -240,7 +275,7 @@ async def get_validation_summary(
 async def get_discovered_assets(
     provider: Optional[str] = None,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Get discovered cloud assets
@@ -248,16 +283,15 @@ async def get_discovered_assets(
     Args:
         provider: Optional filter by provider (aws, azure, gcp)
     """
+    if provider and provider not in ALLOWED_PROVIDERS:
+        raise HTTPException(status_code=400, detail="Unsupported provider filter")
+
     org = await get_organization(current_user, db)
 
     discovery_engine = AutoDiscoveryEngine(org.id, db)
     assets = await discovery_engine.get_discovered_assets(provider=provider)
 
-    return {
-        "total": len(assets),
-        "provider_filter": provider,
-        "assets": assets
-    }
+    return {"total": len(assets), "provider_filter": provider, "assets": assets}
 
 
 @router.post("/assets/refresh")
@@ -265,9 +299,12 @@ async def refresh_asset_discovery(
     provider: str,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Refresh asset discovery for a provider"""
+    if provider not in ALLOWED_PROVIDERS:
+        raise HTTPException(status_code=400, detail="Unsupported provider")
+
     org = await get_organization(current_user, db)
 
     discovery_engine = AutoDiscoveryEngine(org.id, db)
@@ -278,14 +315,13 @@ async def refresh_asset_discovery(
     return {
         "status": "initiated",
         "message": f"Refreshing asset discovery for {provider}",
-        "provider": provider
+        "provider": provider,
     }
 
 
 @router.get("/deployment/summary")
 async def get_deployment_summary(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     """Get deployment summary"""
     org = await get_organization(current_user, db)
@@ -301,9 +337,12 @@ async def retry_failed_deployments(
     provider: str,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Retry failed agent deployments"""
+    if provider not in ALLOWED_PROVIDERS:
+        raise HTTPException(status_code=400, detail="Unsupported provider")
+
     org = await get_organization(current_user, db)
 
     deployment_engine = SmartDeploymentEngine(org.id, db)
@@ -314,14 +353,13 @@ async def retry_failed_deployments(
     return {
         "status": "initiated",
         "message": f"Retrying failed deployments for {provider}",
-        "provider": provider
+        "provider": provider,
     }
 
 
 @router.get("/deployment/health")
 async def get_deployment_health(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     """Check health of deployed agents"""
     org = await get_organization(current_user, db)
@@ -334,8 +372,7 @@ async def get_deployment_health(
 
 @router.get("/integrations")
 async def list_integrations(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     """List all configured cloud integrations"""
     org = await get_organization(current_user, db)
@@ -343,17 +380,14 @@ async def list_integrations(
     integration_mgr = IntegrationManager(org.id, db)
     integrations = await integration_mgr.list_integrations()
 
-    return {
-        "total": len(integrations),
-        "integrations": integrations
-    }
+    return {"total": len(integrations), "integrations": integrations}
 
 
 @router.post("/integrations/setup")
 async def setup_integration(
     request: IntegrationSetupRequest,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Setup a new cloud integration"""
     org = await get_organization(current_user, db)
@@ -361,9 +395,14 @@ async def setup_integration(
     integration_mgr = IntegrationManager(org.id, db)
 
     try:
-        success = await integration_mgr.setup_integration(request.provider, request.credentials)
+        success = await integration_mgr.setup_integration(
+            request.provider, request.credentials
+        )
         if not success:
-            raise HTTPException(status_code=400, detail=f"Failed to setup {request.provider} integration")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to setup {request.provider} integration",
+            )
     except Exception as e:
         logger.error(f"Integration setup failed: {e}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -371,7 +410,7 @@ async def setup_integration(
     return {
         "status": "success",
         "message": f"{request.provider} integration configured successfully",
-        "provider": request.provider
+        "provider": request.provider,
     }
 
 
@@ -379,7 +418,7 @@ async def setup_integration(
 async def remove_integration(
     provider: str,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Remove a cloud integration"""
     org = await get_organization(current_user, db)
@@ -388,10 +427,12 @@ async def remove_integration(
     success = await integration_mgr.remove_integration(provider)
 
     if not success:
-        raise HTTPException(status_code=404, detail=f"Integration for {provider} not found")
+        raise HTTPException(
+            status_code=404, detail=f"Integration for {provider} not found"
+        )
 
     return {
         "status": "success",
         "message": f"{provider} integration removed",
-        "provider": provider
+        "provider": provider,
     }

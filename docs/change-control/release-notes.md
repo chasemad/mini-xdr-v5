@@ -66,7 +66,7 @@ Document every release here. Include version/tag, date, summary, and key changes
 ### Infrastructure
 - **Kubernetes Deployments**: Multi-tenant manifests with distributed component support
 - **CI/CD Integration**: Documentation enforcement, automated testing, and deployment validation
-- **Cloud Native**: AWS EKS, Azure AKS support with infrastructure as code
+- **Cloud Native**: Kubernetes support with infrastructure as code (legacy AWS/Azure guides archived)
 - **Security Hardening**: Container scanning, network policies, and compliance automation
 - **Monitoring**: Comprehensive observability with distributed tracing and metrics collection
 

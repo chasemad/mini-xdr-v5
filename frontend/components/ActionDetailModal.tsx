@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { 
+import {
   X, Shield, AlertCircle, CheckCircle, XCircle, Clock,
   Code, FileText, Activity, Database, Eye, Copy
 } from 'lucide-react';
@@ -54,9 +54,9 @@ interface ActionDetailModalProps {
   }>;
 }
 
-export default function ActionDetailModal({ 
-  action, 
-  isOpen, 
+export default function ActionDetailModal({
+  action,
+  isOpen,
   onClose,
   onRollback,
   incidentEvents = []
@@ -69,11 +69,11 @@ export default function ActionDetailModal({
   const isFailure = ['failed', 'error'].includes(status.toLowerCase());
   const isPending = ['pending', 'running'].includes(status.toLowerCase());
   const canRollback = action.rollback_id && !action.rollback_executed && !isFailure;
-  
+
   const agentTypeConfig = {
-    iam: { label: 'IAM', color: 'blue-400', bgColor: 'blue-500/20', borderColor: 'blue-500/30' },
-    edr: { label: 'EDR', color: 'purple-400', bgColor: 'purple-500/20', borderColor: 'purple-500/30' },
-    dlp: { label: 'DLP', color: 'green-400', bgColor: 'green-500/20', borderColor: 'green-500/30' },
+    iam: { label: 'IAM', color: 'blue-400', bgColor: 'blue-500/10', borderColor: 'blue-500/20' },
+    edr: { label: 'EDR', color: 'purple-400', bgColor: 'purple-500/10', borderColor: 'purple-500/20' },
+    dlp: { label: 'DLP', color: 'green-400', bgColor: 'green-500/10', borderColor: 'green-500/20' },
   };
 
   // Format parameters for display
@@ -104,7 +104,7 @@ export default function ActionDetailModal({
     const date = new Date(dateString);
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
-    
+
     if (diffMins < 1) return 'just now';
     if (diffMins < 60) return `${diffMins}m ago`;
     const diffHours = Math.floor(diffMins / 60);
@@ -127,50 +127,52 @@ export default function ActionDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 p-4">
+      <div className="glass-panel w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col rounded-2xl border border-white/10 shadow-2xl relative">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl pointer-events-none -mr-32 -mt-32" />
+
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
+        <div className="flex items-center justify-between p-6 border-b border-white/10 bg-white/5 relative z-10">
           <div className="flex items-center gap-4">
-            <div className={`p-3 rounded-lg ${
-              isSuccess ? 'bg-green-500/20 border border-green-500/30' :
-              isFailure ? 'bg-red-500/20 border border-red-500/30' :
-              isPending ? 'bg-yellow-500/20 border border-yellow-500/30' :
-              'bg-blue-500/20 border border-blue-500/30'
+            <div className={`p-3 rounded-xl border ${
+              isSuccess ? 'bg-green-500/10 border-green-500/20' :
+              isFailure ? 'bg-red-500/10 border-red-500/20' :
+              isPending ? 'bg-amber-500/10 border-amber-500/20' :
+              'bg-blue-500/10 border-blue-500/20'
             }`}>
-              {isSuccess && <CheckCircle className="w-6 h-6 text-green-400" />}
-              {isFailure && <XCircle className="w-6 h-6 text-red-400" />}
-              {isPending && <Clock className="w-6 h-6 text-yellow-400 animate-pulse" />}
-              {!isSuccess && !isFailure && !isPending && <Shield className="w-6 h-6 text-blue-400" />}
+              {isSuccess && <CheckCircle className="w-6 h-6 text-green-500" />}
+              {isFailure && <XCircle className="w-6 h-6 text-red-500" />}
+              {isPending && <Clock className="w-6 h-6 text-amber-500 animate-pulse" />}
+              {!isSuccess && !isFailure && !isPending && <Shield className="w-6 h-6 text-blue-500" />}
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-white">{actionName}</h2>
-              <div className="flex items-center gap-3 mt-1">
-                <span className={`text-xs px-2 py-1 rounded font-semibold ${
-                  isSuccess ? 'bg-green-500/20 text-green-300' :
-                  isFailure ? 'bg-red-500/20 text-red-300' :
-                  isPending ? 'bg-yellow-500/20 text-yellow-300' :
-                  'bg-blue-500/20 text-blue-300'
+              <h2 className="text-xl font-bold font-heading text-white tracking-wide">{actionName}</h2>
+              <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                <span className={`text-[10px] px-2 py-0.5 rounded font-bold font-mono uppercase tracking-wider border ${
+                  isSuccess ? 'bg-green-500/10 text-green-400 border-green-500/20' :
+                  isFailure ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                  isPending ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
+                  'bg-blue-500/10 text-blue-400 border-blue-500/20'
                 }`}>
-                  {status.toUpperCase()}
+                  {status}
                 </span>
                 {action.execution_method && (
-                  <span className="text-xs px-2 py-1 rounded bg-purple-500/20 text-purple-300">
-                    {action.execution_method === 'automated' ? '🤖 AUTOMATED' : '⚡ ' + action.execution_method.toUpperCase()}
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 font-bold font-mono uppercase tracking-wider">
+                    {action.execution_method === 'automated' ? '🤖 AUTOMATED' : '⚡ ' + action.execution_method}
                   </span>
                 )}
                 {action.agent_type && agentTypeConfig[action.agent_type] && (
-                  <span className={`text-xs px-2 py-1 rounded bg-${agentTypeConfig[action.agent_type].bgColor} text-${agentTypeConfig[action.agent_type].color} border border-${agentTypeConfig[action.agent_type].borderColor}`}>
+                  <span className={`text-[10px] px-2 py-0.5 rounded bg-${agentTypeConfig[action.agent_type].bgColor} text-${agentTypeConfig[action.agent_type].color} border border-${agentTypeConfig[action.agent_type].borderColor} font-bold font-mono uppercase tracking-wider`}>
                     {agentTypeConfig[action.agent_type].label} AGENT
                   </span>
                 )}
                 {action.workflow_name && (
-                  <span className="text-xs text-gray-400">
-                    Workflow: {action.workflow_name}
+                  <span className="text-[10px] text-gray-400 font-mono uppercase">
+                    Workflow: <span className="text-gray-300">{action.workflow_name}</span>
                   </span>
                 )}
                 {action.rollback_executed && action.rollback_timestamp && (
-                  <span className="text-xs px-2 py-1 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30">
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20 font-bold font-mono uppercase tracking-wider">
                     🔄 ROLLED BACK
                   </span>
                 )}
@@ -179,51 +181,51 @@ export default function ActionDetailModal({
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+            className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
           >
-            <X className="w-5 h-5 text-gray-400" />
+            <X className="w-5 h-5 text-gray-400 group-hover:text-white" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar relative z-10">
           {/* Execution Timeline */}
-          <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-4">
-            <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-              <Clock className="w-5 h-5 text-blue-400" />
+          <div className="bg-black/20 border border-white/5 rounded-xl p-4">
+            <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2 font-heading uppercase tracking-wide">
+              <Clock className="w-4 h-4 text-blue-500" />
               Execution Timeline
             </h3>
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-2 gap-6 text-sm">
               <div>
-                <div className="text-gray-400 mb-1">Started</div>
-                <div className="text-white font-mono">
+                <div className="text-[10px] text-gray-500 uppercase font-bold font-mono mb-1">Started</div>
+                <div className="text-white font-mono text-xs">
                   {formatAbsoluteTime(action.created_at)}
                 </div>
-                <div className="text-gray-500 text-xs mt-1">
+                <div className="text-gray-500 text-[10px] font-mono mt-0.5">
                   {formatTimeAgo(action.created_at)}
                 </div>
               </div>
               {action.completed_at && (
                 <div>
-                  <div className="text-gray-400 mb-1">Completed</div>
-                  <div className="text-white font-mono">
+                  <div className="text-[10px] text-gray-500 uppercase font-bold font-mono mb-1">Completed</div>
+                  <div className="text-white font-mono text-xs">
                     {formatAbsoluteTime(action.completed_at)}
                   </div>
-                  <div className="text-gray-500 text-xs mt-1">
+                  <div className="text-gray-500 text-[10px] font-mono mt-0.5">
                     {formatTimeAgo(action.completed_at)}
                   </div>
                 </div>
               )}
               {action.executed_by && (
                 <div>
-                  <div className="text-gray-400 mb-1">Executed By</div>
-                  <div className="text-white">{action.executed_by}</div>
+                  <div className="text-[10px] text-gray-500 uppercase font-bold font-mono mb-1">Executed By</div>
+                  <div className="text-white font-mono text-xs">{action.executed_by}</div>
                 </div>
               )}
               {action.confidence_score !== undefined && (
                 <div>
-                  <div className="text-gray-400 mb-1">Confidence Score</div>
-                  <div className="text-white">{Math.round(action.confidence_score * 100)}%</div>
+                  <div className="text-[10px] text-gray-500 uppercase font-bold font-mono mb-1">Confidence</div>
+                  <div className="text-white font-mono text-xs">{Math.round(action.confidence_score * 100)}%</div>
                 </div>
               )}
             </div>
@@ -231,12 +233,12 @@ export default function ActionDetailModal({
 
           {/* Action Description/Detail */}
           {action.detail && (
-            <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-4">
-              <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-green-400" />
-                Action Details
+            <div className="bg-black/20 border border-white/5 rounded-xl p-4">
+              <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2 font-heading uppercase tracking-wide">
+                <FileText className="w-4 h-4 text-green-500" />
+                Action Logs
               </h3>
-              <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">
+              <p className="text-gray-300 text-xs font-mono leading-relaxed whitespace-pre-wrap opacity-90">
                 {action.detail}
               </p>
             </div>
@@ -244,21 +246,21 @@ export default function ActionDetailModal({
 
           {/* Parameters */}
           {Object.keys(params).length > 0 && (
-            <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-4">
+            <div className="bg-black/20 border border-white/5 rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <Code className="w-5 h-5 text-purple-400" />
+                <h3 className="text-sm font-bold text-white flex items-center gap-2 font-heading uppercase tracking-wide">
+                  <Code className="w-4 h-4 text-purple-500" />
                   Input Parameters
                 </h3>
                 <button
                   onClick={() => copyToClipboard(formatJSON(params))}
-                  className="text-gray-400 hover:text-gray-300 p-1"
+                  className="text-gray-500 hover:text-white p-1 transition-colors"
                   title="Copy to clipboard"
                 >
-                  <Copy className="w-4 h-4" />
+                  <Copy className="w-3 h-3" />
                 </button>
               </div>
-              <pre className="bg-gray-900 border border-gray-700 rounded p-3 text-xs text-gray-300 overflow-x-auto">
+              <pre className="bg-black/40 border border-white/5 rounded-lg p-3 text-[10px] text-gray-300 font-mono overflow-x-auto custom-scrollbar">
                 <code>{formatJSON(params)}</code>
               </pre>
             </div>
@@ -266,21 +268,21 @@ export default function ActionDetailModal({
 
           {/* Result Data */}
           {Object.keys(resultData).length > 0 && (
-            <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+            <div className="bg-green-500/5 border border-green-500/10 rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-semibold text-green-300 flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5" />
+                <h3 className="text-sm font-bold text-green-400 flex items-center gap-2 font-heading uppercase tracking-wide">
+                  <CheckCircle className="w-4 h-4" />
                   Execution Results
                 </h3>
                 <button
                   onClick={() => copyToClipboard(formatJSON(resultData))}
-                  className="text-green-400 hover:text-green-300 p-1"
+                  className="text-green-500/50 hover:text-green-400 p-1 transition-colors"
                   title="Copy to clipboard"
                 >
-                  <Copy className="w-4 h-4" />
+                  <Copy className="w-3 h-3" />
                 </button>
               </div>
-              <pre className="bg-gray-900 border border-green-700/30 rounded p-3 text-xs text-green-200 overflow-x-auto">
+              <pre className="bg-black/40 border border-green-500/10 rounded-lg p-3 text-[10px] text-green-200/90 font-mono overflow-x-auto custom-scrollbar">
                 <code>{formatJSON(resultData)}</code>
               </pre>
             </div>
@@ -288,21 +290,21 @@ export default function ActionDetailModal({
 
           {/* Error Details */}
           {Object.keys(errorDetails).length > 0 && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+            <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-semibold text-red-300 flex items-center gap-2">
-                  <AlertCircle className="w-5 h-5" />
+                <h3 className="text-sm font-bold text-red-400 flex items-center gap-2 font-heading uppercase tracking-wide">
+                  <AlertCircle className="w-4 h-4" />
                   Error Details
                 </h3>
                 <button
                   onClick={() => copyToClipboard(formatJSON(errorDetails))}
-                  className="text-red-400 hover:text-red-300 p-1"
+                  className="text-red-500/50 hover:text-red-400 p-1 transition-colors"
                   title="Copy to clipboard"
                 >
-                  <Copy className="w-4 h-4" />
+                  <Copy className="w-3 h-3" />
                 </button>
               </div>
-              <pre className="bg-gray-900 border border-red-700/30 rounded p-3 text-xs text-red-200 overflow-x-auto">
+              <pre className="bg-black/40 border border-red-500/10 rounded-lg p-3 text-[10px] text-red-200/90 font-mono overflow-x-auto custom-scrollbar">
                 <code>{formatJSON(errorDetails)}</code>
               </pre>
             </div>
@@ -310,21 +312,21 @@ export default function ActionDetailModal({
 
           {/* Verification Details (T-Pot) */}
           {Object.keys(verificationDetails).length > 0 && (
-            <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
+            <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-semibold text-blue-300 flex items-center gap-2">
-                  <Eye className="w-5 h-5" />
+                <h3 className="text-sm font-bold text-blue-400 flex items-center gap-2 font-heading uppercase tracking-wide">
+                  <Eye className="w-4 h-4" />
                   Verification Details
                 </h3>
                 <button
                   onClick={() => copyToClipboard(formatJSON(verificationDetails))}
-                  className="text-blue-400 hover:text-blue-300 p-1"
+                  className="text-blue-500/50 hover:text-blue-400 p-1 transition-colors"
                   title="Copy to clipboard"
                 >
-                  <Copy className="w-4 h-4" />
+                  <Copy className="w-3 h-3" />
                 </button>
               </div>
-              <pre className="bg-gray-900 border border-blue-700/30 rounded p-3 text-xs text-blue-200 overflow-x-auto">
+              <pre className="bg-black/40 border border-blue-500/10 rounded-lg p-3 text-[10px] text-blue-200/90 font-mono overflow-x-auto custom-scrollbar">
                 <code>{formatJSON(verificationDetails)}</code>
               </pre>
             </div>
@@ -332,39 +334,39 @@ export default function ActionDetailModal({
 
           {/* Related Events/Logs */}
           {relatedEvents.length > 0 && (
-            <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-4">
-              <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                <Activity className="w-5 h-5 text-orange-400" />
+            <div className="bg-black/20 border border-white/5 rounded-xl p-4">
+              <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2 font-heading uppercase tracking-wide">
+                <Activity className="w-4 h-4 text-orange-500" />
                 Related Events ({relatedEvents.length})
               </h3>
-              <div className="text-xs text-gray-400 mb-3">
+              <div className="text-[10px] text-gray-500 mb-3 font-mono uppercase tracking-wider">
                 Events occurring within 5 minutes of action execution
               </div>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
+              <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
                 {relatedEvents.map((event) => (
-                  <div 
+                  <div
                     key={event.id}
-                    className="bg-gray-900/50 border border-gray-700/30 rounded p-3 hover:border-gray-600/50 transition-colors"
+                    className="bg-white/5 border border-white/5 rounded p-3 hover:bg-white/10 transition-colors"
                   >
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <Database className="w-3 h-3 text-blue-400" />
-                        <span className="text-xs font-mono text-blue-300">{event.eventid}</span>
-                        <span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-300">
+                        <Database className="w-3 h-3 text-blue-500" />
+                        <span className="text-[10px] font-mono text-blue-400">{event.eventid}</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 font-bold font-mono">
                           {event.source_type}
                         </span>
                       </div>
-                      <span className="text-xs text-gray-500">
+                      <span className="text-[10px] text-gray-500 font-mono">
                         {formatAbsoluteTime(event.ts)}
                       </span>
                     </div>
-                    <div className="text-sm text-gray-300 mb-2">
+                    <div className="text-xs text-gray-300 mb-2 font-mono">
                       {event.message}
                     </div>
-                    <div className="flex items-center gap-3 text-xs text-gray-500">
-                      <span>Source: {event.src_ip}</span>
-                      {event.dst_ip && <span>→ Dest: {event.dst_ip}</span>}
-                      {event.dst_port && <span>Port: {event.dst_port}</span>}
+                    <div className="flex items-center gap-3 text-[10px] text-gray-500 font-mono">
+                      <span>SRC: {event.src_ip}</span>
+                      {event.dst_ip && <span>→ DST: {event.dst_ip}</span>}
+                      {event.dst_port && <span>PORT: {event.dst_port}</span>}
                     </div>
                   </div>
                 ))}
@@ -374,26 +376,29 @@ export default function ActionDetailModal({
 
           {/* No Events Found */}
           {relatedEvents.length === 0 && incidentEvents.length > 0 && (
-            <div className="bg-gray-800/30 border border-gray-700/30 rounded-lg p-6 text-center">
-              <Activity className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-              <div className="text-gray-400">
-                No events found within 5 minutes of action execution
+            <div className="bg-white/5 border border-dashed border-white/10 rounded-xl p-8 text-center">
+              <Activity className="w-8 h-8 text-gray-700 mx-auto mb-3" />
+              <div className="text-gray-500 font-heading font-medium text-sm">
+                No correlated events found
+              </div>
+              <div className="text-xs text-gray-600 mt-1 font-mono">
+                No system events detected within ±5 mins window
               </div>
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="border-t border-gray-700 p-4 flex items-center justify-between bg-gray-800/50">
-          <div className="text-xs text-gray-400">
-            Action ID: {action.action_id || action.id}
+        <div className="border-t border-white/10 p-4 flex items-center justify-between bg-white/5 relative z-10">
+          <div className="text-[10px] text-gray-500 font-mono">
+            ID: {action.action_id || action.id}
             {action.rollback_id && (
-              <div className="text-xs text-gray-500 mt-1">
-                Rollback ID: {action.rollback_id}
-              </div>
+              <span className="ml-2 pl-2 border-l border-white/10">
+                RB_ID: {action.rollback_id}
+              </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             {canRollback && onRollback && (
               <button
                 onClick={() => {
@@ -401,16 +406,16 @@ export default function ActionDetailModal({
                     onRollback(action.rollback_id!);
                   }
                 }}
-                className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold font-mono transition-colors flex items-center gap-2 uppercase tracking-wide border border-orange-500/50"
               >
                 🔄 Rollback Action
               </button>
             )}
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+              className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-bold font-mono transition-colors uppercase tracking-wide border border-white/10"
             >
-              Close
+              Close Console
             </button>
           </div>
         </div>
@@ -418,4 +423,3 @@ export default function ActionDetailModal({
     </div>
   );
 }
-

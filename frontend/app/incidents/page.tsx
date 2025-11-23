@@ -1,18 +1,19 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { getIncidents, agentOrchestrate } from "../lib/api";
 import Link from "next/link";
 import {
-  Shield, AlertTriangle, Bot,
-  Search, Filter, RefreshCw,
-  ChevronDown, Eye, MessageSquare,
-  BarChart3, Activity,
-  MoreHorizontal,
-  ArrowUpRight, ArrowDownRight, Minus,
-  Globe
+  AlertTriangle, Shield, Eye, Filter,
+  Globe, MoreHorizontal, Search, RefreshCw,
+  Inbox, Bot, MessageSquare, ExternalLink
 } from "lucide-react";
 import { DashboardLayout } from "@/components/DashboardLayout";
+import { getIncidents } from "../lib/api";
+import { useDashboard } from "../contexts/DashboardContext";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import { IncidentQuickView } from "@/components/IncidentQuickView";
 
 interface Incident {
   id: number;
@@ -34,55 +35,18 @@ interface Incident {
   };
 }
 
-interface ChatMessage {
-  id: string;
-  type: 'user' | 'ai';
-  content: string;
-  timestamp: Date;
-  loading?: boolean;
-}
-
-interface SystemMetrics {
-  total_incidents: number;
-  high_priority: number;
-  contained: number;
-  ml_detected: number;
-  avg_response_time: number;
-  threat_intel_hits: number;
-}
-
-export default function SOCAnalystDashboard() {
-  // State management
+export default function IncidentsPage() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [autoRefreshing, setAutoRefreshing] = useState(false);
-  const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    {
-      id: '1',
-      type: 'ai',
-      content: "Welcome to the SOC Command Center. I'm your AI analyst assistant. I can help you investigate incidents, analyze threats, and coordinate response actions. What would you like to explore?",
-      timestamp: new Date()
-    }
-  ]);
-  const [chatInput, setChatInput] = useState('');
-  const [chatLoading, setChatLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
   const [filterSeverity, setFilterSeverity] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [quickViewOpen, setQuickViewOpen] = useState(false);
+  const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
 
-  // Computed metrics
-  const metrics: SystemMetrics = {
-    total_incidents: incidents.length,
-    high_priority: incidents.filter(i => i.triage_note?.severity === 'high' || (i.risk_score && i.risk_score > 0.7)).length,
-    contained: incidents.filter(i => i.status === 'contained').length,
-    ml_detected: incidents.filter(i => i.auto_contained).length,
-    avg_response_time: 4.2, // minutes
-    threat_intel_hits: incidents.filter(i => i.escalation_level === 'high').length
-  };
+  const { toggleCopilot, setCopilotContext } = useDashboard();
 
-  // Fetch incidents
   const fetchIncidents = useCallback(async () => {
     try {
       const data = await getIncidents();
@@ -96,8 +60,6 @@ export default function SOCAnalystDashboard() {
 
   useEffect(() => {
     fetchIncidents();
-
-    // Auto-refresh every 10 seconds
     const interval = setInterval(async () => {
       if (!loading) {
         setAutoRefreshing(true);
@@ -105,60 +67,9 @@ export default function SOCAnalystDashboard() {
         setAutoRefreshing(false);
       }
     }, 10000);
-
     return () => clearInterval(interval);
   }, [fetchIncidents, loading]);
 
-  // Chat functionality
-  const sendChatMessage = async () => {
-    if (!chatInput.trim() || chatLoading) return;
-
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      type: 'user',
-      content: chatInput.trim(),
-      timestamp: new Date()
-    };
-
-    setChatMessages(prev => [...prev, userMessage]);
-    setChatInput('');
-    setChatLoading(true);
-
-    // Add loading message
-    const loadingMessage: ChatMessage = {
-      id: (Date.now() + 1).toString(),
-      type: 'ai',
-      content: '',
-      timestamp: new Date(),
-      loading: true
-    };
-
-    setChatMessages(prev => [...prev, loadingMessage]);
-
-    try {
-      const response = await agentOrchestrate(userMessage.content, selectedIncident?.id, {
-        incident_data: selectedIncident,
-        chat_history: chatMessages.slice(-5)
-      });
-
-      const aiMessage: ChatMessage = {
-        id: (Date.now() + 2).toString(),
-        type: 'ai',
-        content: response.message || response.analysis || "I've analyzed your query. How can I help further?",
-        timestamp: new Date()
-      };
-
-      setChatMessages(prev => prev.slice(0, -1).concat(aiMessage));
-
-    } catch (error) {
-      setChatMessages(prev => prev.slice(0, -1));
-      console.error('AI response failed:', error);
-    } finally {
-      setChatLoading(false);
-    }
-  };
-
-  // Filter incidents
   const filteredIncidents = incidents.filter(incident => {
     if (filterSeverity !== 'all' && incident.triage_note?.severity !== filterSeverity) return false;
     if (filterStatus !== 'all' && incident.status !== filterStatus) return false;
@@ -171,7 +82,6 @@ export default function SOCAnalystDashboard() {
     const date = new Date(dateString);
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
-
     if (diffMins < 1) return 'just now';
     if (diffMins < 60) return `${diffMins}m ago`;
     const diffHours = Math.floor(diffMins / 60);
@@ -182,276 +92,228 @@ export default function SOCAnalystDashboard() {
 
   const getSeverityColor = (severity?: string) => {
     switch (severity) {
-      case 'high': return 'text-red-400 bg-red-500/10';
-      case 'medium': return 'text-orange-400 bg-orange-500/10';
-      case 'low': return 'text-green-400 bg-green-500/10';
-      default: return 'text-gray-400 bg-gray-500/10';
+      case 'high': return 'text-red-500 border-red-500/20 bg-red-500/10';
+      case 'medium': return 'text-orange-500 border-orange-500/20 bg-orange-500/10';
+      case 'low': return 'text-green-500 border-green-500/20 bg-green-500/10';
+      default: return 'text-muted-foreground border-border bg-muted';
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'open': return 'text-yellow-400 bg-yellow-500/10';
-      case 'contained': return 'text-red-400 bg-red-500/10';
-      case 'dismissed': return 'text-gray-400 bg-gray-500/10';
-      default: return 'text-gray-400 bg-gray-500/10';
+      case 'open': return 'text-yellow-500 border-yellow-500/20 bg-yellow-500/10';
+      case 'contained': return 'text-red-500 border-red-500/20 bg-red-500/10';
+      case 'dismissed': return 'text-muted-foreground border-border bg-muted';
+      default: return 'text-muted-foreground border-border bg-muted';
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-400">Initializing SOC Command Center...</p>
-        </div>
-      </div>
-    );
-  }
+  const handleChatWithAI = (e: React.MouseEvent, incident: Incident) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setCopilotContext({ incidentId: incident.id, incidentData: incident });
+    toggleCopilot();
+  };
+
+  const handleQuickView = (e: React.MouseEvent, incident: Incident) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setSelectedIncident(incident);
+    setQuickViewOpen(true);
+  };
 
   return (
     <DashboardLayout breadcrumbs={[{ label: "Incidents" }]}>
-      {/* Filters and Search */}
-      <div className="mb-6 flex items-center gap-4">
-        <div className="flex items-center gap-3">
-          <Filter className="w-4 h-4 text-gray-400" />
-          <select
-            value={filterSeverity}
-            onChange={(e) => setFilterSeverity(e.target.value)}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
-          >
-            <option value="all">All Severities</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
-          </select>
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
-          >
-            <option value="all">All Statuses</option>
-            <option value="open">Open</option>
-            <option value="contained">Contained</option>
-            <option value="dismissed">Dismissed</option>
-          </select>
+      {/* Header Controls */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search incidents..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 h-9 w-64 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-muted-foreground ml-2" />
+            <select
+              value={filterSeverity}
+              onChange={(e) => setFilterSeverity(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <option value="all">All Severities</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <option value="all">All Statuses</option>
+              <option value="open">Open</option>
+              <option value="contained">Contained</option>
+              <option value="dismissed">Dismissed</option>
+            </select>
+          </div>
         </div>
-        <div className="flex items-center gap-2 ml-auto">
-          <Search className="w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search incidents..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 w-64"
-          />
-        </div>
+
         {autoRefreshing && (
-          <div className="flex items-center gap-2 px-3 py-1 bg-blue-500/20 border border-blue-500/50 rounded-full">
-            <RefreshCw className="w-3 h-3 text-blue-400 animate-spin" />
-            <span className="text-xs text-blue-300 font-medium">Live</span>
+          <div className="flex items-center gap-2 px-3 py-1 bg-primary/10 rounded-full self-start md:self-center">
+            <RefreshCw className="w-3 h-3 text-primary animate-spin" />
+            <span className="text-xs font-medium text-primary">Live Updates</span>
           </div>
         )}
       </div>
 
-      {/* Main Content Layout: Incidents List + Chat */}
-      <div className="flex gap-6">{/* Two-column layout starts here */}
-        {/* Main Panel: Incidents List */}
-        <div className="flex-1 space-y-6">
-                <div className="space-y-4">
-                  {filteredIncidents.map((incident) => (
-                    <div
-                      key={incident.id}
-                      className="bg-gray-900 border border-gray-800 hover:border-blue-500/30 rounded-xl p-6 cursor-pointer transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/5"
-                      onClick={() => setSelectedIncident(incident)}
-                    >
-                      <div className="flex items-start justify-between mb-5">
-                        <div className="flex items-center gap-4">
-                          <div className={`p-3 rounded-lg border ${
-                            incident.triage_note?.severity === 'high'
-                              ? 'bg-red-500/10 border-red-500/30'
-                              : incident.triage_note?.severity === 'medium'
-                              ? 'bg-orange-500/10 border-orange-500/30'
-                              : 'bg-blue-500/10 border-blue-500/30'
-                          }`}>
-                            <AlertTriangle className={`w-5 h-5 ${
-                              incident.triage_note?.severity === 'high'
-                                ? 'text-red-400'
-                                : incident.triage_note?.severity === 'medium'
-                                ? 'text-orange-400'
-                                : 'text-blue-400'
-                            }`} />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2 mb-1">
-                              <h3 className="text-lg font-semibold text-white">Incident #{incident.id}</h3>
-                              {incident.auto_contained && (
-                                <span className="px-2 py-0.5 rounded text-xs font-semibold bg-purple-500/10 text-purple-300 border border-purple-500/30">
-                                  AUTO
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-3 text-sm text-gray-400">
-                              <span className="flex items-center gap-1">
-                                <Globe className="w-3.5 h-3.5" />
-                                {incident.src_ip}
-                              </span>
-                              <span>•</span>
-                              <span>{formatTimeAgo(incident.created_at)}</span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {incident.triage_note && (
-                            <span className={`px-3 py-1 rounded-lg text-xs font-semibold border ${getSeverityColor(incident.triage_note.severity)} ${
-                              incident.triage_note.severity === 'high' ? 'border-red-500/30' :
-                              incident.triage_note.severity === 'medium' ? 'border-orange-500/30' : 'border-green-500/30'
-                            }`}>
-                              {incident.triage_note.severity.toUpperCase()}
-                            </span>
-                          )}
-                          <span className={`px-3 py-1 rounded-lg text-xs font-semibold border ${getStatusColor(incident.status)} ${
-                            incident.status === 'open' ? 'border-yellow-500/30' :
-                            incident.status === 'contained' ? 'border-red-500/30' : 'border-gray-500/30'
-                          }`}>
-                            {incident.status.toUpperCase()}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-4 gap-4 mb-5">
-                        <div className="bg-gray-800/50 border border-red-500/20 rounded-lg p-4 text-center">
-                          <div className="text-2xl font-bold text-red-400 mb-1">
-                            {incident.risk_score ? `${Math.round(incident.risk_score * 100)}%` : 'N/A'}
-                          </div>
-                          <div className="text-xs text-gray-400 font-medium">Risk Score</div>
-                        </div>
-                        <div className="bg-gray-800/50 border border-blue-500/20 rounded-lg p-4 text-center">
-                          <div className="text-2xl font-bold text-blue-400 mb-1">
-                            {incident.agent_confidence ? `${Math.round(incident.agent_confidence * 100)}%` : 'N/A'}
-                          </div>
-                          <div className="text-xs text-gray-400 font-medium">ML Confidence</div>
-                        </div>
-                        <div className="bg-gray-800/50 border border-purple-500/20 rounded-lg p-4 text-center">
-                          <div className="text-2xl font-bold text-purple-400 mb-1 capitalize">
-                            {incident.escalation_level || 'Medium'}
-                          </div>
-                          <div className="text-xs text-gray-400 font-medium">Escalation</div>
-                        </div>
-                        <div className="bg-gray-800/50 border border-green-500/20 rounded-lg p-4 text-center">
-                          <div className="text-2xl font-bold text-green-400 mb-1 capitalize">
-                            {incident.containment_method || 'ML-driven'}
-                          </div>
-                          <div className="text-xs text-gray-400 font-medium">Detection</div>
-                        </div>
-                      </div>
-
-                      <div className="bg-gray-800/30 border border-gray-700/50 rounded-lg p-4 mb-5">
-                        <p className="text-sm text-gray-300 leading-relaxed">{incident.reason}</p>
-                      </div>
-
-                      <div className="flex items-center justify-between pt-2 border-t border-gray-800">
-                        <div className="flex items-center gap-2">
-                          <Link href={`/incidents/incident/${incident.id}`}>
-                            <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors">
-                              <Eye className="w-4 h-4" />
-                              Investigate
-                            </button>
-                          </Link>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedIncident(incident);
-                            }}
-                            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors"
-                          >
-                            <MessageSquare className="w-4 h-4" />
-                            Chat with AI
-                          </button>
-                        </div>
-                        <button className="p-2 hover:bg-gray-800 rounded-lg transition-colors">
-                          <MoreHorizontal className="w-4 h-4 text-gray-400" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-            {/* Other tabs would go here */}
+      {/* Empty State */}
+      {!loading && filteredIncidents.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-20 text-center border border-dashed border-border rounded-xl bg-muted/5">
+          <div className="p-4 bg-muted rounded-full mb-4">
+            <Inbox className="w-8 h-8 text-muted-foreground" />
           </div>
+          <h3 className="text-lg font-semibold mb-1">No incidents found</h3>
+          <p className="text-sm text-muted-foreground max-w-sm mb-6">
+            {searchQuery || filterSeverity !== 'all' || filterStatus !== 'all'
+              ? "Try adjusting your filters or search query to find what you're looking for."
+              : "Great job! There are no active incidents requiring your attention right now."}
+          </p>
+          {(searchQuery || filterSeverity !== 'all' || filterStatus !== 'all') && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSearchQuery('');
+                setFilterSeverity('all');
+                setFilterStatus('all');
+              }}
+            >
+              Clear Filters
+            </Button>
+          )}
+        </div>
+      )}
 
-          {/* AI Chat Panel */}
-          <div className="w-96 bg-gray-900 border-l border-gray-800 flex flex-col">
-            <div className="p-4 border-b border-gray-800">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-purple-600/20 rounded-lg">
-                  <Bot className="w-5 h-5 text-purple-400" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-white">AI Security Analyst</h3>
-                  <p className="text-xs text-gray-400">
-                    {selectedIncident ? `Analyzing Incident #${selectedIncident.id}` : 'Ready to assist'}
-                  </p>
-                </div>
-              </div>
-            </div>
+      {/* Loading State */}
+      {loading && (
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-48 rounded-xl bg-muted/50 animate-pulse" />
+          ))}
+        </div>
+      )}
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {chatMessages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  {message.type === 'ai' && (
-                    <div className="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center flex-shrink-0">
-                      <Bot className="w-4 h-4 text-white" />
+      {/* Incidents List */}
+      <div className="grid gap-4">
+        {filteredIncidents.map((incident) => (
+          <Card
+            key={incident.id}
+            className="group transition-all hover:shadow-md hover:border-primary/20 overflow-hidden"
+          >
+            <div className="p-6">
+              <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
+                <div className="flex items-start gap-4">
+                  <div className={cn("p-3 rounded-xl",
+                    incident.triage_note?.severity === 'high' ? 'bg-red-500/10' :
+                    incident.triage_note?.severity === 'medium' ? 'bg-orange-500/10' : 'bg-blue-500/10'
+                  )}>
+                    <AlertTriangle className={cn("w-5 h-5",
+                      incident.triage_note?.severity === 'high' ? 'text-red-500' :
+                      incident.triage_note?.severity === 'medium' ? 'text-orange-500' : 'text-blue-500'
+                    )} />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="text-lg font-semibold">Incident #{incident.id}</h3>
+                      {incident.auto_contained && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-500 border border-purple-500/20 uppercase tracking-wide">
+                          Auto-Contained
+                        </span>
+                      )}
                     </div>
-                  )}
-
-                  <div className={`max-w-[80%] p-3 rounded-lg ${
-                    message.type === 'user'
-                      ? 'bg-blue-600/20 border border-blue-500/30 text-blue-100'
-                      : 'bg-purple-600/20 border border-purple-500/30 text-purple-100'
-                  }`}>
-                    {message.loading ? (
-                      <div className="flex items-center gap-2">
-                        <div className="animate-spin w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full"></div>
-                        <span>Analyzing...</span>
-                      </div>
-                    ) : (
-                      <div className="text-sm whitespace-pre-wrap">{message.content}</div>
-                    )}
+                    <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                      <span className="flex items-center gap-1.5">
+                        <Globe className="w-3.5 h-3.5" />
+                        {incident.src_ip}
+                      </span>
+                      <span>•</span>
+                      <span>{formatTimeAgo(incident.created_at)}</span>
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
 
-            <div className="p-4 border-t border-gray-800">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && sendChatMessage()}
-                  placeholder="Ask about threats, incidents, or get analysis..."
-                  className="flex-1 bg-gray-700/50 border border-gray-600/50 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-purple-500/50"
-                  disabled={chatLoading}
-                />
-                <button
-                  onClick={sendChatMessage}
-                  disabled={!chatInput.trim() || chatLoading}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-800 disabled:opacity-50 text-white rounded-lg text-sm transition-colors"
-                >
-                  {chatLoading ? (
-                    <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div>
-                  ) : (
-                    'Send'
-                  )}
-                </button>
+                <div className="flex items-center gap-2">
+                  <span className={cn("px-2.5 py-1 rounded-full text-xs font-medium border capitalize", getSeverityColor(incident.triage_note?.severity))}>
+                    {incident.triage_note?.severity || 'Unknown'} Severity
+                  </span>
+                  <span className={cn("px-2.5 py-1 rounded-full text-xs font-medium border capitalize", getStatusColor(incident.status))}>
+                    {incident.status}
+                  </span>
+                </div>
+              </div>
+
+              {/* Stats Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                {[
+                  { label: 'Risk Score', value: incident.risk_score ? `${Math.round(incident.risk_score * 100)}%` : 'N/A', color: 'text-red-500' },
+                  { label: 'Confidence', value: incident.agent_confidence ? `${Math.round(incident.agent_confidence * 100)}%` : 'N/A', color: 'text-blue-500' },
+                  { label: 'Escalation', value: incident.escalation_level || 'Medium', color: 'text-purple-500', capitalize: true },
+                  { label: 'Detection', value: incident.containment_method || 'ML-driven', color: 'text-green-500', capitalize: true },
+                ].map((stat, i) => (
+                  <div key={i} className="bg-muted/30 border border-border rounded-lg p-3 text-center">
+                    <div className={cn("text-xl font-bold mb-0.5", stat.color, stat.capitalize && "capitalize")}>
+                      {stat.value}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{stat.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="bg-muted/30 rounded-lg p-4 mb-6 border border-border/50">
+                <p className="text-sm text-muted-foreground leading-relaxed">{incident.reason}</p>
+              </div>
+
+              <div className="flex items-center justify-between pt-4 border-t border-border">
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={(e) => handleQuickView(e, incident)}
+                  >
+                    <MessageSquare className="w-4 h-4 mr-2" />
+                    Quick View
+                  </Button>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={`/incidents/incident/${incident.id}`}>
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      Full Analysis
+                    </Link>
+                  </Button>
+                </div>
+                <Button variant="ghost" size="icon">
+                  <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
+                </Button>
               </div>
             </div>
-          </div>
+          </Card>
+        ))}
       </div>
+
+      {/* Quick View Drawer */}
+      <IncidentQuickView
+        open={quickViewOpen}
+        onOpenChange={setQuickViewOpen}
+        incident={selectedIncident}
+        onExecuteAction={async (actionType) => {
+          // Quick action handler - you can expand this
+          console.log(`Execute ${actionType} for incident ${selectedIncident?.id}`);
+        }}
+      />
     </DashboardLayout>
   );
 }

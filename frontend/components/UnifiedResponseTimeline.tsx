@@ -39,7 +39,6 @@ export default function UnifiedResponseTimeline({
   const [selectedAction, setSelectedAction] = useState<any | null>(null);
   const [showModal, setShowModal] = useState(false);
 
-  // Fetch agent actions
   useEffect(() => {
     fetchAgentActions();
     const interval = setInterval(fetchAgentActions, 5000);
@@ -58,7 +57,6 @@ export default function UnifiedResponseTimeline({
     }
   };
 
-  // Merge all actions into unified format
   const unifiedActions = useMemo<UnifiedAction[]>(() => {
     const manual: UnifiedAction[] = actions.map((a) => ({
       id: `manual-${a.id}`,
@@ -120,20 +118,17 @@ export default function UnifiedResponseTimeline({
 
     const merged = [...manual, ...workflow, ...agent];
 
-    // Apply filter
     let filtered = merged;
     if (filterSource !== 'all') {
       filtered = merged.filter(a => a.source === filterSource);
     }
 
-    // Apply sort
     filtered.sort((a, b) => {
       if (sortBy === 'newest') {
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       } else if (sortBy === 'oldest') {
         return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
       } else {
-        // Sort by status (success, pending, failed)
         const statusOrder: Record<string, number> = {
           pending: 1, running: 1, in_progress: 1,
           success: 2, completed: 2, done: 2,
@@ -148,9 +143,7 @@ export default function UnifiedResponseTimeline({
     return filtered;
   }, [actions, automatedActions, agentActions, filterSource, sortBy]);
 
-  const summary = useMemo(() => calculateActionSummary(
-    [...actions, ...automatedActions, ...agentActions]
-  ), [actions, automatedActions, agentActions]);
+  const summary = useMemo(() => calculateActionSummary(unifiedActions), [unifiedActions]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -163,7 +156,6 @@ export default function UnifiedResponseTimeline({
   };
 
   const handleActionClick = (action: UnifiedAction) => {
-    // Convert unified action back to original format for modal
     const originalAction = {
       id: action.originalId,
       action: action.actionKey,
@@ -207,109 +199,112 @@ export default function UnifiedResponseTimeline({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <Activity className="w-6 h-6 text-blue-400" />
-            Unified Response Actions
+          <h2 className="text-lg font-bold text-white flex items-center gap-2 font-heading">
+            <Activity className="w-5 h-5 text-primary" />
+            Response Activity
           </h2>
-          <div className="flex items-center gap-3 mt-1 text-sm text-gray-400">
-            <span>{summary.totalActions} total</span>
+          <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-500 font-mono">
+            <span>{summary.totalActions} TOTAL</span>
             <span>•</span>
-            <span>{summary.manualActions} manual</span>
+            <span>{summary.manualActions} MANUAL</span>
             <span>•</span>
-            <span>{summary.workflowActions} workflow</span>
+            <span>{summary.workflowActions} WORKFLOW</span>
             <span>•</span>
-            <span>{summary.agentActions} agent</span>
+            <span>{summary.agentActions} AGENT</span>
           </div>
         </div>
 
         <button
           onClick={handleRefresh}
           disabled={refreshing}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg flex items-center gap-2 transition-colors"
+          className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-md text-xs flex items-center gap-2 transition-colors font-mono uppercase tracking-wider"
         >
-          <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-3 h-3 ${refreshing ? 'animate-spin' : ''}`} />
           Refresh
         </button>
       </div>
 
-      {/* Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
-          <div className="flex items-center justify-between">
+      {/* Enhanced Summary Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-gradient-to-br from-green-500/10 to-green-600/5 border border-green-500/30 rounded-lg p-4 relative overflow-hidden group hover:shadow-lg hover:shadow-green-500/10 transition-all duration-300">
+          <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 to-green-600/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="flex items-center justify-between relative z-10">
             <div>
-              <div className="text-xs text-gray-400 uppercase font-semibold">Success</div>
-              <div className="text-2xl font-bold text-green-300">{summary.successCount}</div>
+              <div className="text-[10px] text-green-400/80 uppercase font-bold font-mono tracking-wider mb-1">Success</div>
+              <div className="text-2xl font-bold text-green-300 font-heading">{summary.successCount}</div>
             </div>
-            <CheckCircle className="w-8 h-8 text-green-400" />
+            <div className="p-2 bg-green-500/20 rounded-lg">
+              <CheckCircle className="w-6 h-6 text-green-400" />
+            </div>
           </div>
         </div>
 
-        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-          <div className="flex items-center justify-between">
+        <div className="bg-gradient-to-br from-red-500/10 to-red-600/5 border border-red-500/30 rounded-lg p-4 relative overflow-hidden group hover:shadow-lg hover:shadow-red-500/10 transition-all duration-300">
+          <div className="absolute inset-0 bg-gradient-to-br from-red-500/5 to-red-600/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="flex items-center justify-between relative z-10">
             <div>
-              <div className="text-xs text-gray-400 uppercase font-semibold">Failed</div>
-              <div className="text-2xl font-bold text-red-300">{summary.failureCount}</div>
+              <div className="text-[10px] text-red-400/80 uppercase font-bold font-mono tracking-wider mb-1">Failed</div>
+              <div className="text-2xl font-bold text-red-300 font-heading">{summary.failureCount}</div>
             </div>
-            <XCircle className="w-8 h-8 text-red-400" />
+            <div className="p-2 bg-red-500/20 rounded-lg">
+              <XCircle className="w-6 h-6 text-red-400" />
+            </div>
           </div>
         </div>
 
-        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3">
-          <div className="flex items-center justify-between">
+        <div className="bg-gradient-to-br from-amber-500/10 to-amber-600/5 border border-amber-500/30 rounded-lg p-4 relative overflow-hidden group hover:shadow-lg hover:shadow-amber-500/10 transition-all duration-300">
+          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 to-amber-600/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="flex items-center justify-between relative z-10">
             <div>
-              <div className="text-xs text-gray-400 uppercase font-semibold">Pending</div>
-              <div className="text-2xl font-bold text-yellow-300">{summary.pendingCount}</div>
+              <div className="text-[10px] text-amber-400/80 uppercase font-bold font-mono tracking-wider mb-1">Pending</div>
+              <div className="text-2xl font-bold text-amber-300 font-heading">{summary.pendingCount}</div>
             </div>
-            <Clock className="w-8 h-8 text-yellow-400" />
+            <div className="p-2 bg-amber-500/20 rounded-lg">
+              <Clock className="w-6 h-6 text-amber-400" />
+            </div>
           </div>
         </div>
 
-        <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3">
-          <div className="flex items-center justify-between">
+        <div className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border border-blue-500/30 rounded-lg p-4 relative overflow-hidden group hover:shadow-lg hover:shadow-blue-500/10 transition-all duration-300">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-blue-600/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="flex items-center justify-between relative z-10">
             <div>
-              <div className="text-xs text-gray-400 uppercase font-semibold">Success Rate</div>
-              <div className="text-2xl font-bold text-purple-300">{summary.successRate}%</div>
+              <div className="text-[10px] text-blue-400/80 uppercase font-bold font-mono tracking-wider mb-1">Success Rate</div>
+              <div className="text-2xl font-bold text-blue-300 font-heading">{summary.successRate}%</div>
             </div>
-            <TrendingUp className="w-8 h-8 text-purple-400" />
+            <div className="p-2 bg-blue-500/20 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-blue-400" />
+            </div>
           </div>
         </div>
       </div>
 
       {/* Filters and Sort */}
-      <div className="flex items-center gap-4 bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-        {/* Filter */}
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-gray-400" />
-          <span className="text-sm text-gray-400">Filter:</span>
+      <div className="glass-panel border-white/5 rounded-lg p-3 flex flex-col md:flex-row gap-4 items-center justify-between">
+        <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
+          <Filter className="w-3 h-3 text-gray-500" />
           <div className="flex gap-1">
             {(['all', 'agent', 'workflow', 'manual'] as ActionSource[]).map((source) => (
               <button
                 key={source}
                 onClick={() => setFilterSource(source)}
-                className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all font-mono border ${
                   filterSource === source
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    ? 'bg-primary/20 text-primary border-primary/30'
+                    : 'bg-transparent text-gray-500 border-transparent hover:bg-white/5 hover:text-gray-300'
                 }`}
               >
-                {source === 'all' && 'All'}
-                {source === 'agent' && <><Bot className="w-3 h-3 inline mr-1" />Agent</>}
-                {source === 'workflow' && <><Zap className="w-3 h-3 inline mr-1" />Workflow</>}
-                {source === 'manual' && <><User className="w-3 h-3 inline mr-1" />Manual</>}
+                {source}
               </button>
             ))}
           </div>
         </div>
 
-        <div className="h-6 w-px bg-gray-600"></div>
-
-        {/* Sort */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-400">Sort:</span>
+        <div className="flex items-center gap-2 w-full md:w-auto">
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as SortBy)}
-            className="bg-gray-700 text-gray-300 px-3 py-1 rounded text-sm border border-gray-600 focus:outline-none focus:border-blue-500"
+            className="w-full md:w-auto bg-black/40 text-gray-400 px-3 py-1 rounded text-xs border border-white/10 focus:outline-none focus:border-primary/50 font-mono uppercase"
           >
             <option value="newest">Newest First</option>
             <option value="oldest">Oldest First</option>
@@ -319,15 +314,15 @@ export default function UnifiedResponseTimeline({
       </div>
 
       {/* Actions List */}
-      <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+      <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
         {unifiedActions.length === 0 ? (
-          <div className="bg-gray-800/30 border border-gray-700/50 rounded-lg p-12 text-center">
-            <AlertCircle className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-            <div className="text-gray-400">No actions found</div>
-            <div className="text-sm text-gray-500 mt-1">
+          <div className="glass-card border-dashed border-white/10 rounded-lg p-8 text-center">
+            <AlertCircle className="w-8 h-8 text-gray-700 mx-auto mb-3" />
+            <div className="text-gray-500 font-heading font-medium">No actions found</div>
+            <div className="text-xs text-gray-600 mt-1 font-mono">
               {filterSource !== 'all'
-                ? `No ${filterSource} actions for this incident`
-                : 'No actions have been taken yet'}
+                ? `No ${filterSource} actions logged`
+                : 'Awaiting response initiation'}
             </div>
           </div>
         ) : (
@@ -342,16 +337,15 @@ export default function UnifiedResponseTimeline({
         )}
       </div>
 
-      {/* Load More (for future pagination) */}
+      {/* Load More */}
       {unifiedActions.length > 20 && (
-        <div className="text-center pt-4">
-          <button className="px-6 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm font-medium transition-colors">
-            Load More Actions
+        <div className="text-center pt-2">
+          <button className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg text-xs font-bold font-mono transition-colors uppercase tracking-wider">
+            Load Historical Actions
           </button>
         </div>
       )}
 
-      {/* Action Detail Modal */}
       <ActionDetailModal
         action={selectedAction}
         isOpen={showModal}

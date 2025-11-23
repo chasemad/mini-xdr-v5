@@ -21,13 +21,13 @@ deployments meet legal and organisational requirements.
 
 ## Storage Locations
 
-- **Database**: SQLite at `backend/xdr.db` (development) or PostgreSQL with encryption at rest and
-  automated backups (production).
-- **ML Artefacts**: Stored in `models/` directory; production deployments use encrypted object storage
-  (S3, Azure Blob) with versioning and access controls.
+- **Database**: PostgreSQL via `DATABASE_URL` with encryption at rest and automated backups for
+  production. SQLite is no longer the default.
+- **ML Artefacts**: Stored in `models/` directory; production deployments can publish to encrypted
+  object storage with versioning and access controls.
 - **Distributed Storage**: Kafka for event streaming, Redis for caching and session management in
   distributed deployments.
-- **Secrets**: AWS Secrets Manager, Azure Key Vault, or encrypted database storage for credentials.
+- **Secrets**: Environment variables or your preferred secret store; AWS-specific integrations are archived.
 - **Audit Logs**: Tamper-evident storage with retention policies and compliance exports.
 
 ## Retention & Deletion

@@ -1,15 +1,23 @@
 # Dashboard Guide
 
-The SOC dashboard (`frontend/app/incidents/page.tsx`) provides analysts with comprehensive real-time visibility into incidents, AI-powered analysis, and automated response capabilities.
+The SOC dashboard (`frontend/app/page.tsx`) provides analysts with comprehensive real-time visibility into incidents, AI-powered analysis, and automated response capabilities.
 
 ## Layout
 
-1. **Metrics Strip** – Real-time metrics dashboard showing incident totals, containment statistics, ML detection rates, and system health indicators.
-2. **Incident Table** – Dynamic incident listing populated via `getIncidents()` (API `/incidents`) with advanced filtering, sorting, and bulk operations.
-3. **AI Assistant Panel** – Intelligent chat interface powered by the full agent orchestration system (`/api/agents/orchestrate`) with context awareness and multi-agent coordination.
-4. **System Health Panel** – Real-time monitoring of distributed components, federated learning status, and system performance metrics.
-5. **Filters & Search** – Advanced filtering by severity, status, agent, time range, and semantic search capabilities.
-6. **Auto-Refresh** – Configurable refresh intervals with WebSocket real-time updates and fallback polling.
+The dashboard is organized into three main tabs: Threat Overview, Active Incidents, and Response Actions.
+
+### Threat Overview Tab
+1. **Key Metrics & Recent Activity** – Top-level display of Total Incidents, High Priority count, Containment stats, and AI Detection rates, alongside the most recent activity feed.
+2. **Live Threat Intelligence** – Central monitoring view with Live Event Stream, Attack Surface details, Top Attack Types, and Response Metrics.
+3. **Phase 2 Intelligence** – Bottom section tracking ML model performance, Feature Store metrics, Agent Hub status, and Training Data collection.
+
+### Active Incidents Tab
+1. **Filters & Search** – Advanced filtering by severity, status, and search queries.
+2. **Incident List** – Detailed cards for each incident with quick actions (Block IP, Isolate Host) and analysis links.
+
+### General Features
+1. **Auto-Refresh** – Configurable refresh intervals with live updates.
+2. **AI Assistant** – Integrated Copilot context for incident analysis.
 
 ## Incident Details
 

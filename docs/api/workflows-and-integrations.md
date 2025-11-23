@@ -71,7 +71,7 @@
   distributed threat feeds when API keys are available.
 - **Honeypot (T-Pot)**: `backend/app/tpot_verifier.py` verifies honeypot state via SSH/HTTP with
   advanced deception capabilities.
-- **SageMaker**: Cloud ML integration through `backend/app/sagemaker_client.py` and
+- **Legacy SageMaker (archived)**: Cloud ML integration has been removed; all inference now uses local models.
   `backend/app/sagemaker_endpoint_manager.py` with auto-scaling and model versioning.
 - **Distributed Systems**: Kafka and Redis integration for multi-node deployments with leader election
   and distributed caching.

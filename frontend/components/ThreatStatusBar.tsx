@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { 
-  AlertTriangle, CheckCircle, Shield, Activity, Clock,
-  TrendingUp, Zap, Bot, Eye
+import {
+  AlertTriangle, CheckCircle, Shield, Clock,
+  TrendingUp, Bot
 } from 'lucide-react';
 
 interface ThreatStatus {
@@ -44,7 +44,7 @@ export default function ThreatStatusBar({ incident, onExpand }: ThreatStatusBarP
       const agentActions = incident.agent_actions || [];
       const advancedActions = incident.advanced_actions || [];
       const workflowActions = advancedActions.filter((a: any) => a.workflow_id);
-      
+
       // Determine containment status
       let containmentStatus: 'none' | 'partial' | 'complete' = 'none';
       if (incident.auto_contained) {
@@ -63,7 +63,7 @@ export default function ThreatStatusBar({ incident, onExpand }: ThreatStatusBarP
       const diffMins = Math.floor(diffMs / 60000);
       const diffHours = Math.floor(diffMins / 60);
       const diffDays = Math.floor(diffHours / 24);
-      
+
       let duration = '';
       if (diffDays > 0) duration = `${diffDays}d ago`;
       else if (diffHours > 0) duration = `${diffHours}h ago`;
@@ -77,8 +77,8 @@ export default function ThreatStatusBar({ incident, onExpand }: ThreatStatusBarP
         'high': 'high',
         'critical': 'critical'
       };
-      
-      const severity = incident.triage_note?.severity 
+
+      const severity = incident.triage_note?.severity
         ? severityMap[incident.triage_note.severity.toLowerCase()] || 'medium'
         : 'medium';
 
@@ -120,55 +120,53 @@ export default function ThreatStatusBar({ incident, onExpand }: ThreatStatusBarP
   const containmentColor = getContainmentColor();
 
   return (
-    <div className={`border-l-4 border-${severityColor}-500 bg-gradient-to-r from-${severityColor}-500/10 to-transparent mb-6 rounded-lg overflow-hidden`}>
+    <div className={`glass-card border-l-4 border-l-${severityColor}-500 mb-6 rounded-lg overflow-hidden`}>
       {/* Main Status Bar */}
-      <div className="bg-gray-800/90 backdrop-blur-sm p-6">
+      <div className="p-6">
         {/* Top Row: Primary Status */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center justify-between mb-6 gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
             {threatStatus.attackActive ? (
-              <div className="flex items-center gap-2">
-                <div className={`h-3 w-3 bg-${severityColor}-500 rounded-full animate-pulse`}></div>
-                <span className={`text-${severityColor}-400 font-bold text-lg uppercase tracking-wide`}>
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/20">
+                <div className="h-2 w-2 bg-red-500 rounded-full animate-pulse"></div>
+                <span className="text-red-400 font-bold font-heading uppercase tracking-wide text-sm">
                   {threatStatus.status === 'open' ? 'Active Threat' : 'Investigating'}
                 </span>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-5 w-5 text-green-400" />
-                <span className="text-green-400 font-bold text-lg uppercase tracking-wide">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/20">
+                <CheckCircle className="h-4 w-4 text-green-400" />
+                <span className="text-green-400 font-bold font-heading uppercase tracking-wide text-sm">
                   Threat Resolved
                 </span>
               </div>
             )}
-            
-            <div className="h-6 w-px bg-gray-600"></div>
-            
+
+            <div className="h-4 w-px bg-white/10 hidden sm:block"></div>
+
             <div className="flex items-center gap-2">
-              <Shield className={`h-5 w-5 text-${severityColor}-400`} />
-              <span className={`text-${severityColor}-300 font-semibold uppercase text-sm`}>
+              <Shield className={`h-4 w-4 text-${severityColor}-400`} />
+              <span className={`text-${severityColor}-300 font-bold font-mono uppercase text-sm`}>
                 {threatStatus.threatCategory}
               </span>
             </div>
 
-            <div className="h-6 w-px bg-gray-600"></div>
-
             <div className="flex items-center gap-2">
-              <span className={`px-3 py-1 rounded-full text-xs font-bold bg-${severityColor}-500/20 text-${severityColor}-300 border border-${severityColor}-500/30`}>
-                {threatStatus.severity.toUpperCase()} SEVERITY
+              <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-${severityColor}-500/10 text-${severityColor}-300 border border-${severityColor}-500/20 uppercase tracking-wider`}>
+                {threatStatus.severity} SEVERITY
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 text-sm text-gray-400">
-            <div className="flex items-center gap-1">
-              <Clock className="h-4 w-4" />
+          <div className="flex items-center gap-3 text-sm text-gray-500 font-mono">
+            <div className="flex items-center gap-1.5">
+              <Clock className="h-3 w-3" />
               <span>{threatStatus.duration}</span>
             </div>
             {onExpand && (
               <button
                 onClick={onExpand}
-                className="text-blue-400 hover:text-blue-300 transition-colors font-medium"
+                className="text-primary hover:text-primary/80 transition-colors font-bold uppercase tracking-wider text-xs ml-4"
               >
                 View Timeline →
               </button>
@@ -177,75 +175,70 @@ export default function ThreatStatusBar({ incident, onExpand }: ThreatStatusBarP
         </div>
 
         {/* Bottom Row: Status Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {/* Attack Status */}
-          <div className={`bg-${severityColor}-500/10 border border-${severityColor}-500/30 rounded-lg p-4`}>
+          <div className={`bg-${severityColor}-500/5 border border-${severityColor}-500/20 rounded-lg p-3 group hover:bg-${severityColor}-500/10 transition-colors`}>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <AlertTriangle className={`h-4 w-4 text-${severityColor}-400`} />
-                <span className="text-xs font-semibold text-gray-300 uppercase">Attack</span>
+                <AlertTriangle className={`h-3 w-3 text-${severityColor}-400`} />
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider font-mono">Attack</span>
               </div>
             </div>
-            <div className={`text-2xl font-bold text-${severityColor}-300 mb-1`}>
+            <div className={`text-lg font-bold text-${severityColor}-300 mb-1 font-heading`}>
               {threatStatus.attackActive ? 'ACTIVE' : 'INACTIVE'}
             </div>
-            <div className="text-xs text-gray-400">
-              Source: <span className="font-mono text-gray-300">{threatStatus.sourceIp}</span>
+            <div className="text-[10px] text-gray-500 font-mono truncate">
+              SRC: {threatStatus.sourceIp}
             </div>
           </div>
 
           {/* Containment Status */}
-          <div className={`bg-${containmentColor}-500/10 border border-${containmentColor}-500/30 rounded-lg p-4`}>
+          <div className={`bg-${containmentColor}-500/5 border border-${containmentColor}-500/20 rounded-lg p-3 group hover:bg-${containmentColor}-500/10 transition-colors`}>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <Shield className={`h-4 w-4 text-${containmentColor}-400`} />
-                <span className="text-xs font-semibold text-gray-300 uppercase">Containment</span>
+                <Shield className={`h-3 w-3 text-${containmentColor}-400`} />
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider font-mono">Containment</span>
               </div>
             </div>
-            <div className={`text-2xl font-bold text-${containmentColor}-300 mb-1 uppercase`}>
+            <div className={`text-lg font-bold text-${containmentColor}-300 mb-1 font-heading uppercase`}>
               {threatStatus.containmentStatus}
             </div>
-            <div className="text-xs text-gray-400">
-              {threatStatus.containmentStatus === 'complete' ? 'Fully Contained' :
-               threatStatus.containmentStatus === 'partial' ? 'In Progress' :
-               'Not Contained'}
+            <div className="text-[10px] text-gray-500 font-mono">
+              {threatStatus.containmentStatus === 'complete' ? 'SECURE' :
+               threatStatus.containmentStatus === 'partial' ? 'IN PROGRESS' :
+               'VULNERABLE'}
             </div>
           </div>
 
           {/* Agent Activity */}
-          <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
+          <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3 group hover:bg-blue-500/10 transition-colors">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <Bot className="h-4 w-4 text-blue-400" />
-                <span className="text-xs font-semibold text-gray-300 uppercase">AI Agents</span>
+                <Bot className="h-3 w-3 text-blue-400" />
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider font-mono">Agents</span>
               </div>
             </div>
-            <div className="text-2xl font-bold text-blue-300 mb-1">
+            <div className="text-lg font-bold text-blue-300 mb-1 font-heading">
               {threatStatus.agentCount}
             </div>
-            <div className="text-xs text-gray-400">
-              {threatStatus.agentCount === 0 ? 'No actions yet' :
-               threatStatus.agentCount === 1 ? '1 agent acting' :
-               `${threatStatus.agentCount} agents acting`}
+            <div className="text-[10px] text-gray-500 font-mono">
+              ACTIVE DEFENSE UNITS
             </div>
           </div>
 
           {/* Confidence Score */}
-          <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4">
+          <div className="bg-purple-500/5 border border-purple-500/20 rounded-lg p-3 group hover:bg-purple-500/10 transition-colors">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <TrendingUp className="h-4 w-4 text-purple-400" />
-                <span className="text-xs font-semibold text-gray-300 uppercase">Confidence</span>
+                <TrendingUp className="h-3 w-3 text-purple-400" />
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider font-mono">Confidence</span>
               </div>
             </div>
-            <div className="text-2xl font-bold text-purple-300 mb-1">
+            <div className="text-lg font-bold text-purple-300 mb-1 font-heading">
               {Math.round(threatStatus.confidence * 100)}%
             </div>
-            <div className="text-xs text-gray-400">
-              {threatStatus.confidence >= 0.8 ? 'Very High' :
-               threatStatus.confidence >= 0.6 ? 'High' :
-               threatStatus.confidence >= 0.4 ? 'Medium' :
-               'Low'}
+            <div className="text-[10px] text-gray-500 font-mono">
+              AI CERTAINTY SCORE
             </div>
           </div>
         </div>
@@ -253,4 +246,3 @@ export default function ThreatStatusBar({ incident, onExpand }: ThreatStatusBarP
     </div>
   );
 }
-

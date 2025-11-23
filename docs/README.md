@@ -14,13 +14,11 @@ Welcome to the canonical documentation set for the Mini-XDR platform. This direc
 - **Getting Started**
   - [Local Quickstart](getting-started/local-quickstart.md)
   - [Environment Configuration](getting-started/environment-config.md)
-  - [Secrets Management](getting-started/secrets-management.md)
   - [Documentation Enforcement](getting-started/docs-enforcement.md)
 - **Deployment**
   - [Deployment Overview](deployment/overview.md)
-  - AWS: [Overview](deployment/aws/overview.md) · [Operations](deployment/aws/operations.md) · [Troubleshooting](deployment/aws/troubleshooting.md)
-  - Azure: [Overview](deployment/azure/overview.md) · [Operations](deployment/azure/operations.md) · [Troubleshooting](deployment/azure/troubleshooting.md)
   - [Kubernetes & Infrastructure](deployment/kubernetes-and-infra.md)
+  - Archived AWS Guides: `docs/archived/aws/`
 - **Operations**
   - Runbooks: [SOC Analyst Guide](operations/runbooks/soc-analyst-guide.md) · [Incident Response](operations/runbooks/incident-response.md)
   - [Monitoring & Alerts](operations/monitoring-and-alerts.md)
@@ -38,6 +36,10 @@ Welcome to the canonical documentation set for the Mini-XDR platform. This direc
 - **User Interface**
   - [Dashboard Guide](ui/dashboard-guide.md)
   - [Automation Designer](ui/automation-designer.md)
+- **Demo & Presentations**
+  - [Demo Package Index](../DEMO-PACKAGE-INDEX.md) - Complete demo materials
+  - [Demo Walkthrough](../scripts/demo/DEMO-WALKTHROUGH.md) - Step-by-step guide
+  - [Quick Reference](../scripts/demo/QUICK-REFERENCE.txt) - 1-page cheat sheet
 - **Change Control**
   - [Release Notes](change-control/release-notes.md)
   - [Audit Log](change-control/audit-log.md)

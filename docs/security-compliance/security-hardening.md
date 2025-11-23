@@ -18,7 +18,7 @@ hardening steps before production.
   and other hardening measures applied globally.
 - **Input Validation**: Multi-layer input sanitization with `sanitize_input_data`, size limits, and
   comprehensive validation for all ingest payloads and API inputs.
-- **Secrets Management**: AWS Secrets Manager integration with encrypted storage and automatic rotation
+- **Secrets Management**: Environment-based secrets by default; integrate with your preferred vault for rotation
   capabilities.
 - **Encryption**: Data encryption at rest using configurable encryption keys for sensitive database fields.
 - **Audit Logging**: Comprehensive audit trails for all privileged actions, agent operations, and
@@ -34,7 +34,7 @@ hardening steps before production.
    network segmentation, and encrypted communication channels.
 3. **Agent Credential Management**: Implement automated rotation for all agent HMAC credentials
    with secure key generation and distribution mechanisms.
-4. **Secrets Management**: Use managed identity services (AWS IAM roles, Azure managed identities)
+4. **Secrets Management**: Use managed identity services (e.g., Azure managed identities) or a local vault when deploying beyond Docker Compose.
    for runtime secret access instead of stored credentials.
 5. **Network Security**: Implement zero-trust networking with service mesh (Istio/Linkerd) for
    distributed deployments and comprehensive network policies.

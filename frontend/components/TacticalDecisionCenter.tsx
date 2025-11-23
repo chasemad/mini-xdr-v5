@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState } from 'react';
-import { 
-  Shield, Search, AlertOctagon, FileText, Bot, 
-  MessageSquare, Workflow, TrendingUp
+import {
+  Shield, Search, AlertOctagon, FileText, Bot,
+  MessageSquare, Workflow, TrendingUp, Command
 } from 'lucide-react';
 
 interface TacticalDecisionCenterProps {
@@ -29,7 +29,7 @@ export default function TacticalDecisionCenter({
 
   const handleAction = async (actionName: string, callback?: () => void) => {
     if (!callback) return;
-    
+
     try {
       setProcessing(actionName);
       await callback();
@@ -46,8 +46,7 @@ export default function TacticalDecisionCenter({
       label: 'Contain Now',
       icon: Shield,
       onClick: onContainNow,
-      gradient: 'from-red-600 to-orange-600',
-      hoverGradient: 'from-red-700 to-orange-700',
+      color: 'red',
       description: 'Emergency containment'
     },
     {
@@ -55,8 +54,7 @@ export default function TacticalDecisionCenter({
       label: 'Hunt Threats',
       icon: Search,
       onClick: onHuntThreats,
-      gradient: 'from-purple-600 to-pink-600',
-      hoverGradient: 'from-purple-700 to-pink-700',
+      color: 'purple',
       description: 'Search for IOCs'
     },
     {
@@ -64,26 +62,23 @@ export default function TacticalDecisionCenter({
       label: 'Escalate',
       icon: AlertOctagon,
       onClick: onEscalate,
-      gradient: 'from-yellow-600 to-orange-600',
-      hoverGradient: 'from-yellow-700 to-orange-700',
+      color: 'amber',
       description: 'Alert SOC team'
     },
     {
       id: 'playbook',
-      label: 'Create Playbook',
+      label: 'Playbook',
       icon: Workflow,
       onClick: onCreatePlaybook,
-      gradient: 'from-blue-600 to-cyan-600',
-      hoverGradient: 'from-blue-700 to-cyan-700',
+      color: 'cyan',
       description: 'Automated response'
     },
     {
       id: 'report',
-      label: 'Generate Report',
+      label: 'Report',
       icon: FileText,
       onClick: onGenerateReport,
-      gradient: 'from-gray-600 to-gray-700',
-      hoverGradient: 'from-gray-700 to-gray-800',
+      color: 'emerald',
       description: 'Incident summary'
     },
     {
@@ -91,27 +86,82 @@ export default function TacticalDecisionCenter({
       label: 'Ask AI',
       icon: MessageSquare,
       onClick: onAskAI,
-      gradient: 'from-purple-600 to-blue-600',
-      hoverGradient: 'from-purple-700 to-blue-700',
+      color: 'blue',
       description: 'AI assistance'
     }
   ];
 
   return (
-    <div className="bg-gradient-to-br from-gray-800/90 to-gray-900/90 backdrop-blur-sm border border-gray-700 rounded-xl p-6 shadow-2xl">
-      {/* Header */}
-      <div className="flex items-center gap-2 mb-4">
-        <TrendingUp className="w-5 h-5 text-blue-400" />
-        <h3 className="text-lg font-bold text-white">Tactical Decision Center</h3>
-        <span className="text-xs text-gray-400 ml-auto">Quick Actions</span>
+    <div className="bg-gradient-to-br from-background to-background/95 rounded-xl p-6 border border-primary/20 relative overflow-hidden shadow-2xl">
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-secondary/5 opacity-30 pointer-events-none" />
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
+
+      {/* Enhanced Header */}
+      <div className="flex items-center justify-between mb-6 relative z-10">
+        <div className="flex items-center gap-4">
+          <div className="p-3 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 border border-primary/30 shadow-lg">
+            <Command className="w-6 h-6 text-primary" />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold font-heading text-foreground tracking-wide">Tactical Operations</h3>
+            <p className="text-xs text-muted-foreground font-mono mt-1 uppercase tracking-wider">COMMAND AUTHORIZATION REQUIRED</p>
+          </div>
+        </div>
+
+        {/* Status indicator */}
+        <div className="flex items-center gap-2 px-3 py-1 bg-green-500/10 border border-green-500/20 rounded-full">
+          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+          <span className="text-xs font-mono text-green-400 uppercase tracking-wide">SYSTEM ACTIVE</span>
+        </div>
       </div>
 
-      {/* Action Buttons Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      {/* Action Buttons Grid - Enhanced Control Deck */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 relative z-10">
         {actionButtons.map((action) => {
           const Icon = action.icon;
           const isProcessing = processing === action.id;
           const isDisabled = !action.onClick;
+
+          const colorClasses = {
+            red: {
+              bg: 'bg-red-500/10 hover:bg-red-500/20',
+              border: 'border-red-500/30 hover:border-red-500/60',
+              icon: 'text-red-400 group-hover:text-red-300',
+              text: 'text-red-300 group-hover:text-red-200'
+            },
+            purple: {
+              bg: 'bg-purple-500/10 hover:bg-purple-500/20',
+              border: 'border-purple-500/30 hover:border-purple-500/60',
+              icon: 'text-purple-400 group-hover:text-purple-300',
+              text: 'text-purple-300 group-hover:text-purple-200'
+            },
+            amber: {
+              bg: 'bg-amber-500/10 hover:bg-amber-500/20',
+              border: 'border-amber-500/30 hover:border-amber-500/60',
+              icon: 'text-amber-400 group-hover:text-amber-300',
+              text: 'text-amber-300 group-hover:text-amber-200'
+            },
+            cyan: {
+              bg: 'bg-cyan-500/10 hover:bg-cyan-500/20',
+              border: 'border-cyan-500/30 hover:border-cyan-500/60',
+              icon: 'text-cyan-400 group-hover:text-cyan-300',
+              text: 'text-cyan-300 group-hover:text-cyan-200'
+            },
+            emerald: {
+              bg: 'bg-emerald-500/10 hover:bg-emerald-500/20',
+              border: 'border-emerald-500/30 hover:border-emerald-500/60',
+              icon: 'text-emerald-400 group-hover:text-emerald-300',
+              text: 'text-emerald-300 group-hover:text-emerald-200'
+            },
+            blue: {
+              bg: 'bg-blue-500/10 hover:bg-blue-500/20',
+              border: 'border-blue-500/30 hover:border-blue-500/60',
+              icon: 'text-blue-400 group-hover:text-blue-300',
+              text: 'text-blue-300 group-hover:text-blue-200'
+            }
+          };
+
+          const colors = colorClasses[action.color as keyof typeof colorClasses] || colorClasses.blue;
 
           return (
             <button
@@ -119,48 +169,39 @@ export default function TacticalDecisionCenter({
               onClick={() => handleAction(action.id, action.onClick)}
               disabled={isDisabled || isProcessing}
               className={`
-                group relative bg-gradient-to-br ${action.gradient}
-                hover:${action.hoverGradient}
-                disabled:opacity-50 disabled:cursor-not-allowed
-                text-white rounded-lg p-4 
-                transition-all duration-200 transform hover:scale-105 hover:shadow-lg
+                group relative aspect-square w-full
+                ${colors.bg} ${colors.border}
+                rounded-lg transition-all duration-200
                 flex flex-col items-center justify-center gap-2
-                ${isProcessing ? 'animate-pulse' : ''}
+                disabled:opacity-50 disabled:cursor-not-allowed
+                hover:shadow-lg hover:shadow-black/20
               `}
-              title={action.description}
             >
               {/* Icon */}
-              <div className="relative">
-                <Icon className={`w-6 h-6 ${isProcessing ? 'animate-spin' : ''}`} />
-                {isProcessing && (
-                  <div className="absolute inset-0 bg-white/20 rounded-full animate-ping"></div>
-                )}
+              <div className="p-1.5">
+                <Icon className={`w-4 h-4 ${colors.icon} transition-colors`} />
               </div>
 
               {/* Label */}
-              <span className="text-xs font-bold text-center leading-tight">
-                {action.label}
-              </span>
-
-              {/* Tooltip on hover */}
-              <div className="absolute -bottom-10 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
-                <div className="bg-gray-900 border border-gray-700 px-3 py-1 rounded text-xs text-gray-300 whitespace-nowrap shadow-lg">
-                  {action.description}
-                </div>
+              <div className="text-center px-1">
+                <span className={`block text-[10px] font-medium font-mono uppercase tracking-wide ${colors.text} leading-tight transition-colors`}>
+                  {action.label}
+                </span>
               </div>
 
-              {/* Glow effect on hover */}
-              <div className="absolute inset-0 rounded-lg bg-white/0 group-hover:bg-white/10 transition-all duration-200"></div>
+              {/* Processing Indicator */}
+              {isProcessing && (
+                <div className={`absolute inset-0 flex items-center justify-center ${colors.bg} rounded-lg border ${colors.border}`}>
+                  <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+
+              {/* Status accent */}
+              <div className={`absolute top-0 right-0 w-1 h-1 rounded-full ${action.color}-500/60`} />
             </button>
           );
         })}
       </div>
-
-      {/* Info Text */}
-      <div className="mt-4 text-xs text-gray-400 text-center">
-        Click any action for immediate response • AI-powered recommendations available
-      </div>
     </div>
   );
 }
-

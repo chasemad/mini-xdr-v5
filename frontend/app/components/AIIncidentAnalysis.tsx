@@ -59,12 +59,20 @@ export default function AIIncidentAnalysis({ incident, onRecommendationAction }:
       setLoading(true)
       setError(null)
 
+      // Get JWT token from localStorage
+      const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'demo-minixdr-api-key'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(apiUrl(`/api/incidents/${incident.id}/ai-analysis`), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'demo-minixdr-api-key'
-        },
+        headers,
         body: JSON.stringify({
           provider: aiProvider,
           analysis_type: 'comprehensive',

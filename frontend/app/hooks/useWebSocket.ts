@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { resolveApiBaseUrl } from '@/app/utils/api'
 
 interface WebSocketMessage {
   type: string
@@ -171,9 +172,25 @@ export function useWebSocket(url: string, options: UseWebSocketOptions = {}): Us
 /**
  * Specialized hook for workflow updates
  */
+const buildWebSocketUrl = (path: string): string => {
+  const rawBase = resolveApiBaseUrl()
+  const baseToUse = rawBase === null ? 'http://localhost:8000' : rawBase
+  const normalizedBase = baseToUse.trim().replace(/\/+$/, '')
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+
+  if (!normalizedBase) {
+    return normalizedPath
+  }
+
+  const wsBase = normalizedBase
+    .replace(/^https:/, 'wss:')
+    .replace(/^http:/, 'ws:')
+
+  return `${wsBase}${normalizedPath}`
+}
+
 export function useWorkflowWebSocket(options: UseWebSocketOptions = {}) {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000'
-  const wsUrl = baseUrl.replace('http', 'ws') + '/ws/workflows'
+  const wsUrl = buildWebSocketUrl('/ws/workflows')
 
   return useWebSocket(wsUrl, options)
 }
@@ -182,8 +199,7 @@ export function useWorkflowWebSocket(options: UseWebSocketOptions = {}) {
  * Specialized hook for incident updates
  */
 export function useIncidentWebSocket(options: UseWebSocketOptions = {}) {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000'
-  const wsUrl = baseUrl.replace('http', 'ws') + '/ws/incidents'
+  const wsUrl = buildWebSocketUrl('/ws/incidents')
 
   return useWebSocket(wsUrl, options)
 }
@@ -192,8 +208,7 @@ export function useIncidentWebSocket(options: UseWebSocketOptions = {}) {
  * General purpose WebSocket hook
  */
 export function useGeneralWebSocket(options: UseWebSocketOptions = {}) {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000'
-  const wsUrl = baseUrl.replace('http', 'ws') + '/ws/general'
+  const wsUrl = buildWebSocketUrl('/ws/general')
 
   return useWebSocket(wsUrl, options)
 }

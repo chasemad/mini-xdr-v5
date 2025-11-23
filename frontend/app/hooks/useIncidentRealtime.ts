@@ -96,6 +96,14 @@ export function useIncidentRealtime({
         break;
 
       case 'full_update':
+        // Parse triage_note if it's a JSON string
+        if (update.data.incident?.triage_note && typeof update.data.incident.triage_note === 'string') {
+          try {
+            update.data.incident.triage_note = JSON.parse(update.data.incident.triage_note);
+          } catch (e) {
+            console.error('Failed to parse triage_note from WebSocket:', e);
+          }
+        }
         setIncident(update.data.incident);
         onUpdate?.(update.data.incident);
         break;
@@ -109,7 +117,7 @@ export function useIncidentRealtime({
   const fetchIncident = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch(apiUrl(`/incidents/${incidentId}`), {
+      const response = await fetch(apiUrl(`/api/incidents/${incidentId}`), {
         headers: {
           'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'demo-minixdr-api-key'
         }
@@ -120,6 +128,16 @@ export function useIncidentRealtime({
       }
 
       const data = await response.json();
+
+      // Parse triage_note if it's a JSON string
+      if (data.triage_note && typeof data.triage_note === 'string') {
+        try {
+          data.triage_note = JSON.parse(data.triage_note);
+        } catch (e) {
+          console.error('Failed to parse triage_note:', e);
+        }
+      }
+
       setIncident(data);
       setLastUpdate(new Date());
       onUpdate?.(data);
