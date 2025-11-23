@@ -101,82 +101,6 @@ export default function InvestigationWorkspace({
             {/* Workspace Content */}
             <div className="flex-1 flex flex-col min-h-0">
 
-                {/* AI Agent Actions - Improved */}
-                <div className="flex-1 border-b flex flex-col min-h-[180px] bg-card/30">
-                    <div className="flex items-center justify-between px-4 py-2.5 border-b bg-background/80 backdrop-blur-sm shrink-0">
-                        <h3 className="text-xs font-semibold flex items-center gap-2 text-foreground">
-                            <Bot className="w-4 h-4 text-primary" />
-                            AI Agent Actions
-                            <Badge variant="secondary" className="text-[9px] h-4 px-1.5 ml-1">
-                                {allActions.length}
-                            </Badge>
-                        </h3>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 text-[9px] text-muted-foreground hover:text-primary gap-1"
-                            onClick={onHistoryOpen}
-                        >
-                            View All
-                            <ChevronRight className="w-3 h-3" />
-                        </Button>
-                    </div>
-
-                    <ScrollArea className="flex-1">
-                        <div className="divide-y divide-border/20">
-                            {allActions.slice(0, 10).map((action: any, idx: number) => (
-                                <button
-                                    key={`${action.id ?? action.action ?? 'action'}-${idx}`}
-                                    onClick={() => onActionClick(action)}
-                                    className={cn(
-                                        "w-full flex items-start gap-3 px-4 py-2.5",
-                                        "hover:bg-primary/5 transition-all group text-left",
-                                        "border-l-2 border-transparent hover:border-primary/50"
-                                    )}
-                                >
-                                    <div className="mt-1">
-                                        <div className="w-5 h-5 rounded-full bg-green-500/10 flex items-center justify-center">
-                                            <CheckCircle className="w-3 h-3 text-green-500" />
-                                        </div>
-                                    </div>
-
-                                    <div className="flex-1 min-w-0">
-                                        <div className="font-medium text-xs group-hover:text-primary transition-colors">
-                                            {action.action}
-                                        </div>
-                                        {action.detail && (
-                                            <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">
-                                                {action.detail}
-                                            </div>
-                                        )}
-                                        {action.agent_type && (
-                                            <Badge variant="outline" className="text-[8px] h-3.5 px-1 mt-1.5 border-primary/20">
-                                                {action.agent_type === 'ai' ? '🤖 AI' : action.agent_type === 'playbook' ? '📋 Playbook' : action.agent_type}
-                                            </Badge>
-                                        )}
-                                    </div>
-
-                                    <div className="flex flex-col items-end gap-1 shrink-0">
-                                        <span className="text-[9px] text-muted-foreground font-mono tabular-nums">
-                                            {new Date(action.timestamp || action.created_at || Date.now()).toLocaleTimeString([], {
-                                                hour: '2-digit',
-                                                minute: '2-digit'
-                                            })}
-                                        </span>
-                                    </div>
-                                </button>
-                            ))}
-
-                            {allActions.length === 0 && (
-                                <div className="flex flex-col items-center justify-center h-32 text-muted-foreground gap-2">
-                                    <Bot className="w-8 h-8 opacity-20" />
-                                    <span className="text-xs">No agent actions recorded yet.</span>
-                                </div>
-                            )}
-                        </div>
-                    </ScrollArea>
-                </div>
-
                 {/* Events Area - Improved */}
                 <div className="flex-1 flex flex-col min-h-[200px] bg-background">
                     <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/10 backdrop-blur-sm shrink-0">
@@ -314,6 +238,82 @@ export default function InvestigationWorkspace({
                                     </div>
                                 )}
                             </div>
+                        </div>
+                    </ScrollArea>
+                </div>
+
+                {/* AI Agent Actions - Improved */}
+                <div className="flex-1 border-b flex flex-col min-h-[180px] bg-card/30">
+                    <div className="flex items-center justify-between px-4 py-2.5 border-b bg-background/80 backdrop-blur-sm shrink-0">
+                        <h3 className="text-xs font-semibold flex items-center gap-2 text-foreground">
+                            <Bot className="w-4 h-4 text-primary" />
+                            AI Agent Actions
+                            <Badge variant="secondary" className="text-[9px] h-4 px-1.5 ml-1">
+                                {allActions.length}
+                            </Badge>
+                        </h3>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 text-[9px] text-muted-foreground hover:text-primary gap-1"
+                            onClick={onHistoryOpen}
+                        >
+                            View All
+                            <ChevronRight className="w-3 h-3" />
+                        </Button>
+                    </div>
+
+                    <ScrollArea className="flex-1">
+                        <div className="divide-y divide-border/20">
+                            {allActions.slice(0, 10).map((action: any, idx: number) => (
+                                <button
+                                    key={`${action.id ?? action.action ?? 'action'}-${idx}`}
+                                    onClick={() => onActionClick(action)}
+                                    className={cn(
+                                        "w-full flex items-start gap-3 px-4 py-2.5",
+                                        "hover:bg-primary/5 transition-all group text-left",
+                                        "border-l-2 border-transparent hover:border-primary/50"
+                                    )}
+                                >
+                                    <div className="mt-1">
+                                        <div className="w-5 h-5 rounded-full bg-green-500/10 flex items-center justify-center">
+                                            <CheckCircle className="w-3 h-3 text-green-500" />
+                                        </div>
+                                    </div>
+
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-medium text-xs group-hover:text-primary transition-colors">
+                                            {action.action}
+                                        </div>
+                                        {action.detail && (
+                                            <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">
+                                                {action.detail}
+                                            </div>
+                                        )}
+                                        {action.agent_type && (
+                                            <Badge variant="outline" className="text-[8px] h-3.5 px-1 mt-1.5 border-primary/20">
+                                                {action.agent_type === 'ai' ? '🤖 AI' : action.agent_type === 'playbook' ? '📋 Playbook' : action.agent_type}
+                                            </Badge>
+                                        )}
+                                    </div>
+
+                                    <div className="flex flex-col items-end gap-1 shrink-0">
+                                        <span className="text-[9px] text-muted-foreground font-mono tabular-nums">
+                                            {new Date(action.timestamp || action.created_at || Date.now()).toLocaleTimeString([], {
+                                                hour: '2-digit',
+                                                minute: '2-digit'
+                                            })}
+                                        </span>
+                                    </div>
+                                </button>
+                            ))}
+
+                            {allActions.length === 0 && (
+                                <div className="flex flex-col items-center justify-center h-32 text-muted-foreground gap-2">
+                                    <Bot className="w-8 h-8 opacity-20" />
+                                    <span className="text-xs">No agent actions recorded yet.</span>
+                                </div>
+                            )}
                         </div>
                     </ScrollArea>
                 </div>

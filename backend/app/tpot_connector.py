@@ -49,6 +49,7 @@ class TPotConnector:
         self.ssh_conn: Optional[asyncssh.SSHClientConnection] = None
         self.tunnels: Dict[str, Any] = {}
         self.monitoring_tasks: Dict[str, asyncio.Task] = {}
+        self.health_task: Optional[asyncio.Task] = None
         self.is_connected = False
 
         logger.info(f"T-Pot connector initialized for {self.host}:{self.ssh_port}")
@@ -113,6 +114,15 @@ class TPotConnector:
     async def disconnect(self):
         """Close SSH connection and tunnels"""
         try:
+            # Stop health monitor
+            if self.health_task and not self.health_task.done():
+                self.health_task.cancel()
+                try:
+                    await self.health_task
+                except asyncio.CancelledError:
+                    pass
+            self.health_task = None
+
             # Stop all monitoring tasks
             for task_name, task in self.monitoring_tasks.items():
                 if not task.done():
@@ -146,6 +156,7 @@ class TPotConnector:
 
         except Exception as e:
             logger.error(f"Error during disconnect: {e}")
+            self.health_task = None
 
     async def setup_tunnels(self) -> bool:
         """Set up SSH tunnels for internal services"""
@@ -560,6 +571,32 @@ class TPotConnector:
             }
 
         return {"success": False, "error": result["stderr"]}
+
+    async def _heartbeat(self, interval: int = 30):
+        """Periodic connectivity check with auto-reconnect"""
+        while True:
+            try:
+                if not self.is_connected:
+                    await self.connect()
+                else:
+                    # lightweight ping
+                    ping_result = await self.execute_command("true", timeout=5)
+                    if not ping_result.get("success", False):
+                        self.is_connected = False
+                        logger.warning("T-Pot heartbeat failed, attempting reconnect")
+                        await self.connect()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.warning(f"T-Pot heartbeat error: {e}")
+            await asyncio.sleep(interval)
+
+    def start_health_monitor(self, interval: int = 30):
+        """Start background heartbeat if not already running"""
+        if self.health_task and not self.health_task.done():
+            return
+        loop = asyncio.get_event_loop()
+        self.health_task = loop.create_task(self._heartbeat(interval))
 
     async def stop_honeypot_container(self, container_name: str) -> Dict[str, Any]:
         """Stop a specific honeypot container using password-authenticated sudo"""

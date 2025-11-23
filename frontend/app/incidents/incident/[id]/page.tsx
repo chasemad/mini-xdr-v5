@@ -41,16 +41,6 @@ export default function IncidentPage({ params }: { params: Promise<{ id: string 
   const [isCheckingBlock, setIsCheckingBlock] = useState(false);
   const [blockActionLoading, setBlockActionLoading] = useState<"block" | "unblock" | null>(null);
 
-  const {
-    incident,
-    loading,
-    refreshIncident
-  } = useIncidentRealtime({
-    incidentId,
-    autoRefresh: false,
-    refreshInterval: 10000
-  });
-
   const [coordination, setCoordination] = useState<IncidentCoordination | null>(null);
   const [coordinationLoading, setCoordinationLoading] = useState(true);
 
@@ -90,8 +80,34 @@ export default function IncidentPage({ params }: { params: Promise<{ id: string 
     }
   }, [incidentId]);
 
+  const handleActionUpdate = React.useCallback(() => {
+    refreshBlockStatus();
+  }, [refreshBlockStatus]);
+
+  const {
+    incident,
+    loading,
+    refreshIncident
+  } = useIncidentRealtime({
+    incidentId,
+    autoRefresh: false,
+    refreshInterval: 10000,
+    onNewAction: handleActionUpdate,
+    onActionComplete: handleActionUpdate,
+    onStatusChange: handleActionUpdate
+  });
+
   React.useEffect(() => {
     refreshBlockStatus();
+  }, [refreshBlockStatus]);
+
+  // Periodically refresh block status so UI reflects recent agent actions
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      refreshBlockStatus();
+    }, 10000); // 10s cadence
+
+    return () => clearInterval(interval);
   }, [refreshBlockStatus]);
 
   // Mock Fallback for Testing (if API fails or returns incomplete data)
@@ -382,11 +398,13 @@ export default function IncidentPage({ params }: { params: Promise<{ id: string 
 
         {/* B. Column 1: Context & Intelligence */}
         <aside className="h-full overflow-y-auto bg-card/50 p-4 flex flex-col gap-4">
-          {/* AI Threat Score */}
+          {/* AI Threat Score with Primary Entity */}
           <div className="space-y-2">
             <ThreatScoreCard
               score={displayScore}
               factors={riskFactors}
+              entityIp={activeIncident.src_ip}
+              entityType="External IP"
             />
           </div>
 
@@ -398,24 +416,6 @@ export default function IncidentPage({ params }: { params: Promise<{ id: string 
               className="flex-1"
             />
           </div>
-
-          {/* Entity Card */}
-          <Card>
-            <CardHeader className="pb-1.5 pt-3 px-4">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Primary Entity</CardTitle>
-            </CardHeader>
-            <CardContent className="pb-3">
-              <div className="flex items-center gap-2">
-                <div className="p-2 bg-muted rounded-md">
-                  <Shield className="w-5 h-5 text-primary" />
-                </div>
-                <div>
-                  <div className="font-mono text-sm font-bold">{activeIncident.src_ip}</div>
-                  <div className="text-xs text-muted-foreground">External IP</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </aside>
 
         {/* C. Column 2: Investigation Workspace */}

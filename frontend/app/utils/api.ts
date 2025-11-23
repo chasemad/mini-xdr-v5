@@ -71,7 +71,8 @@ export const apiUrl = (endpoint: string, baseUrl: string = API_BASE_URL): string
  * Get API key from environment
  */
 export const getApiKey = (): string => {
-  return process.env.NEXT_PUBLIC_API_KEY || '';
+  // Fallback to demo key so background probes (e.g., block-status) don't 401 in dev/demo
+  return process.env.NEXT_PUBLIC_API_KEY || 'demo-minixdr-api-key';
 };
 
 /**

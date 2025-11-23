@@ -2830,10 +2830,29 @@ async def soc_unblock_ip(
         raise HTTPException(status_code=404, detail="Incident not found")
 
     try:
-        # Execute unblock through responder
-        from .responder import unblock_ip
+        # Prefer T-Pot connector (uses password-authenticated UFW) and fallback to responder SSH
+        status = "failed"
+        detail = "Unblock not attempted"
 
-        status, detail = await unblock_ip(incident.src_ip)
+        try:
+            from .tpot_connector import get_tpot_connector
+
+            connector = get_tpot_connector()
+            if connector.is_connected:
+                result = await connector.unblock_ip(incident.src_ip)
+                if result.get("success"):
+                    status = "success"
+                    detail = result.get("message", "Unblocked via T-Pot connector")
+                else:
+                    detail = result.get("error", "T-Pot unblock failed")
+        except Exception as tpot_err:
+            logger.warning(f"T-Pot unblock attempt failed: {tpot_err}")
+
+        # Fallback to legacy responder SSH if connector path didn’t succeed
+        if status != "success":
+            from .responder import unblock_ip
+
+            status, detail = await unblock_ip(incident.src_ip)
 
         # Record action
         action = Action(
@@ -2884,22 +2903,48 @@ async def get_block_status(
         raise HTTPException(status_code=404, detail="Incident not found")
 
     try:
-        # Check if IP is currently blocked by looking at iptables
-        from .responder import responder
+        # Prefer T-Pot connector (uses UFW) since containment actions run there
+        is_blocked = False
+        source = "unknown"
 
-        status, stdout, stderr = await responder.execute_command(
-            f"sudo iptables -L INPUT -n | grep {incident.src_ip}"
-        )
+        try:
+            from .tpot_connector import get_tpot_connector
 
-        is_blocked = (
-            status == "success" and incident.src_ip in stdout and "DROP" in stdout
-        )
+            connector = get_tpot_connector()
+            if connector.is_connected:
+                blocks_result = await connector.get_active_blocks()
+                if blocks_result.get("success"):
+                    is_blocked = incident.src_ip in blocks_result.get("blocked_ips", [])
+                    source = "tpot_ufw"
+                else:
+                    logger.warning(
+                        f"T-Pot block status check failed: {blocks_result.get('error')}"
+                    )
+        except Exception as tpot_err:
+            logger.warning(f"T-Pot connector block status check error: {tpot_err}")
+
+        # Fallback to legacy iptables check via SSH key if not already confirmed
+        if not is_blocked:
+            from .responder import responder
+
+            status, stdout, stderr = await responder.execute_command(
+                f"sudo iptables -L INPUT -n | grep {incident.src_ip}"
+            )
+
+            if status == "success":
+                is_blocked = incident.src_ip in stdout and "DROP" in stdout
+                source = "iptables"
+            else:
+                logger.warning(
+                    f"iptables block status check failed for {incident.src_ip}: {stderr}"
+                )
 
         return {
             "ip": incident.src_ip,
             "is_blocked": is_blocked,
             "status": incident.status,
             "last_checked": datetime.utcnow().isoformat(),
+            "source": source,
         }
 
     except Exception as e:
