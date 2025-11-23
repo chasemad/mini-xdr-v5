@@ -36,8 +36,8 @@ LABEL org.opencontainers.image.title="Mini-XDR Backend" \
       org.opencontainers.image.vendor="Mini-XDR" \
       org.opencontainers.image.authors="chasemadrian@protonmail.com" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.source="https://github.com/chasemad/mini-xdr" \
-      org.opencontainers.image.documentation="https://github.com/chasemad/mini-xdr/blob/main/README.md"
+      org.opencontainers.image.source="https://github.com/chasemad/mini-xdr-v5" \
+      org.opencontainers.image.documentation="https://github.com/chasemad/mini-xdr-v5/blob/main/README.md"
 
 # Security: Create non-root user
 RUN groupadd -r -g 1000 xdr && \

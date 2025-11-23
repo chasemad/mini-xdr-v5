@@ -10,15 +10,27 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.8.0-red.svg)](https://pytorch.org/)
 [![TensorFlow](https://img.shields.io/badge/TensorFlow-2.20.0-orange.svg)](https://tensorflow.org/)
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Local Docker Compose)
 
 ```bash
-git clone https://github.com/your-username/mini-xdr.git
+# Clone the repository
+git clone https://github.com/chasemad/mini-xdr-v5.git
 cd mini-xdr
-./scripts/start-all.sh
+
+# Copy environment template
+cp .env.local .env
+
+# Edit .env (or .env.local) with your API keys (OpenAI, AbuseIPDB, VirusTotal)
+nano .env
+
+# Start all services with Docker Compose
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
 ```
 
-> **HMAC Authentication**: Before running ingestion helpers or CLI tests, export `MINIXDR_AGENT_DEVICE_ID` and `MINIXDR_AGENT_HMAC_KEY`, then use `python3 scripts/send_signed_request.py` for `/ingest/*` and `/api/*` requests. See `docs/secrets.md` for details.
+> **Note**: First startup will take 3-5 minutes to initialize PostgreSQL and load ML models (2.1GB+ models)
 
 **Access Points:**
 - 🖥️ **Web Dashboard**: http://localhost:3000
@@ -27,6 +39,44 @@ cd mini-xdr
 - 🌍 **3D Threat Globe**: http://localhost:3000/visualizations
 - 🔗 **API Documentation**: http://localhost:8000/docs
 - 📋 **Health Monitoring**: http://localhost:8000/health
+- 🗄️ **PostgreSQL**: localhost:5432 (user: xdr_user)
+- 🔴 **Redis**: localhost:6379
+
+**Prerequisites:**
+- Docker 20.10+ and Docker Compose v2.0+
+- 16GB RAM minimum (32GB recommended for ML models)
+- 20GB free disk space
+
+## 🎬 Demo for Hiring Managers
+
+Showcase Mini-XDR's capabilities in a professional 3-4 minute demo:
+
+```bash
+# Automated pre-demo setup
+./scripts/demo/pre-demo-setup.sh
+
+# Run attack simulation against T-Pot
+./scripts/demo/demo-attack.sh
+
+# Or use manual event injection (if T-Pot unavailable)
+./scripts/demo/manual-event-injection.sh
+
+# Validate readiness before recording
+./scripts/demo/validate-demo-ready.sh
+```
+
+**Demo Materials:**
+- 📄 **Complete Demo Script**: `demo-video.plan.md` - Full narration and commands
+- 📋 **Quick Reference**: `scripts/demo/QUICK-REFERENCE.txt` - 1-page cheat sheet
+- 📖 **Cheat Sheet**: `scripts/demo/demo-cheatsheet.md` - Detailed command reference
+- 📚 **Demo Guide**: `scripts/demo/README.md` - Complete demo documentation
+
+**Demo Highlights:**
+- Real-time attack detection from T-Pot honeypot
+- 12 AI agents analyzing threats autonomously
+- Natural language copilot interaction
+- Visual workflow automation
+- Sub-2-second incident response
 
 ## 🎯 What is Mini-XDR?
 
@@ -42,22 +92,33 @@ Mini-XDR is a comprehensive Extended Detection and Response (XDR) platform that 
 - **Scale Challenges**: Federated learning across multiple nodes with cryptographic privacy guarantees
 - **Threat Evolution**: Online learning and concept drift detection for continuous adaptation
 
-## 🏗️ Enterprise Architecture
+## 🏗️ Local-First Architecture
 
 ```
-🤖 AI AGENT ORCHESTRATOR ←→ 📚 POLICY ENGINE ←→ 🧠 ML ENSEMBLE
-       ↓                        ↓                    ↓
-    🎯 DISTRIBUTED MCP COORDINATOR WITH SECURE AGGREGATION 🎯
-       ↓                        ↓                    ↓
-📡 MULTI-SOURCE INGESTION ←→ 🔐 FEDERATED LEARNING ←→ 🎭 DECEPTION LAYER
-       ↓                        ↓                    ↓
-    🌍 3D THREAT VISUALIZATION ←→ 📊 EXPLAINABLE AI ←→ 🔄 ONLINE LEARNING
+┌─────────────────────────────────────────────────────────┐
+│           🖥️  Mini-XDR Local Stack (Docker)             │
+├─────────────────────────────────────────────────────────┤
+│  🤖 AI AGENT ORCHESTRATOR ←→ 📚 POLICY ENGINE           │
+│            ↓                        ↓                    │
+│     🎯 DISTRIBUTED MCP COORDINATOR 🎯                    │
+│            ↓                        ↓                    │
+│  🧠 LOCAL ML ENSEMBLE (97.98% Accuracy)                 │
+│  ├─ General Threat Detector (PyTorch)                   │
+│  ├─ DDoS Specialist                                     │
+│  ├─ Brute Force Specialist                              │
+│  ├─ Web Attacks Specialist                              │
+│  └─ Windows Specialist (13-class)                       │
+│            ↓                        ↓                    │
+│  📡 MULTI-SOURCE INGESTION ←→ 🎭 T-POT HONEYPOT        │
+│            ↓                        ↓                    │
+│  🗄️  PostgreSQL ←→ 🔴 Redis ←→ 📊 ANALYTICS           │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ### Core Components
 
 - **🤖 AI Agent System**: 6 specialized agents (Containment, Attribution, Forensics, Deception, Predictive Hunter, NLP Analyzer) with advanced LangChain integration and inter-agent communication
-- **🧠 ML Ensemble**: 4-model ensemble (Transformer, XGBoost, LSTM Autoencoder, Isolation Forest) with hyperparameter optimization achieving 99%+ detection accuracy
+- **🧠 Local ML Ensemble**: 7 locally-trained models (General Detector, DDoS/Brute Force/Web Attack Specialists, Windows 13-class, Isolation Forest, LSTM Autoencoder) achieving 97.98% accuracy, running 100% on your infrastructure
 - **📚 Policy Engine**: YAML-based security policies with conditional logic, AI decision points, and automated response workflows
 - **🎭 Deception Layer**: Dynamic honeypot deployment with attacker profiling and behavior analysis
 - **🕵️ Threat Intelligence**: Multi-source IOC correlation with real-time enrichment and 6 custom threat intelligence features
@@ -166,8 +227,8 @@ Mini-XDR is a comprehensive Extended Detection and Response (XDR) platform that 
 - **Log Sources**: Cowrie honeypot, Suricata IDS, OSQuery endpoint data, custom JSON/syslog ingestion
 - **Threat Feeds**: AbuseIPDB, VirusTotal, MISP integration with real-time enrichment
 - **Edge Agents**: Distributed collection with HMAC authentication and cryptographic validation
-- **AWS Glue ETL**: Distributed feature engineering with 83+ feature extraction from CICIDS2017
-- **S3 Data Lake**: Intelligent tiering storage with 30+ processed feature sets
+- **Local ETL Pipeline**: Python-based feature engineering with 83+ CICIDS2017 features
+- **Local Feature Store**: Versioned parquet/CSV feature sets stored alongside the repo
 - **Real-time Enrichment**: Event enhancement during ingestion with threat intelligence correlation
 - **Signature Validation**: HMAC authentication and cryptographic integrity verification
 
@@ -203,140 +264,28 @@ Mini-XDR is a comprehensive Extended Detection and Response (XDR) platform that 
 
 ```
 mini-xdr/
-├── backend/                    # FastAPI Backend (50+ endpoints, 70+ deps)
+├── backend/                  # FastAPI backend (local ML ensemble + AI agents)
 │   ├── app/
-│   │   ├── agents/            # 🤖 6 Specialized AI Agents
-│   │   │   ├── attribution_agent.py     # Threat actor profiling
-│   │   │   ├── containment_agent.py     # Autonomous response
-│   │   │   │   ├── coordination_hub.py  # Multi-agent orchestration
-│   │   │   ├── deception_agent.py       # Honeypot management
-│   │   │   ├── forensics_agent.py       # Evidence collection
-│   │   │   ├── hmac_signer.py          # Authentication
-│   │   │   ├── ingestion_agent.py       # Data collection
-│   │   │   ├── nlp_analyzer.py          # Natural language processing
-│   │   │   └── predictive_hunter.py     # Proactive threat hunting
-│   │   ├── agent_orchestrator.py # 🤖 Agent coordination & messaging
-│   │   ├── ml_engine.py         # 🧠 4-model ML ensemble
-│   │   ├── ensemble_optimizer.py # Meta-learning optimization
-│   │   ├── explainable_ai.py    # 📊 SHAP/LIME explanations
-│   │   ├── federated_learning.py # 🔄 Distributed ML training
-│   │   ├── online_learning.py   # 🔄 Real-time adaptation
-│   │   ├── concept_drift.py     # Drift detection
-│   │   ├── adaptive_detection.py # Behavioral analysis
-│   │   ├── policy_engine.py     # 📚 YAML policy management
-│   │   ├── distributed/         # 📡 MCP architecture
-│   │   │   ├── kafka_manager.py # Message queuing
-│   │   │   ├── mcp_coordinator.py # Service coordination
-│   │   │   └── redis_cluster.py  # Caching & state
-│   │   ├── crypto/              # 🔐 Security framework
-│   │   │   └── secure_aggregation.py # Federated learning crypto
-│   │   ├── main.py              # 🚀 50+ API endpoints
-│   │   ├── models.py            # Database schemas
-│   │   ├── multi_ingestion.py   # 📡 Multi-source ingestion
-│   │   ├── responder.py         # Automated response system
-│   │   ├── security.py          # Authentication & authorization
-│   │   ├── sagemaker_client.py  # AWS ML integration
-│   │   └── external_intel.py    # 🕵️ Threat intelligence
-│   ├── requirements.txt         # 70+ Python dependencies
-│   ├── models/                  # 🧠 Trained ML models
-│   │   ├── isolation_forest.pkl
-│   │   ├── lstm_autoencoder.pth
-│   │   └── training_metadata.json
-│   └── policies/                # 📋 Security policies
-│       └── default_policies.yaml
-│
-├── frontend/                    # Next.js 15 + React 19 Frontend
-│   ├── app/
-│   │   ├── agents/              # 🤖 AI agent interfaces
-│   │   │   ├── nlp-interface.tsx # Natural language queries
-│   │   │   └── page.tsx         # Agent orchestration UI
-│   │   ├── analytics/           # 📊 ML monitoring & tuning
-│   │   │   ├── explainable-ai.tsx # SHAP/LIME dashboards
-│   │   │   ├── ml-monitoring.tsx # Performance monitoring
-│   │   │   └── page.tsx         # Analytics overview
-│   │   ├── hunt/                # 🕵️ Threat hunting interface
-│   │   │   └── page.tsx         # IOC management & hunting
-│   │   ├── incidents/           # 🚨 Incident management
-│   │   │   ├── incident/[id]/page.tsx # Detailed incident view
-│   │   │   └── page.tsx         # Incident dashboard
-│   │   ├── intelligence/        # 🛡️ Threat intelligence
-│   │   │   └── page.tsx         # IOC & threat actor management
-│   │   ├── investigations/      # 🔍 Case management
-│   │   │   └── page.tsx         # Investigation workflows
-│   │   ├── page.tsx             # SOC analyst dashboard
-│   │   ├── settings/            # ⚙️ System configuration
-│   │   │   └── page.tsx         # Settings & integrations
-│   │   └── visualizations/      # 🌍 3D threat visualization
-│   │       ├── 3d-timeline.tsx  # Attack timeline
-│   │       ├── page.tsx         # Visualization dashboard
-│   │       └── threat-globe.tsx # Interactive 3D globe
-│   ├── components/              # 🎨 UI components
-│   │   ├── IncidentCard.tsx     # Incident display
-│   │   └── ui/                  # Complete shadcn/ui library
-│   ├── lib/                     # 🔧 Utilities
-│   │   ├── threat-data.ts       # Data processing
-│   │   ├── three-helpers.ts     # 3D rendering utilities
-│   │   └── utils.ts             # General utilities
-│   ├── public/                  # 📁 Static assets
-│   │   └── world-countries-detailed.geojson # Geographic data
-│   ├── package.json             # Modern React stack
-│   └── tsconfig.json            # TypeScript configuration
-│
-├── aws/                        # ☁️ AWS Infrastructure & ML Pipeline
-│   ├── data-processing/         # 📊 ETL pipelines
-│   │   ├── glue-etl-pipeline.py # 83+ feature extraction
-│   │   └── setup-s3-data-lake.sh # S3 infrastructure
-│   ├── ml-training/             # 🧠 ML model training
-│   │   ├── sagemaker-training-pipeline.py # Complete pipeline
-│   │   └── automated-cicids-training.py # CICIDS2017 processing
-│   ├── model-deployment/        # 🚀 Production deployment
-│   │   └── sagemaker-deployment.py # Auto-scaling endpoints
-│   ├── monitoring/              # 📈 Pipeline orchestration
-│   │   └── ml-pipeline-orchestrator.py # Complete workflow
-│   ├── feature-engineering/     # 🔬 Advanced feature engineering
-│   │   └── advanced-feature-engineering.py # 113+ features
-│   ├── deployment/              # 🏗️ Infrastructure as code
-│   │   ├── secure-mini-xdr-aws.yaml # Security-first templates
-│   │   ├── deploy-complete-aws-system.sh # One-click deployment
-│   │   └── deploy-mini-xdr-aws.sh # Core infrastructure
-│   ├── utils/                   # 🔧 Management scripts
-│   │   ├── aws-services-control.sh # Production management
-│   │   ├── tpot-security-control.sh # Honeypot management
-│   │   └── update-pipeline.sh   # Deployment updates
-│   └── README-AWS-STARTUP.md    # AWS deployment guide
-│
-├── datasets/                    # 📚 Training Data (846,073+ events)
-│   ├── real_datasets/           # Real cybersecurity data
-│   │   ├── cicids2017_enhanced_minixdr.json # 799,989 events
-│   │   └── kdd_*.json           # 41,000 classic events
-│   ├── threat_feeds/            # Live threat intelligence
-│   ├── combined_cybersecurity_dataset.json # 10,000+ samples
-│   └── working_downloads/       # Additional datasets
-│
-├── docs/                       # 📖 Comprehensive Documentation
-│   ├── ACHIEVEMENT_SUMMARY.md   # Project achievements
-│   ├── AWS_*                    # Cloud deployment guides
-│   ├── *_GUIDE.md              # User and setup guides
-│   └── COMPREHENSIVE_*.md      # Detailed technical docs
-│
-├── ops/                        # 🏭 Production Operations
-│   ├── k8s/                    # Kubernetes manifests
-│   ├── Dockerfile.*            # Multi-stage containers
-│   ├── aws-honeypot-enhanced-setup.sh # Infrastructure
-│   └── deploy-k8s.sh           # Production deployment
-│
-├── scripts/                    # ⚙️ Automation Scripts
-│   ├── start-all.sh            # Complete system startup
-│   ├── system-status.sh        # Health monitoring
-│   └── generate-training-data.py # Data preparation
-│
-├── tests/                      # 🧪 Comprehensive Testing
-│   ├── test_*.py               # Python unit tests
-│   ├── test_*.sh               # Integration tests
-│   └── demo_*.py               # Demonstration scripts
-│
-└── policies/                   # 📋 Security Policies
-    └── default_policies.yaml   # Containment & response rules
+│   │   ├── agents/           # Specialized containment/analysis agents
+│   │   ├── integrations/     # Azure and GCP connectors (AWS removed)
+│   │   ├── onboarding_v2/    # Seamless onboarding engine
+│   │   └── ...               # Detection, response, and analytics modules
+│   ├── requirements.txt      # Python dependencies (local-only stack)
+│   └── Dockerfile            # Backend container for Docker Compose
+├── frontend/                 # Next.js 15 + React 19 frontend
+│   └── Dockerfile            # Frontend container
+├── models/                   # Local trained models mounted into containers
+├── docs/                     # Documentation
+│   ├── getting-started/      # Local setup + T-Pot guides
+│   ├── ml/                   # Model architecture and usage
+│   └── archived/aws/         # Legacy AWS deployment references
+├── docker-compose.yml        # Local stack: Postgres, Redis, backend, frontend, optional T-Pot
+├── .env.local                # Local environment defaults
+├── scripts/                  # Developer/test helpers
+├── ops/                      # DevOps utilities and honeypot helpers
+├── datasets/                 # Training and reference datasets
+├── policies/                 # YAML policies for automated response
+└── tests/                    # Integration and regression tests
 ```
 
 ## ⚙️ Installation & Setup
@@ -360,7 +309,7 @@ The automated startup script handles all setup and dependency installation:
 
 ```bash
 # Clone repository
-git clone https://github.com/your-username/mini-xdr.git
+git clone https://github.com/chasemad/mini-xdr-v5.git
 cd mini-xdr
 
 # Run automated setup and startup
@@ -373,7 +322,7 @@ This script will:
 - ✅ Install all 70+ Python dependencies
 - ✅ Install Node.js dependencies for frontend and MCP server
 - ✅ Set up configuration files from templates
-- ✅ Initialize SQLite database with enhanced schema
+- ✅ Initialize PostgreSQL database with enhanced schema
 - ✅ Test honeypot connectivity and SSH access
 - ✅ Start all services with comprehensive health checks
 - ✅ Verify AI agents and ML models are functional
@@ -382,60 +331,50 @@ This script will:
 
 ### Configuration
 
-#### 1. Backend Configuration (`backend/.env`)
+#### 1. Environment (`.env.local`)
 
 ```bash
-# Honeypot Connection (REQUIRED)
-HONEYPOT_HOST=192.168.1.100        # Your honeypot VM IP
-HONEYPOT_USER=xdrops               # SSH user for containment
-HONEYPOT_SSH_KEY=~/.ssh/xdrops_id_ed25519  # SSH private key path
-HONEYPOT_SSH_PORT=22022            # SSH port on honeypot
+# Database
+DATABASE_URL=postgresql+asyncpg://xdr_user:local_dev_password@localhost:5432/mini_xdr
 
-# API Security (RECOMMENDED)
-API_KEY=your_secret_api_key_here   # Secure API access
-
-# LLM Integration (REQUIRED for AI agents)
-OPENAI_API_KEY=sk-your-openai-key  # OpenAI API key
-# OR
-XAI_API_KEY=xai-your-x-api-key     # X.AI/Grok API key
-
-# Threat Intelligence (OPTIONAL)
-ABUSEIPDB_API_KEY=your-key         # AbuseIPDB integration
-VIRUSTOTAL_API_KEY=your-key        # VirusTotal integration
+# API Configuration
+API_HOST=0.0.0.0
+API_PORT=8000
+UI_ORIGIN=http://localhost:3000
 
 # ML Configuration
-ML_MODEL_PATH=./models             # ML model storage path
-TRAINING_DATA_PATH=./datasets      # Training data location
+ML_MODELS_PATH=./models
+SAGEMAKER_ENABLED=false
 
-# Federated Learning (OPTIONAL)
-FEDERATED_COORDINATOR=false        # Enable as coordinator
-FEDERATED_NODES=node1,node2        # Federated learning peers
+# Honeypot (Local T-Pot)
+HONEYPOT_HOST=localhost
+HONEYPOT_USER=admin
+HONEYPOT_SSH_PORT=64295
+
+# LLM + External Intelligence
+OPENAI_API_KEY=your_openai_key_here
+XAI_API_KEY=your_xai_key_here
+ABUSEIPDB_API_KEY=your_abuseipdb_key_here
+VIRUSTOTAL_API_KEY=your_virustotal_key_here
+
+# Redis
+REDIS_URL=redis://localhost:6379
 ```
 
 #### 2. Frontend Configuration (`frontend/.env.local`)
 
 ```bash
-# API Connection
+NEXT_PUBLIC_API_URL=http://localhost:8000
 NEXT_PUBLIC_API_BASE=http://localhost:8000
-NEXT_PUBLIC_API_KEY=your_secret_api_key_here
-
-# 3D Visualization Settings
-NEXT_PUBLIC_ENABLE_3D_GLOBE=true
-NEXT_PUBLIC_ENABLE_WEBGL_ACCELERATION=true
-NEXT_PUBLIC_MAX_THREAT_POINTS=10000
+NEXT_PUBLIC_API_KEY=demo-minixdr-api-key
 ```
 
-#### 3. SSH Key Setup
+#### 3. SSH Key Setup (optional for honeypot actions)
 
 ```bash
-# Generate key pair for honeypot access
-ssh-keygen -t ed25519 -f ~/.ssh/xdrops_id_ed25519
-
-# Copy public key to honeypot
-ssh-copy-id -i ~/.ssh/xdrops_id_ed25519.pub -p 22022 xdrops@<honeypot-ip>
-
-# Test connection and sudo access
-ssh -p 22022 -i ~/.ssh/xdrops_id_ed25519 xdrops@<honeypot-ip> sudo ufw status
+ssh-keygen -t ed25519 -f ~/.ssh/mini-xdr_id_ed25519
+ssh-copy-id -p 64295 -i ~/.ssh/mini-xdr_id_ed25519.pub admin@localhost
+ssh -p 64295 -i ~/.ssh/mini-xdr_id_ed25519 admin@localhost "echo connected"
 ```
 
 ## 🧪 Testing & Validation
@@ -517,30 +456,7 @@ curl http://localhost:8000/api/federated/status
 ```
 
 ### AWS Infrastructure & ML Pipeline
-```bash
-# Complete AWS ML System Deployment (846,073+ events → 4 ML models → Production)
-cd aws
-./deploy-complete-aws-ml-system.sh
-
-# Automated Secure Production Deployment (No manual confirmation required)
-./deploy-automated-production.sh
-
-# Secure Infrastructure Only (No 0.0.0.0/0 exposures)
-./deploy-secure-mini-xdr.sh
-
-# ML Pipeline Management
-~/aws-ml-control.sh status          # ML system status
-~/aws-ml-control.sh start           # Start inference endpoints
-~/aws-ml-control.sh stop            # Stop endpoints (cost optimization)
-~/aws-ml-control.sh retrain         # Trigger model retraining
-
-# Production Security Management
-~/secure-aws-services-control.sh status              # System status
-~/secure-aws-services-control.sh security-check      # Security validation
-~/secure-aws-services-control.sh tpot-live          # Enable real attacks (⚠️)
-~/secure-aws-services-control.sh tpot-testing       # Safe testing mode
-~/secure-aws-services-control.sh emergency-stop     # Emergency lockdown
-```
+Legacy AWS deployment scripts have been removed from the active stack. Historical notes live under `docs/archived/aws/`; use Docker Compose or Kubernetes for current deployments.
 
 ### Docker Compose (Simple)
 ```bash
@@ -653,7 +569,6 @@ prometheus-client==0.20.0            # Metrics and monitoring
 
 # Configuration & Utilities
 pyyaml==6.0.2                        # YAML configuration files
-boto3==1.40.40                       # AWS SDK for cloud integration
 requests==2.32.5                     # HTTP requests
 python-multipart==0.0.6              # Multipart form data handling
 
@@ -746,7 +661,7 @@ curl http://localhost:8000/api/federated/status
 
 ### Log Files
 - **Backend**: `backend/backend.log`
-- **Frontend**: `frontend/frontend.log`  
+- **Frontend**: `frontend/frontend.log`
 - **MCP Server**: `backend/mcp.log`
 - **Agent Decisions**: `backend/agent_decisions.log`
 - **ML Training**: `backend/ml_training.log`
@@ -826,8 +741,8 @@ MIT License - see LICENSE file for details.
 
 ## 🆘 Support
 
-- **Issues**: [GitHub Issues](https://github.com/your-username/mini-xdr/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-username/mini-xdr/discussions)
+- **Issues**: [GitHub Issues](https://github.com/chasemad/mini-xdr-v5/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/chasemad/mini-xdr-v5/discussions)
 - **Documentation**: Complete guides in `docs/` directory
 - **System Status**: `./scripts/system-status.sh`
 
@@ -846,7 +761,7 @@ MIT License - see LICENSE file for details.
 
 ### Enterprise-Grade Features
 
-- **Production Ready**: Automated AWS deployment with security-first infrastructure, no 0.0.0.0/0 exposures, and enterprise monitoring
+- **Production Ready**: Local Docker Compose and Kubernetes deployment paths with hardened defaults and monitoring
 - **AI-Powered**: 6 specialized LangChain-integrated agents with real-time orchestration, natural language interfaces, and confidence scoring
 - **ML Excellence**: 4-model ensemble (Transformer, XGBoost, LSTM Autoencoder, Isolation Forest) achieving 99%+ detection accuracy with SHAP/LIME explainability
 - **3D Immersive**: WebGL-optimized threat globe with 60+ FPS performance, real-time attack path tracing, and interactive timeline visualization
@@ -862,7 +777,7 @@ MIT License - see LICENSE file for details.
 Ready to deploy your own AI-powered XDR system? Start with:
 
 ```bash
-git clone https://github.com/your-username/mini-xdr.git
+git clone https://github.com/chasemad/mini-xdr-v5.git
 cd mini-xdr
 ./scripts/start-all.sh
 ```

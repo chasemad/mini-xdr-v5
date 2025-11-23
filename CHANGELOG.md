@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Database cleaned of all test/mock data (2025-11-21)**
+  - Removed test incidents from IP range 203.0.113.x (RFC 5737 TEST-NET-3)
+  - Cleared test events and associated data
+  - Removed test evidence files
+  - Cleared Qdrant vector storage
+  - Database optimized with VACUUM and ANALYZE
+  - System now ready for production T-Pot honeypot integration
+
 ## [1.1.0] - 2025-10-24 (v1.1.0)
 
 ### Fixed
@@ -70,7 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Replaced passlib wrapper with direct bcrypt implementation
   - Fixed "password cannot be longer than 72 bytes" error
   - Compatible with bcrypt 5.0.0 while maintaining bcrypt 4.1.2 pin
-  
+
 ### Added
 - Direct bcrypt password hashing and verification (auth.py)
 - Explicit bcrypt==4.1.2 dependency pin in requirements.txt
@@ -198,7 +207,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Links
 
-- [GitHub Repository](https://github.com/chasemad/mini-xdr)
-- [Documentation](https://github.com/chasemad/mini-xdr/tree/main/docs)
-- [Issue Tracker](https://github.com/chasemad/mini-xdr/issues)
-
+- [GitHub Repository](https://github.com/chasemad/mini-xdr-v5)
+- [Documentation](https://github.com/chasemad/mini-xdr-v5/tree/main/docs)
+- [Issue Tracker](https://github.com/chasemad/mini-xdr-v5/issues)

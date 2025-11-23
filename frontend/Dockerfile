@@ -43,21 +43,19 @@ LABEL org.opencontainers.image.title="Mini-XDR Frontend" \
       org.opencontainers.image.vendor="Mini-XDR" \
       org.opencontainers.image.authors="chasemadrian@protonmail.com" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.source="https://github.com/chasemad/mini-xdr" \
-      org.opencontainers.image.documentation="https://github.com/chasemad/mini-xdr/blob/main/README.md"
+      org.opencontainers.image.source="https://github.com/chasemad/mini-xdr-v5" \
+      org.opencontainers.image.documentation="https://github.com/chasemad/mini-xdr-v5/blob/main/README.md"
 
-# Security: Create non-root user with home directory
-# Handle case where group 1000 might already exist
-RUN addgroup -g 1000 -S xdr 2>/dev/null || true && \
-    adduser -u 1000 -S xdr -h /home/xdr 2>/dev/null || true && \
-    mkdir -p /home/xdr/.npm /home/xdr/.cache && \
-    chown -R xdr:xdr /home/xdr 2>/dev/null || chown -R 1000:1000 /home/xdr
+# Security: Use existing node user (UID/GID 1000)
+# Node alpine image already has node user with UID/GID 1000
+RUN mkdir -p /home/node/.npm /home/node/.cache && \
+    chown -R node:node /home/node
 
 # Set working directory
 WORKDIR /app
 
 # Copy package files
-COPY --chown=xdr:xdr package.json package-lock.json ./
+COPY --chown=node:node package.json package-lock.json ./
 
 # Install production dependencies + TypeScript (needed for next.config.ts)
 RUN npm ci --only=production --ignore-scripts && \
@@ -66,17 +64,17 @@ RUN npm ci --only=production --ignore-scripts && \
 
 # Copy built application from builder (standalone mode)
 # Next.js standalone mode creates a minimal server.js
-COPY --from=builder --chown=xdr:xdr /app/.next ./.next
-COPY --from=builder --chown=xdr:xdr /app/public ./public
+COPY --from=builder --chown=node:node /app/.next ./.next
+COPY --from=builder --chown=node:node /app/public ./public
 # Copy next.config.ts for runtime (TypeScript supported in production)
-COPY --from=builder --chown=xdr:xdr /app/next.config.ts ./next.config.ts
+COPY --from=builder --chown=node:node /app/next.config.ts ./next.config.ts
 
 # Set environment variables
 ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME="0.0.0.0" \
     NEXT_TELEMETRY_DISABLED=1 \
-    HOME=/home/xdr
+    HOME=/home/node
 
 # Expose port
 EXPOSE 3000
@@ -86,7 +84,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
 
 # Switch to non-root user
-USER xdr:xdr
+USER node:node
 
 # Run application
 CMD ["npm", "start"]
