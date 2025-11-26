@@ -70,8 +70,8 @@ class DetectionConfig:
     # Local ML confidence thresholds by threat class
     confidence_thresholds: Dict[int, float] = None
 
-    # Anomaly score thresholds
-    anomaly_score_threshold: float = 0.3
+    # Anomaly score thresholds (lowered for demo/testing)
+    anomaly_score_threshold: float = 0.2
 
     # Minimum events required for analysis
     min_events_required: int = 1
@@ -97,7 +97,7 @@ class DetectionConfig:
                 3: 0.3,  # Brute Force Attack - LOWERED for testing
                 4: 0.3,  # Web Application Attack - LOWERED for testing
                 5: 0.3,  # Malware/Botnet - LOWERED for testing
-                6: 0.3,  # APT - LOWERED for testing
+                6: 0.3,  # Advanced Persistent Threat - LOWERED for testing
             }
 
 
@@ -183,9 +183,10 @@ class IntelligentDetectionEngine:
                 flush=True,
             )
 
-            # Step 1.5: Council of Models verification for uncertain predictions
+            # Step 1.5: Council of Models verification for ALL predictions
+            # Previously only triggered for 0.50-0.90, now triggers for any detection
             council_data = None
-            if 0.50 <= classification.confidence <= 0.90:
+            if classification.confidence >= 0.30:  # Run council for most detections
                 self.logger.info(
                     f"Routing {src_ip} to Council: confidence={classification.confidence:.2%}"
                 )
@@ -201,7 +202,30 @@ class IntelligentDetectionEngine:
                         f"confidence: {classification.confidence:.2%}"
                     )
 
-            # Step 2: Check if classification meets threshold for incident creation
+            # Step 1.9: Check if there's already an open incident for this IP
+            # If so, always add events to it (even if new batch is classified as "Normal")
+            existing_incident = await self._find_existing_incident(db, src_ip)
+
+            if existing_incident:
+                # Always add new events to existing incident
+                self.logger.info(
+                    f"Found existing open incident #{existing_incident.id} for {src_ip}, "
+                    f"adding {len(events)} new events regardless of classification"
+                )
+                incident_id = await self._update_existing_incident(
+                    db, existing_incident, events, classification, council_data
+                )
+                return {
+                    "incident_created": True,  # Updated existing
+                    "incident_id": incident_id,
+                    "classification": asdict(classification),
+                    "confidence": classification.confidence,
+                    "threat_type": classification.threat_type,
+                    "severity": classification.severity.value,
+                    "note": "Updated existing incident with new events",
+                }
+
+            # Step 2: Check if classification meets threshold for NEW incident creation
             should_create_incident = await self._should_create_incident(
                 classification, events
             )
@@ -263,6 +287,37 @@ class IntelligentDetectionEngine:
         result = await db.execute(stmt)
         return result.scalars().all()
 
+    async def _find_existing_incident(
+        self, db: AsyncSession, src_ip: str
+    ) -> Optional[Incident]:
+        """
+        Find an existing incident for this IP within the consolidation window.
+        Used to consolidate multiple batches of events into a single incident.
+
+        NOTE: We look for both "open" AND "contained" incidents because:
+        - Auto-containment may have already changed status to "contained"
+        - The attack is still ongoing and events should be correlated
+        - We exclude "dismissed" incidents as those are false positives
+        """
+        one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+
+        existing_query = (
+            select(Incident)
+            .where(
+                and_(
+                    Incident.src_ip == src_ip,
+                    Incident.status.in_(
+                        ["open", "contained"]
+                    ),  # Include auto-contained incidents
+                    Incident.created_at >= one_hour_ago,
+                )
+            )
+            .order_by(Incident.created_at.desc())
+        )
+
+        result = await db.execute(existing_query)
+        return result.scalars().first()
+
     async def _get_local_ml_classification(
         self, src_ip: str, events: List[Event]
     ) -> Optional[ThreatClassification]:
@@ -275,7 +330,12 @@ class IntelligentDetectionEngine:
             )
 
             if enhanced_result:
-                return enhanced_result
+                # Apply event-content-aware override to correct ML misclassifications
+                # This fixes cases where statistical features (like high event rate) mislead the model
+                corrected_result = await self._apply_event_content_override(
+                    enhanced_result, events
+                )
+                return corrected_result
 
             # If enhanced model is not available, use fallback local detection
             self.logger.warning(
@@ -286,6 +346,199 @@ class IntelligentDetectionEngine:
         except Exception as e:
             self.logger.error(f"Local model classification failed: {e}")
             return None
+
+    async def _apply_event_content_override(
+        self, classification: ThreatClassification, events: List[Event]
+    ) -> ThreatClassification:
+        """
+        Override ML classification when actual event content clearly indicates a different attack type.
+
+        This fixes the disconnect between:
+        - Statistical ML features (event rate, burst intensity) → might say "DDoS"
+        - Actual event content (login.failed, file_download) → clearly indicates brute force + malware
+
+        The actual event types are ground truth and should take precedence over statistical aggregates.
+        """
+        # Analyze actual event content to determine attack signature
+        event_signature = self._analyze_event_signatures(events)
+
+        if not event_signature["override_needed"]:
+            return classification
+
+        self.logger.info(
+            f"🔄 Event content override: ML said '{classification.threat_type}' but events show '{event_signature['actual_attack_type']}'"
+        )
+
+        # Map event signatures to threat classes
+        threat_class_map = {
+            "brute_force": (3, "Brute Force Attack", ThreatSeverity.HIGH),
+            "malware": (5, "Malware/Botnet", ThreatSeverity.CRITICAL),
+            "apt": (6, "Advanced Persistent Threat", ThreatSeverity.CRITICAL),
+            "reconnaissance": (2, "Network Reconnaissance", ThreatSeverity.MEDIUM),
+            "web_attack": (4, "Web Application Attack", ThreatSeverity.MEDIUM),
+            "data_exfiltration": (5, "Data Exfiltration", ThreatSeverity.CRITICAL),
+        }
+
+        if event_signature["actual_attack_type"] in threat_class_map:
+            new_class, new_type, new_severity = threat_class_map[
+                event_signature["actual_attack_type"]
+            ]
+
+            # Update classification with corrected values
+            corrected = ThreatClassification(
+                threat_type=new_type,
+                threat_class=new_class,
+                confidence=max(
+                    classification.confidence, event_signature["confidence"]
+                ),
+                anomaly_score=classification.anomaly_score,
+                severity=new_severity,
+                indicators={
+                    **classification.indicators,
+                    "event_content_override": {
+                        "original_ml_classification": classification.threat_type,
+                        "corrected_classification": new_type,
+                        "reason": event_signature["reason"],
+                        "event_evidence": event_signature["evidence"],
+                    },
+                },
+            )
+
+            self.logger.info(
+                f"✅ Classification corrected: {classification.threat_type} → {new_type} "
+                f"(confidence: {corrected.confidence:.2%})"
+            )
+            return corrected
+
+        return classification
+
+    def _analyze_event_signatures(self, events: List[Event]) -> Dict[str, Any]:
+        """
+        Analyze actual event types to determine the true attack signature.
+        Returns override information if events clearly indicate a specific attack type.
+        """
+        # Count event types
+        event_counts = {}
+        for e in events:
+            eventid = e.eventid or ""
+            event_counts[eventid] = event_counts.get(eventid, 0) + 1
+
+        # Extract key indicators
+        failed_logins = event_counts.get("cowrie.login.failed", 0)
+        success_logins = event_counts.get("cowrie.login.success", 0)
+        file_downloads = event_counts.get("cowrie.session.file_download", 0)
+        file_uploads = event_counts.get("cowrie.session.file_upload", 0)
+        commands = event_counts.get("cowrie.command.input", 0)
+        session_connects = sum(v for k, v in event_counts.items() if "connect" in k)
+        http_requests = sum(v for k, v in event_counts.items() if "http" in k.lower())
+
+        result = {
+            "override_needed": False,
+            "actual_attack_type": None,
+            "confidence": 0.0,
+            "reason": None,
+            "evidence": {},
+        }
+
+        # Priority 1: Brute Force - clear signature is multiple failed logins with eventual success
+        if failed_logins >= 5:
+            result["override_needed"] = True
+            result["actual_attack_type"] = "brute_force"
+            result["confidence"] = min(0.85 + (failed_logins / 100), 0.98)
+            result[
+                "reason"
+            ] = f"Detected {failed_logins} failed logins - clear brute force pattern"
+            result["evidence"] = {
+                "failed_logins": failed_logins,
+                "success_logins": success_logins,
+            }
+
+            # If there's also post-exploitation, elevate to APT
+            if success_logins > 0 and (file_downloads > 0 or commands >= 5):
+                result["actual_attack_type"] = "apt"
+                result["confidence"] = 0.92
+                result[
+                    "reason"
+                ] = f"Brute force succeeded + post-exploitation: {commands} commands, {file_downloads} downloads"
+                result["evidence"]["commands"] = commands
+                result["evidence"]["file_downloads"] = file_downloads
+
+            return result
+
+        # Priority 2: Malware/Data Exfiltration - file operations after compromise
+        if file_downloads > 0 or file_uploads > 0:
+            if file_uploads > 0:
+                result["override_needed"] = True
+                result["actual_attack_type"] = "data_exfiltration"
+                result["confidence"] = 0.88
+                result[
+                    "reason"
+                ] = f"Detected {file_uploads} file uploads - data exfiltration pattern"
+                result["evidence"] = {
+                    "file_uploads": file_uploads,
+                    "file_downloads": file_downloads,
+                }
+            else:
+                result["override_needed"] = True
+                result["actual_attack_type"] = "malware"
+                result["confidence"] = 0.85
+                result["reason"] = f"Detected {file_downloads} malware downloads"
+                result["evidence"] = {"file_downloads": file_downloads}
+            return result
+
+        # Priority 3: Web attacks - HTTP-based attacks
+        if http_requests >= 3:
+            # Check for SQL injection or XSS patterns in event messages
+            sql_patterns = sum(
+                1
+                for e in events
+                if e.message
+                and any(
+                    p in e.message.lower()
+                    for p in ["sql", "union", "select", "drop", "injection"]
+                )
+            )
+            xss_patterns = sum(
+                1
+                for e in events
+                if e.message
+                and any(
+                    p in e.message.lower()
+                    for p in ["<script", "xss", "onerror", "javascript:"]
+                )
+            )
+
+            if sql_patterns > 0 or xss_patterns > 0:
+                result["override_needed"] = True
+                result["actual_attack_type"] = "web_attack"
+                result["confidence"] = 0.82
+                result[
+                    "reason"
+                ] = f"Detected web attack patterns: {sql_patterns} SQLi, {xss_patterns} XSS"
+                result["evidence"] = {
+                    "http_requests": http_requests,
+                    "sql_patterns": sql_patterns,
+                    "xss_patterns": xss_patterns,
+                }
+                return result
+
+        # Priority 4: Reconnaissance - many connections to different ports without login attempts
+        unique_ports = len(set(e.dst_port for e in events if e.dst_port))
+        if unique_ports >= 8 and failed_logins < 3:
+            result["override_needed"] = True
+            result["actual_attack_type"] = "reconnaissance"
+            result["confidence"] = 0.78
+            result[
+                "reason"
+            ] = f"Detected port scanning: {unique_ports} unique ports probed"
+            result["evidence"] = {
+                "unique_ports": unique_ports,
+                "session_connects": session_connects,
+            }
+            return result
+
+        # No clear override pattern found
+        return result
 
     async def _get_enhanced_model_classification(
         self, src_ip: str, events: List[Event]
@@ -442,60 +695,58 @@ class IntelligentDetectionEngine:
     ) -> Dict[str, Any]:
         """Determine if an incident should be created based on classification"""
 
+        print(f"🔶 _should_create_incident called:")
+        print(
+            f"   - threat_class: {classification.threat_class} ({classification.threat_type})"
+        )
+        print(f"   - confidence: {classification.confidence:.3f}")
+        print(f"   - anomaly_score: {classification.anomaly_score:.3f}")
+        print(f"   - severity: {classification.severity}")
+
         # Skip creating incidents for "Normal" traffic unless very high confidence
         if classification.threat_class == 0:  # Normal
             if classification.confidence < 0.98:
-                return {
-                    "create": False,
-                    "reason": f"Normal traffic with confidence {classification.confidence:.3f} < 0.98",
-                }
+                reason = f"Normal traffic with confidence {classification.confidence:.3f} < 0.98"
+                print(f"   ❌ BLOCKED: {reason}")
+                return {"create": False, "reason": reason}
 
         # Check confidence threshold for the specific threat class
         threshold = self.config.confidence_thresholds.get(
             classification.threat_class, 0.5
         )
+        print(
+            f"   - confidence threshold for class {classification.threat_class}: {threshold}"
+        )
 
         if classification.confidence < threshold:
-            return {
-                "create": False,
-                "reason": f"Confidence {classification.confidence:.3f} below threshold {threshold:.3f}",
-            }
+            reason = f"Confidence {classification.confidence:.3f} below threshold {threshold:.3f}"
+            print(f"   ❌ BLOCKED: {reason}")
+            return {"create": False, "reason": reason}
 
-        # Check anomaly score threshold
-        if classification.anomaly_score < self.config.anomaly_score_threshold:
-            return {
-                "create": False,
-                "reason": f"Anomaly score {classification.anomaly_score:.3f} below threshold {self.config.anomaly_score_threshold:.3f}",
-            }
+        # NOTE: anomaly_score is actually the model's UNCERTAINTY score
+        # LOW uncertainty = HIGH confidence, so we should NOT block on low anomaly_score
+        # Only check anomaly_score for Normal classifications as an additional safeguard
+        # For actual threat detections, confidence is the primary metric
+        print(f"   - anomaly_score (uncertainty): {classification.anomaly_score:.3f}")
+        print(
+            f"   ✅ Confidence {classification.confidence:.3f} >= threshold {threshold:.3f} - PASSING"
+        )
 
-        # Additional checks for critical threats
-        if classification.severity == ThreatSeverity.CRITICAL:
-            # Always create incidents for critical threats with reasonable confidence
-            if classification.confidence >= 0.6:
-                return {"create": True, "reason": "Critical threat detected"}
+        # If we passed the per-class confidence threshold above, create the incident
+        # The per-class thresholds are already set appropriately (0.3 for most attack types)
+        # No need for additional severity-based blocking
 
-        # High severity threats with good confidence
-        if classification.severity == ThreatSeverity.HIGH:
-            if classification.confidence >= 0.7:
-                return {
-                    "create": True,
-                    "reason": "High severity threat with high confidence",
-                }
+        severity_reasons = {
+            ThreatSeverity.CRITICAL: "Critical threat detected - immediate action required",
+            ThreatSeverity.HIGH: "High severity threat detected",
+            ThreatSeverity.MEDIUM: "Medium severity threat detected",
+            ThreatSeverity.LOW: "Low severity threat detected - monitoring recommended",
+            ThreatSeverity.INFO: "Informational event flagged for review",
+        }
 
-        # Medium/Low threats need higher confidence or enhanced analysis
-        if classification.severity in [ThreatSeverity.MEDIUM, ThreatSeverity.LOW]:
-            if classification.confidence >= 0.8:
-                return {
-                    "create": True,
-                    "reason": "Medium/Low threat with very high confidence",
-                }
-            else:
-                return {
-                    "create": False,
-                    "reason": f"Medium/Low severity needs confidence >= 0.8, got {classification.confidence:.3f}",
-                }
-
-        return {"create": True, "reason": "Default creation criteria met"}
+        reason = severity_reasons.get(classification.severity, "Threat detected")
+        print(f"   ✅ INCIDENT WILL BE CREATED: {reason}")
+        return {"create": True, "reason": reason}
 
     async def _openai_enhanced_analysis(
         self, src_ip: str, events: List[Event], classification: ThreatClassification
@@ -618,7 +869,10 @@ class IntelligentDetectionEngine:
         council_data: Optional[Dict[str, Any]] = None,
     ) -> int:
         """
-        Create incident with intelligent classification details.
+        Create or update incident with intelligent classification details.
+
+        If an open incident already exists for this IP (within the last hour),
+        update it instead of creating a new one - this consolidates attack sequences.
 
         Args:
             db: Database session
@@ -628,12 +882,48 @@ class IntelligentDetectionEngine:
             council_data: Optional Council verification data
 
         Returns:
-            Created incident ID
+            Created or updated incident ID
         """
+        from datetime import datetime, timedelta, timezone
+
+        from sqlalchemy import and_, select
+
+        from .models import Incident
+
+        # Check for existing incident from this IP (within last hour)
+        # Include both "open" and "contained" to handle auto-containment race condition
+        one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+        existing_query = (
+            select(Incident)
+            .where(
+                and_(
+                    Incident.src_ip == src_ip,
+                    Incident.status.in_(
+                        ["open", "contained"]
+                    ),  # Include auto-contained incidents
+                    Incident.created_at >= one_hour_ago,
+                )
+            )
+            .order_by(Incident.created_at.desc())
+        )
+
+        result = await db.execute(existing_query)
+        existing_incident = result.scalars().first()
+
+        if existing_incident:
+            # Update existing incident instead of creating new one
+            self.logger.info(
+                f"Found existing incident #{existing_incident.id} (status={existing_incident.status}) for {src_ip}, updating..."
+            )
+            return await self._update_existing_incident(
+                db, existing_incident, events, classification, council_data
+            )
 
         # Enhanced escalation level logic - check for critical indicators
         escalation_level = classification.severity.value
-        risk_score = classification.anomaly_score
+        # Risk score should reflect ML confidence, not just anomaly score
+        # Combine confidence and anomaly score for a more meaningful risk metric
+        risk_score = max(classification.confidence, classification.anomaly_score)
 
         # Check for critical threat indicators that should elevate priority
         critical_indicators = [
@@ -836,17 +1126,32 @@ class IntelligentDetectionEngine:
 
         # Add Council verification data if available
         if council_data:
+            # Helper to serialize dict/list values to JSON strings for Text columns
+            def _serialize_if_needed(value):
+                if isinstance(value, (dict, list)):
+                    return json.dumps(value)
+                return value
+
             incident_data.update(
                 {
                     "council_verdict": council_data.get("final_verdict"),
                     "council_reasoning": council_data.get("council_reasoning"),
                     "council_confidence": council_data.get("council_confidence"),
-                    "routing_path": council_data.get("routing_path"),
-                    "api_calls_made": council_data.get("api_calls_made"),
+                    # These are Text columns, not JSON - must serialize
+                    "routing_path": _serialize_if_needed(
+                        council_data.get("routing_path")
+                    ),
+                    "api_calls_made": _serialize_if_needed(
+                        council_data.get("api_calls_made")
+                    ),
                     "processing_time_ms": council_data.get("processing_time_ms"),
-                    "gemini_analysis": council_data.get("gemini_analysis"),
-                    "grok_intel": council_data.get("grok_intel"),
-                    "openai_remediation": council_data.get("openai_remediation"),
+                    "gemini_analysis": _serialize_if_needed(
+                        council_data.get("gemini_analysis")
+                    ),
+                    "grok_intel": _serialize_if_needed(council_data.get("grok_intel")),
+                    "openai_remediation": _serialize_if_needed(
+                        council_data.get("openai_remediation")
+                    ),
                 }
             )
             # Update triage note with Council verdict
@@ -871,6 +1176,14 @@ class IntelligentDetectionEngine:
             f"Escalation={escalation_level}, Risk={risk_score:.2f}, "
             f"Confidence={boosted_confidence:.3f}"
         )
+
+        # Generate comprehensive AI analysis with full event context
+        try:
+            await self.generate_comprehensive_ai_analysis(
+                db, incident, force_refresh=True
+            )
+        except Exception as analysis_error:
+            self.logger.warning(f"Failed to generate AI analysis: {analysis_error}")
 
         # Phase 2: Collect training sample if Council verified
         if council_data:
@@ -904,6 +1217,117 @@ class IntelligentDetectionEngine:
 
         return incident.id
 
+    async def _update_existing_incident(
+        self,
+        db: AsyncSession,
+        incident: "Incident",
+        events: List[Event],
+        classification: ThreatClassification,
+        council_data: Optional[Dict[str, Any]] = None,
+    ) -> int:
+        """
+        Update an existing incident with new events and potentially elevated classification.
+
+        This consolidates multiple batches of events from the same attack into one incident.
+        """
+        import json
+
+        # Calculate new metrics based on combined data
+        new_event_count = (incident.events_analyzed_count or 0) + len(events)
+
+        # Update confidence - use the higher value
+        new_confidence = max(incident.ml_confidence or 0, classification.confidence)
+
+        # Update risk score - use the higher value
+        new_risk_score = max(
+            incident.risk_score or 0,
+            classification.confidence,
+            classification.anomaly_score,
+        )
+
+        # Determine new escalation level (can only go up, not down)
+        escalation_order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+        current_escalation = incident.escalation_level or "low"
+        new_escalation = classification.severity.value
+
+        if escalation_order.get(new_escalation, 0) > escalation_order.get(
+            current_escalation, 0
+        ):
+            final_escalation = new_escalation
+        else:
+            final_escalation = current_escalation
+
+        # Check for critical indicators that might elevate further
+        critical_indicators = [
+            "malware",
+            "ransomware",
+            "data_exfiltration",
+            "backdoor",
+            "cryptominer",
+        ]
+        threat_type_lower = classification.threat_type.lower()
+
+        if any(kw in threat_type_lower for kw in critical_indicators):
+            if final_escalation not in ["critical", "high"]:
+                final_escalation = "high"
+                new_risk_score = max(new_risk_score, 0.75)
+
+        # Update triage note with combined info
+        try:
+            existing_triage = (
+                incident.triage_note
+                if isinstance(incident.triage_note, dict)
+                else json.loads(incident.triage_note or "{}")
+            )
+        except:
+            existing_triage = {}
+
+        updated_triage = {
+            **existing_triage,
+            "summary": f"{classification.threat_type} attack sequence from {incident.src_ip}",
+            "severity": final_escalation,
+            "confidence": new_confidence,
+            "event_count": new_event_count,
+            "phases_detected": existing_triage.get("phases_detected", [])
+            + [classification.threat_type],
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "rationale": f"Attack sequence consolidated: {new_event_count} total events analyzed. ML confidence: {new_confidence:.1%}. Latest phase: {classification.threat_type}.",
+        }
+
+        # Update the incident
+        incident.events_analyzed_count = new_event_count
+        incident.ml_confidence = new_confidence
+        incident.risk_score = new_risk_score
+        incident.escalation_level = final_escalation
+        incident.triage_note = updated_triage
+
+        # Update reason to reflect the attack progression
+        phases = list(set(updated_triage.get("phases_detected", [])))
+        if len(phases) > 1:
+            incident.reason = f"Multi-phase attack: {', '.join(phases[:3])} (ML: {new_confidence:.1%})"
+        else:
+            incident.reason = (
+                f"{classification.threat_type} (ML Confidence: {new_confidence:.1%})"
+            )
+
+        await db.commit()
+        await db.refresh(incident)
+
+        # Regenerate comprehensive AI analysis with new events
+        try:
+            await self.generate_comprehensive_ai_analysis(
+                db, incident, force_refresh=True
+            )
+        except Exception as analysis_error:
+            self.logger.warning(f"Failed to regenerate AI analysis: {analysis_error}")
+
+        self.logger.info(
+            f"Updated incident #{incident.id}: events={new_event_count}, "
+            f"confidence={new_confidence:.2%}, escalation={final_escalation}"
+        )
+
+        return incident.id
+
     def _get_response_recommendation(self, classification: ThreatClassification) -> str:
         """Get response recommendation based on threat classification"""
 
@@ -915,6 +1339,374 @@ class IntelligentDetectionEngine:
             return "Monitor closely and investigate within 4 hours"
         else:
             return "Log and monitor for pattern development"
+
+    async def generate_comprehensive_ai_analysis(
+        self, db: AsyncSession, incident: Incident, force_refresh: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Generate a comprehensive AI analysis using ALL key attack events.
+
+        This creates a detailed threat narrative based on the full event timeline,
+        automatically updates when new critical events are detected.
+        """
+        from sqlalchemy import desc, select
+
+        # Get all events for this incident's source IP
+        stmt = (
+            select(Event)
+            .where(Event.src_ip == incident.src_ip)
+            .order_by(desc(Event.ts))
+            .limit(200)  # Get comprehensive history
+        )
+        result = await db.execute(stmt)
+        all_events = result.scalars().all()
+
+        # Categorize and prioritize key attack events
+        key_events = self._extract_key_attack_events(all_events)
+
+        # Check if we need to regenerate (new events since last analysis)
+        current_event_count = len(all_events)
+        last_analyzed_count = incident.last_event_count or 0
+
+        if (
+            not force_refresh
+            and current_event_count == last_analyzed_count
+            and incident.ai_analysis
+        ):
+            # No new events, return cached analysis
+            return incident.ai_analysis
+
+        # Generate comprehensive analysis
+        analysis = await self._generate_event_based_analysis(
+            incident, all_events, key_events
+        )
+
+        # Update incident with new analysis
+        incident.ai_analysis = analysis
+        incident.ai_analysis_timestamp = datetime.now(timezone.utc)
+        incident.last_event_count = current_event_count
+
+        # Also update triage_note with the new summary
+        try:
+            triage = (
+                incident.triage_note
+                if isinstance(incident.triage_note, dict)
+                else json.loads(incident.triage_note or "{}")
+            )
+        except:
+            triage = {}
+
+        triage.update(
+            {
+                "summary": analysis.get("summary", triage.get("summary", "")),
+                "recommendation": analysis.get(
+                    "recommendation", triage.get("recommendation", "")
+                ),
+                "rationale": analysis.get("rationale", []),
+                "confidence": incident.ml_confidence or 0,
+                "event_count": current_event_count,
+                "key_events_count": len(key_events),
+                "last_updated": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        incident.triage_note = triage
+
+        await db.commit()
+
+        self.logger.info(
+            f"Generated comprehensive AI analysis for incident #{incident.id}: "
+            f"{len(key_events)} key events, {current_event_count} total events"
+        )
+
+        return analysis
+
+    def _extract_key_attack_events(self, events: List[Event]) -> List[Dict[str, Any]]:
+        """Extract and prioritize the most significant attack events."""
+
+        # Priority scoring for different event types
+        priority_patterns = {
+            # Critical events (100)
+            "login.success": 100,
+            "session.file_upload": 100,
+            "session.file_download": 95,
+            "command": 90,
+            "malware": 100,
+            "backdoor": 100,
+            "privilege_escalation": 100,
+            "data_exfiltration": 100,
+            # High priority events (70-89)
+            "login.failed": 75,
+            "session.connect": 70,
+            "brute": 80,
+            "sql_injection": 85,
+            "xss": 80,
+            # Medium priority events (40-69)
+            "session.closed": 40,
+            "connection.lost": 45,
+            "tcp": 50,
+            "scan": 55,
+            "recon": 60,
+            # Low priority (default)
+            "default": 20,
+        }
+
+        scored_events = []
+        for event in events:
+            score = priority_patterns.get("default")
+            eventid = (event.eventid or "").lower()
+            message = (event.message or "").lower()
+
+            # Check for pattern matches
+            for pattern, pattern_score in priority_patterns.items():
+                if pattern in eventid or pattern in message:
+                    score = max(score, pattern_score)
+
+            # Boost score for events with suspicious content
+            if any(
+                kw in message
+                for kw in [
+                    "wget",
+                    "curl",
+                    "chmod",
+                    "base64",
+                    "/etc/passwd",
+                    "shadow",
+                    "id;",
+                    "whoami",
+                ]
+            ):
+                score = max(score, 90)
+
+            # Handle raw field which could be dict or string
+            raw_data = event.raw
+            if raw_data:
+                if isinstance(raw_data, dict):
+                    # Convert dict to JSON string and truncate
+                    raw_data = json.dumps(raw_data)[:500]
+                elif isinstance(raw_data, str):
+                    raw_data = raw_data[:500]
+                else:
+                    raw_data = str(raw_data)[:500]
+
+            scored_events.append(
+                {
+                    "id": event.id,
+                    "eventid": event.eventid,
+                    "message": event.message,
+                    "ts": event.ts.isoformat() if event.ts else None,
+                    "src_ip": event.src_ip,
+                    "dst_port": event.dst_port,
+                    "priority_score": score,
+                    "raw": raw_data,  # Truncated for API response
+                }
+            )
+
+        # Sort by priority and take top events, ensuring diversity
+        scored_events.sort(key=lambda x: x["priority_score"], reverse=True)
+
+        # Get diverse set of key events (not all the same type)
+        key_events = []
+        seen_types = set()
+
+        for event in scored_events:
+            event_type = event["eventid"]
+            # Always include critical events, limit duplicates of same type
+            if event["priority_score"] >= 90:
+                key_events.append(event)
+                seen_types.add(event_type)
+            elif event_type not in seen_types and len(key_events) < 15:
+                key_events.append(event)
+                seen_types.add(event_type)
+            elif event["priority_score"] >= 70 and len(key_events) < 20:
+                key_events.append(event)
+
+        return key_events[:20]  # Cap at 20 key events
+
+    async def _generate_event_based_analysis(
+        self,
+        incident: Incident,
+        all_events: List[Event],
+        key_events: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Generate AI analysis based on the full event context."""
+
+        # Build attack narrative from key events
+        attack_phases = []
+        techniques_observed = set()
+        indicators = []
+
+        for event in key_events:
+            eventid = (event.get("eventid") or "").lower()
+            message = (event.get("message") or "").lower()
+
+            # Identify attack phases
+            if "scan" in eventid or "tcp" in eventid:
+                attack_phases.append("reconnaissance")
+                techniques_observed.add("Network Scanning")
+            if "login.failed" in eventid or "brute" in message:
+                attack_phases.append("credential_attack")
+                techniques_observed.add("Brute Force Authentication")
+            if "login.success" in eventid:
+                attack_phases.append("initial_access")
+                techniques_observed.add("Valid Account Compromise")
+            if "command" in eventid or any(
+                cmd in message for cmd in ["wget", "curl", "chmod", "id", "whoami"]
+            ):
+                attack_phases.append("execution")
+                techniques_observed.add("Command Execution")
+            if "file_upload" in eventid or "file_download" in eventid:
+                attack_phases.append("collection")
+                techniques_observed.add("Data Collection/Staging")
+            if "malware" in message or "backdoor" in message:
+                attack_phases.append("persistence")
+                techniques_observed.add("Malware Installation")
+            if any(kw in message for kw in ["exfil", "upload", "transfer"]):
+                attack_phases.append("exfiltration")
+                techniques_observed.add("Data Exfiltration")
+
+        # Deduplicate and order phases
+        phase_order = [
+            "reconnaissance",
+            "credential_attack",
+            "initial_access",
+            "execution",
+            "persistence",
+            "collection",
+            "exfiltration",
+        ]
+        unique_phases = []
+        for phase in phase_order:
+            if phase in attack_phases and phase not in unique_phases:
+                unique_phases.append(phase)
+
+        # Count event types for the summary
+        event_type_counts = {}
+        for event in all_events:
+            etype = event.eventid or "unknown"
+            event_type_counts[etype] = event_type_counts.get(etype, 0) + 1
+
+        # Sort by count
+        top_event_types = sorted(
+            event_type_counts.items(), key=lambda x: x[1], reverse=True
+        )[:5]
+
+        # Generate summary
+        phase_names = {
+            "reconnaissance": "network reconnaissance",
+            "credential_attack": "credential attacks",
+            "initial_access": "successful compromise",
+            "execution": "command execution",
+            "persistence": "persistence establishment",
+            "collection": "data collection",
+            "exfiltration": "data exfiltration",
+        }
+
+        if unique_phases:
+            phase_descriptions = [phase_names.get(p, p) for p in unique_phases]
+            if len(phase_descriptions) == 1:
+                summary = f"A {phase_descriptions[0]} attack from IP {incident.src_ip} is detected"
+            else:
+                summary = f"A multi-stage attack from IP {incident.src_ip} is detected, showing {', '.join(phase_descriptions[:-1])} and {phase_descriptions[-1]}"
+        else:
+            summary = f"Suspicious activity from IP {incident.src_ip} is detected"
+
+        # Add event context to summary
+        login_success = event_type_counts.get("cowrie.login.success", 0)
+        login_failed = event_type_counts.get("cowrie.login.failed", 0)
+        file_events = event_type_counts.get(
+            "cowrie.session.file_upload", 0
+        ) + event_type_counts.get("cowrie.session.file_download", 0)
+
+        context_parts = []
+        if login_failed > 0:
+            context_parts.append(f"{login_failed} failed login attempts")
+        if login_success > 0:
+            context_parts.append(f"{login_success} successful authentication(s)")
+        if file_events > 0:
+            context_parts.append(f"{file_events} file transfer(s)")
+
+        if context_parts:
+            summary += f", with {', '.join(context_parts)}."
+        else:
+            summary += "."
+
+        # Generate recommendation based on severity
+        escalation = (incident.escalation_level or "medium").lower()
+        confidence = incident.ml_confidence or 0
+
+        if escalation == "critical" or confidence >= 0.8:
+            recommendation = "Immediate containment and block source IP"
+        elif escalation == "high" or confidence >= 0.6:
+            recommendation = "Urgent investigation and potential containment"
+        elif "initial_access" in unique_phases or login_success > 0:
+            recommendation = "Block source IP and investigate compromised credentials"
+        elif login_failed > 5:
+            recommendation = "Monitor and consider blocking after additional attempts"
+        else:
+            recommendation = "Continue monitoring for escalation"
+
+        # Build rationale as list of key indicators
+        rationale = []
+
+        if confidence > 0:
+            confidence_level = (
+                "high"
+                if confidence >= 0.7
+                else "moderate"
+                if confidence >= 0.4
+                else "low"
+            )
+            rationale.append(
+                f"The attack has a {confidence_level} machine learning confidence of {confidence * 100:.1f}%."
+            )
+
+        if techniques_observed:
+            rationale.append(
+                f"Observed techniques: {', '.join(list(techniques_observed)[:4])}."
+            )
+
+        if login_failed > 3:
+            rationale.append(
+                f"Multiple connection attempts ({login_failed}) indicate a targeted brute-force attempt."
+            )
+
+        if login_success > 0:
+            rationale.append(
+                f"Successful authentication detected - credential compromise confirmed."
+            )
+
+        if file_events > 0:
+            rationale.append(
+                f"File transfers detected - possible data exfiltration or malware delivery."
+            )
+
+        if len(unique_phases) > 2:
+            rationale.append(
+                f"Multi-phase attack pattern indicates sophisticated threat actor."
+            )
+
+        # Build the full analysis response
+        analysis = {
+            "summary": summary,
+            "recommendation": recommendation,
+            "rationale": rationale,
+            "attack_phases": unique_phases,
+            "techniques_observed": list(techniques_observed),
+            "key_events": key_events[:10],  # Include top 10 for display
+            "event_statistics": {
+                "total_events": len(all_events),
+                "key_events_count": len(key_events),
+                "top_event_types": dict(top_event_types),
+                "login_success": login_success,
+                "login_failed": login_failed,
+                "file_transfers": file_events,
+            },
+            "confidence": confidence,
+            "escalation_level": escalation,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        return analysis
 
     async def _route_through_council(
         self, src_ip: str, events: List[Event], classification: ThreatClassification

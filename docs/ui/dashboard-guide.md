@@ -18,6 +18,7 @@ The dashboard is organized into three main tabs: Threat Overview, Active Inciden
 ### General Features
 1. **Auto-Refresh** – Configurable refresh intervals with live updates.
 2. **AI Assistant** – Integrated Copilot context for incident analysis.
+3. **Responsive Navigation** – Sidebar navigation with smooth interactive states and role-based filtering.
 
 ## Incident Details
 

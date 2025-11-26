@@ -183,7 +183,7 @@ export default function RedesignedIncidentPage({ params }: { params: Promise<{ i
               <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
                 <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-mono">{activeIncident.src_ip}</Badge>
                 <span>•</span>
-                <span>Created {new Date(activeIncident.created_at).toLocaleString()}</span>
+                <span suppressHydrationWarning>Created {new Date(activeIncident.created_at).toLocaleString()}</span>
                 {activeIncident.processing_time_ms && (
                   <>
                     <span>•</span>

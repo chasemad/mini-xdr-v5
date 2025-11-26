@@ -20,7 +20,8 @@ from app.orchestrator.graph import XDRState
 logger = logging.getLogger(__name__)
 
 # Grok API configuration (when available)
-GROK_API_KEY = os.getenv("GROK_API_KEY")
+# Support both GROK_API_KEY and XAI_API_KEY (same X.AI API)
+GROK_API_KEY = os.getenv("GROK_API_KEY") or os.getenv("XAI_API_KEY")
 GROK_API_URL = os.getenv("GROK_API_URL", "https://api.x.ai/v1")
 
 
@@ -49,12 +50,17 @@ async def grok_intel_node(state: XDRState) -> Dict[str, Any]:
     # Record API call (if actually calling Grok)
     from app.orchestrator.metrics import estimate_api_cost, record_api_call
 
-    # Extract IOCs from events
-    iocs = _extract_iocs(state["events"])
+    # Extract IOCs from events (include source IP)
+    iocs = _extract_iocs(state["events"], state.get("src_ip"))
 
     if not iocs:
-        logger.info("No IOCs to query - skipping Grok")
-        state["grok_intel"] = "No IOCs detected"
+        logger.info("No IOCs to query - providing default intel")
+        state["grok_intel"] = {
+            "summary": f"No external IOCs detected for {state.get('src_ip')}",
+            "threat_actor": "Unknown - Requires manual investigation",
+            "ttps": ["Potential automated attack"],
+            "threat_score": 0.0,
+        }
         state["grok_threat_score"] = 0.0
         return state
 
@@ -76,9 +82,9 @@ async def grok_intel_node(state: XDRState) -> Dict[str, Any]:
 
         # Aggregate results
         threat_score = _calculate_grok_threat_score(intel_results)
-        intel_summary = _format_grok_intel(intel_results)
+        intel_data = _format_grok_intel_object(intel_results, state)
 
-        state["grok_intel"] = intel_summary
+        state["grok_intel"] = intel_data
         state["grok_threat_score"] = threat_score
         state["grok_references"] = [r.get("url") for r in intel_results if r.get("url")]
 
@@ -103,13 +109,17 @@ async def grok_intel_node(state: XDRState) -> Dict[str, Any]:
     return state
 
 
-def _extract_iocs(events: list) -> list:
+def _extract_iocs(events: list, src_ip: str = None) -> list:
     """
     Extract Indicators of Compromise from events.
 
     Returns list of (ioc_type, ioc_value) tuples.
     """
     iocs = []
+
+    # Add source IP if provided and external
+    if src_ip and not _is_private_ip(src_ip):
+        iocs.append(("src_ip", src_ip))
 
     for event in events:
         # File hashes
@@ -120,10 +130,20 @@ def _extract_iocs(events: list) -> list:
         if domain := event.get("domain"):
             iocs.append(("domain", domain))
 
+        # Source IPs from events (external only)
+        if event_src_ip := event.get("src_ip"):
+            if not _is_private_ip(event_src_ip) and event_src_ip != src_ip:
+                iocs.append(("src_ip", event_src_ip))
+
         # Destination IPs (external only)
         if dst_ip := event.get("dst_ip"):
             if not _is_private_ip(dst_ip):
                 iocs.append(("ip", dst_ip))
+
+        # Usernames that could be IoC (especially for SSH attacks)
+        if username := event.get("username"):
+            if username not in ["root", "admin", "user", "guest", ""]:
+                iocs.append(("username", username))
 
     # Deduplicate
     return list(set(iocs))
@@ -234,6 +254,87 @@ def _format_grok_intel(intel_results: list) -> str:
             lines.append(f"    Campaigns: {', '.join(campaigns)}")
 
     return "\n".join(lines)
+
+
+def _format_grok_intel_object(intel_results: list, state: dict) -> dict:
+    """
+    Format Grok intelligence as an object for the frontend.
+
+    Returns dict with threat_actor, ttps, and other fields expected by the UI.
+    """
+    ml_prediction = state.get("ml_prediction", {})
+    attack_type = ml_prediction.get("class", "Unknown")
+
+    # Determine threat actor based on attack type and IOCs
+    threat_actor = "Unknown"
+    ttps = []
+
+    # Map attack types to potential threat actors
+    attack_actor_map = {
+        "SSH Brute Force": "Automated Scanner / Botnet",
+        "DDoS": "Distributed Attack Network",
+        "Web Attack": "Web Application Attacker",
+        "SQL Injection": "Database Attacker",
+        "Port Scan": "Reconnaissance Actor",
+        "Malware": "Malware Operator",
+        "Ransomware": "Ransomware Group",
+        "APT": "Advanced Persistent Threat",
+    }
+
+    # Derive TTPs based on attack type
+    ttp_map = {
+        "SSH Brute Force": ["T1110 - Brute Force", "T1078 - Valid Accounts"],
+        "DDoS": [
+            "T1498 - Network Denial of Service",
+            "T1499 - Endpoint Denial of Service",
+        ],
+        "Web Attack": [
+            "T1190 - Exploit Public-Facing Application",
+            "T1059 - Command Injection",
+        ],
+        "SQL Injection": [
+            "T1190 - Exploit Public-Facing Application",
+            "T1059 - SQL Injection",
+        ],
+        "Port Scan": ["T1046 - Network Service Scanning", "T1595 - Active Scanning"],
+        "Malware": ["T1059 - Command and Scripting", "T1055 - Process Injection"],
+        "Ransomware": [
+            "T1486 - Data Encrypted for Impact",
+            "T1490 - Inhibit System Recovery",
+        ],
+    }
+
+    # Find best match
+    for key, actor in attack_actor_map.items():
+        if key.lower() in attack_type.lower():
+            threat_actor = actor
+            break
+
+    for key, techniques in ttp_map.items():
+        if key.lower() in attack_type.lower():
+            ttps = techniques
+            break
+
+    # Default TTPs if none found
+    if not ttps:
+        ttps = [f"Potential {attack_type} Activity", "Requires Further Investigation"]
+
+    # Calculate aggregated score
+    avg_score = sum(r.get("threat_score", 0) for r in intel_results) / max(
+        len(intel_results), 1
+    )
+
+    return {
+        "threat_actor": threat_actor,
+        "ttps": ttps,
+        "threat_score": avg_score,
+        "iocs_analyzed": len(intel_results),
+        "summary": _format_grok_intel(intel_results),
+        "related_campaigns": [
+            c for r in intel_results for c in r.get("related_campaigns", [])
+        ],
+        "status": "analyzed" if intel_results else "no_iocs",
+    }
 
 
 # Export

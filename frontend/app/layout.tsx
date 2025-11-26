@@ -4,6 +4,7 @@ import "./globals.css";
 import { AppProvider } from "./contexts/AppContext";
 import { AuthProvider } from "./contexts/AuthContext";
 import { DashboardProvider } from "./contexts/DashboardContext";
+import { ToastProvider } from "@/components/ui/toast";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -23,7 +24,9 @@ export default function RootLayout({
         <AuthProvider>
           <AppProvider>
             <DashboardProvider>
-              {children}
+              <ToastProvider>
+                {children}
+              </ToastProvider>
             </DashboardProvider>
           </AppProvider>
         </AuthProvider>

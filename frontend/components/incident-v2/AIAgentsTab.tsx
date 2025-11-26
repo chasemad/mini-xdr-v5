@@ -208,7 +208,7 @@ export function AIAgentsTab({ coordination, loading }: AIAgentsTabProps) {
                         <div key={idx} className="relative">
                             <div className="absolute -left-[21px] top-0 h-3 w-3 rounded-full bg-background border-2 border-primary" />
                             <div className="text-xs font-semibold">{event.event}</div>
-                            <div className="text-[10px] text-muted-foreground">
+                            <div className="text-[10px] text-muted-foreground" suppressHydrationWarning>
                                 {new Date(event.timestamp).toLocaleTimeString()} • {event.details}
                             </div>
                         </div>

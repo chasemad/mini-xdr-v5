@@ -234,6 +234,114 @@ export async function socCreateCase(incidentId: number) {
   return apiRequest(`/api/incidents/${incidentId}/actions/create-case`, { method: "POST" });
 }
 
+// ===== ADDITIONAL SOC ACTION API FUNCTIONS =====
+
+export async function socDnsSinkhole(incidentId: number, domains?: string[]) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/dns-sinkhole`, {
+    method: "POST",
+    body: { domains }
+  });
+}
+
+export async function socTrafficRedirection(incidentId: number, destination?: string) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/traffic-redirection`, {
+    method: "POST",
+    body: { destination: destination || "honeypot" }
+  });
+}
+
+export async function socNetworkSegmentation(incidentId: number, segmentType?: string) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/network-segmentation`, {
+    method: "POST",
+    body: { segment_type: segmentType || "vlan" }
+  });
+}
+
+export async function socMemoryDump(incidentId: number, targetHost?: string) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/memory-dump`, {
+    method: "POST",
+    body: { target_host: targetHost }
+  });
+}
+
+export async function socKillProcess(incidentId: number, processCriteria?: Record<string, any>) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/kill-process`, {
+    method: "POST",
+    body: { process_criteria: processCriteria }
+  });
+}
+
+export async function socMalwareRemoval(incidentId: number, targetHost?: string) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/malware-removal`, {
+    method: "POST",
+    body: { target_host: targetHost }
+  });
+}
+
+export async function socEndpointScan(incidentId: number, targetHost?: string, scanType?: string) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/endpoint-scan`, {
+    method: "POST",
+    body: { target_host: targetHost, scan_type: scanType || "full" }
+  });
+}
+
+export async function socBehaviorAnalysis(incidentId: number) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/behavior-analysis`, { method: "POST" });
+}
+
+export async function socCollectEvidence(incidentId: number, artifactTypes?: string[]) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/collect-evidence`, {
+    method: "POST",
+    body: { artifact_types: artifactTypes || ["logs", "memory", "network"] }
+  });
+}
+
+export async function socAnalyzeLogs(incidentId: number, timeRange?: string) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/analyze-logs`, {
+    method: "POST",
+    body: { time_range: timeRange || "24h" }
+  });
+}
+
+export async function socRevokeUserSessions(incidentId: number, userId?: string) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/revoke-sessions`, {
+    method: "POST",
+    body: { user_id: userId }
+  });
+}
+
+export async function socDisableUserAccount(incidentId: number, userId?: string) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/disable-account`, {
+    method: "POST",
+    body: { user_id: userId }
+  });
+}
+
+export async function socEnforceMFA(incidentId: number, userId?: string) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/enforce-mfa`, {
+    method: "POST",
+    body: { user_id: userId }
+  });
+}
+
+export async function socEmergencyBackup(incidentId: number) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/emergency-backup`, { method: "POST" });
+}
+
+export async function socEnableDLP(incidentId: number, policyLevel?: string) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/enable-dlp`, {
+    method: "POST",
+    body: { policy_level: policyLevel || "strict" }
+  });
+}
+
+export async function socNotifyStakeholders(incidentId: number, notificationLevel?: string) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/notify-stakeholders`, {
+    method: "POST",
+    body: { notification_level: notificationLevel || "executive" }
+  });
+}
+
 // Agent Orchestration API
 export async function agentOrchestrate(query: string, incident_id?: number, context?: Record<string, unknown>) {
   return apiRequest("/api/agents/orchestrate", {

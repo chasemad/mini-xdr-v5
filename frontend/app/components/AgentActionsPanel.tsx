@@ -77,12 +77,22 @@ export default function AgentActionsPanel({ incidentId, onActionClick }: AgentAc
   const [refreshing, setRefreshing] = useState(false);
   const [rollingBack, setRollingBack] = useState<string | null>(null);
 
-  const fetchActions = async () => {
+  const fetchActions = async (skipChangeDetection = false) => {
     try {
       const response = await fetch(apiUrl(`/api/agents/actions/${incidentId}`));
       if (response.ok) {
         const data = await response.json();
-        setActions(data);
+
+        // Only update if data changed or forced refresh
+        if (skipChangeDetection) {
+          setActions(data);
+        } else {
+          setActions(prevActions => {
+            const currentSnapshot = JSON.stringify(data);
+            const previousSnapshot = JSON.stringify(prevActions);
+            return currentSnapshot !== previousSnapshot ? data : prevActions;
+          });
+        }
       }
     } catch (error) {
       console.error("Failed to fetch agent actions:", error);
@@ -93,15 +103,15 @@ export default function AgentActionsPanel({ incidentId, onActionClick }: AgentAc
   };
 
   useEffect(() => {
-    fetchActions();
-    // Auto-refresh every 5 seconds
-    const interval = setInterval(fetchActions, 5000);
+    fetchActions(true); // Initial load always updates
+    // Auto-refresh every 10 seconds with smart change detection
+    const interval = setInterval(() => fetchActions(false), 10000);
     return () => clearInterval(interval);
   }, [incidentId]);
 
   const handleRefresh = () => {
     setRefreshing(true);
-    fetchActions();
+    fetchActions(true); // Force update on manual refresh
   };
 
   const handleRollback = async (action: AgentAction) => {
@@ -121,8 +131,8 @@ export default function AgentActionsPanel({ incidentId, onActionClick }: AgentAc
       if (response.ok) {
         const result = await response.json();
         console.log("Rollback result:", result);
-        // Refresh to show updated status
-        await fetchActions();
+        // Refresh to show updated status - force update
+        await fetchActions(true);
       } else {
         const error = await response.json();
         alert(`Rollback failed: ${error.detail || "Unknown error"}`);

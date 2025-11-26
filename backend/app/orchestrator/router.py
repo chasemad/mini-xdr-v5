@@ -144,6 +144,7 @@ def should_engage_grok(state: XDRState) -> bool:
     - Recently registered domains (< 30 days old)
     - Unknown destination IPs
     - IOCs that need real-time validation
+    - Any THREAT verdict that could benefit from intel
 
     Args:
         state: Current XDRState
@@ -154,20 +155,38 @@ def should_engage_grok(state: XDRState) -> bool:
     # Check if we have IOCs that need external validation
     events = state.get("events", [])
 
-    # Look for unknown hashes, new domains, etc.
+    # Look for unknown hashes, new domains, external IPs, etc.
     has_unknown_iocs = any(
         event.get("file_hash") or event.get("domain") for event in events
     )
 
-    # Only engage Grok if ML confidence is not very high
+    # Also engage for external IPs or when we have a confirmed threat
+    has_external_ip = state.get("src_ip", "").split(".")[0] not in [
+        "10",
+        "172",
+        "192",
+        "127",
+    ]
+    is_threat = (
+        state.get("final_verdict") == "THREAT"
+        or state.get("gemini_verdict") == "CONFIRM"
+    )
+
+    # Only engage Grok if ML confidence is not very high OR we have a threat
     confidence = state["ml_prediction"].get("confidence", 0.0)
 
-    should_engage = has_unknown_iocs and confidence < 0.85
+    # Engage Grok more liberally - for any threat or IOC presence
+    should_engage = (
+        (has_unknown_iocs and confidence < 0.85)
+        or (is_threat and has_external_ip)
+        or is_threat
+    )
 
     if should_engage:
         logger.info(
             f"Engaging Grok for external intel: "
-            f"IOCs present, confidence={confidence:.2%}"
+            f"IOCs={has_unknown_iocs}, external_ip={has_external_ip}, "
+            f"is_threat={is_threat}, confidence={confidence:.2%}"
         )
 
     return should_engage
@@ -179,7 +198,7 @@ def should_engage_openai(state: XDRState) -> bool:
 
     OpenAI is engaged when:
     - Final verdict is THREAT
-    - Automated response is approved
+    - Any detection that requires response actions
     - Complex remediation needed (firewall rules, scripts)
 
     Args:
@@ -189,17 +208,27 @@ def should_engage_openai(state: XDRState) -> bool:
         True if OpenAI should generate remediation
     """
     verdict = state.get("final_verdict")
-    requires_action = verdict == "THREAT"
+    gemini_verdict = state.get("gemini_verdict")
 
-    # Only generate remediation if we're confident
+    # Engage for threats or when investigation is needed
+    requires_action = (
+        verdict == "THREAT" or verdict == "INVESTIGATE" or gemini_verdict == "CONFIRM"
+    )
+
+    # Only generate remediation if we have any confidence
     confidence = state.get("confidence_score", 0.0)
+    ml_confidence = state["ml_prediction"].get("confidence", 0.0)
 
-    should_engage = requires_action and confidence > 0.70
+    # Use the higher of the two confidence values
+    effective_confidence = max(confidence, ml_confidence)
+
+    # Lower threshold - engage OpenAI for any actionable detection
+    should_engage = requires_action and effective_confidence > 0.40
 
     if should_engage:
         logger.info(
             f"Engaging OpenAI for remediation: "
-            f"verdict={verdict}, confidence={confidence:.2%}"
+            f"verdict={verdict}, gemini={gemini_verdict}, confidence={effective_confidence:.2%}"
         )
 
     return should_engage

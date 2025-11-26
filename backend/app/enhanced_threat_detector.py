@@ -760,6 +760,28 @@ class EnhancedThreatDetectionSystem:
                 feature_dict = deep_learning_manager._extract_features(src_ip, events)
                 feature_vector = np.array([list(feature_dict.values())]).reshape(1, -1)
 
+                # Debug: Log key attack indicator features
+                logger.info(f"🔍 FEATURE DEBUG for {src_ip}:")
+                logger.info(
+                    f"   - failed_login_count: {feature_dict.get('failed_login_count', 0)}"
+                )
+                logger.info(
+                    f"   - unique_usernames: {feature_dict.get('unique_usernames', 0)}"
+                )
+                logger.info(
+                    f"   - command_diversity: {feature_dict.get('command_diversity', 0)}"
+                )
+                logger.info(
+                    f"   - download_attempts: {feature_dict.get('download_attempts', 0)}"
+                )
+                logger.info(
+                    f"   - upload_attempts: {feature_dict.get('upload_attempts', 0)}"
+                )
+                logger.info(
+                    f"   - event_count_1h: {feature_dict.get('event_count_1h', 0)}"
+                )
+                logger.info(f"   - unique_ports: {feature_dict.get('unique_ports', 0)}")
+
             # Enhance features
             enhanced_features = self.feature_enhancer.enhance_features(feature_vector)
 
@@ -789,6 +811,14 @@ class EnhancedThreatDetectionSystem:
                 predicted_class = torch.argmax(probabilities, dim=1).item()
                 confidence = probabilities[0, predicted_class].item()
                 class_probabilities = probabilities[0].cpu().numpy().tolist()
+
+                # Debug: Log class probabilities
+                logger.info(
+                    f"🔍 MODEL DEBUG - Class probabilities: {[f'{p:.3f}' for p in class_probabilities]}"
+                )
+                logger.info(
+                    f"🔍 MODEL DEBUG - Classes: Normal={class_probabilities[0]:.3f}, DDoS={class_probabilities[1]:.3f}, Recon={class_probabilities[2]:.3f}, BruteForce={class_probabilities[3]:.3f}, WebAttack={class_probabilities[4]:.3f}, Malware={class_probabilities[5]:.3f}, APT={class_probabilities[6]:.3f}"
+                )
 
                 # Calculate combined uncertainty
                 epistemic_uncertainty = torch.mean(pred_uncertainty[0]).item()

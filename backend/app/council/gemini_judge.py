@@ -139,8 +139,15 @@ async def gemini_judge_node(state: XDRState) -> Dict[str, Any]:
         # Parse Gemini's response
         verdict_data = _parse_gemini_response(response.content)
 
-        # Update state with Gemini's analysis
-        state["gemini_analysis"] = response.content
+        # Update state with Gemini's analysis (format for frontend)
+        state["gemini_analysis"] = {
+            "reasoning": verdict_data.get("reasoning", response.content),
+            "confidence": verdict_data.get("confidence", 0.5),
+            "verdict": verdict_data.get("verdict", "UNCERTAIN"),
+            "suggested_actions": verdict_data.get("suggested_actions", []),
+            "requires_human_review": verdict_data.get("requires_human_review", False),
+            "raw_response": response.content,
+        }
         state["gemini_verdict"] = verdict_data.get("verdict", "UNCERTAIN")
         state["gemini_confidence"] = verdict_data.get("confidence", 0.5)
         state["gemini_reasoning"] = verdict_data.get("reasoning", "")
@@ -385,17 +392,34 @@ def _fallback_judge(state: XDRState) -> Dict[str, Any]:
         state["final_verdict"] = "THREAT"
         state["confidence_score"] = ml_confidence
         state["gemini_verdict"] = "CONFIRM"
-        state["gemini_reasoning"] = "Fallback: Specialist model with high confidence"
+        reasoning = f"Fallback analysis: Specialist model detected {ml_class} with high confidence ({ml_confidence:.1%}). Threat confirmed."
+        state["gemini_reasoning"] = reasoning
     elif ml_confidence < 0.60:
         state["final_verdict"] = "INVESTIGATE"
         state["requires_human_review"] = True
         state["gemini_verdict"] = "UNCERTAIN"
-        state["gemini_reasoning"] = "Fallback: Low confidence requires human review"
+        reasoning = f"Fallback analysis: Low confidence detection ({ml_confidence:.1%}) for {ml_class}. Requires human review for verification."
+        state["gemini_reasoning"] = reasoning
     else:
         state["final_verdict"] = "THREAT"
         state["confidence_score"] = ml_confidence * 0.8  # Reduce confidence slightly
         state["gemini_verdict"] = "CONFIRM"
-        state["gemini_reasoning"] = "Fallback: Accepting ML prediction with caution"
+        reasoning = f"Fallback analysis: ML model detected {ml_class} with moderate confidence ({ml_confidence:.1%}). Accepting prediction with caution."
+        state["gemini_reasoning"] = reasoning
+
+    # Format for frontend
+    state["gemini_analysis"] = {
+        "reasoning": state["gemini_reasoning"],
+        "confidence": state.get("confidence_score", ml_confidence),
+        "verdict": state["gemini_verdict"],
+        "suggested_actions": [
+            f"Block {state['src_ip']}",
+            "Review related events",
+            "Monitor for 24 hours",
+        ],
+        "requires_human_review": state.get("requires_human_review", False),
+        "fallback_used": True,
+    }
 
     return state
 

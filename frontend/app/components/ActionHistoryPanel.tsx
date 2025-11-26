@@ -260,8 +260,10 @@ export default function ActionHistoryPanel({
   const [rollingBackAgent, setRollingBackAgent] = useState<string | null>(null);
   const hasManualActions = actions.length > 0;
 
-  // Fetch agent actions
+  // Fetch agent actions with smart change detection
   useEffect(() => {
+    let previousDataSnapshot: string | null = null;
+
     const fetchAgentActions = async () => {
       try {
         const response = await fetch(apiUrl(`/api/agents/actions/${incidentId}`), {
@@ -269,7 +271,13 @@ export default function ActionHistoryPanel({
         });
         if (response.ok) {
           const data = await response.json();
-          setAgentActions(data);
+
+          // Only update state if data actually changed
+          const currentSnapshot = JSON.stringify(data);
+          if (currentSnapshot !== previousDataSnapshot) {
+            previousDataSnapshot = currentSnapshot;
+            setAgentActions(data);
+          }
         }
       } catch (error) {
         console.error("Failed to fetch agent actions:", error);
@@ -277,8 +285,8 @@ export default function ActionHistoryPanel({
     };
 
     fetchAgentActions();
-    // Auto-refresh every 5 seconds
-    const interval = setInterval(fetchAgentActions, 5000);
+    // Auto-refresh every 10 seconds (reduced frequency, smart updates only)
+    const interval = setInterval(fetchAgentActions, 10000);
     return () => clearInterval(interval);
   }, [incidentId]);
 
@@ -470,149 +478,148 @@ export default function ActionHistoryPanel({
           const agentColor = item.agentType ? agentColors[item.agentType] : null;
 
           return (
-          <div
-            key={item.id}
-            onClick={() => onActionClick && onActionClick(item)}
-            className="bg-gray-900/50 border border-gray-700/50 rounded-lg p-3 hover:border-gray-600/50 transition-colors cursor-pointer"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-3 flex-1">
-                <div className="text-2xl leading-none">{item.icon}</div>
-                <div className="flex-1 min-w-0 space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium text-white capitalize">
-                      {item.displayName}
-                    </span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(item.status)}`}>
-                      {toTitle(item.status)}
-                    </span>
-                    {isAgent && agentColor ? (
-                      <span className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border ${agentColor.badge}`}>
-                        {item.sourceLabel}
+            <div
+              key={item.id}
+              onClick={() => onActionClick && onActionClick(item)}
+              className="bg-gray-900/50 border border-gray-700/50 rounded-lg p-3 hover:border-gray-600/50 transition-colors cursor-pointer"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3 flex-1">
+                  <div className="text-2xl leading-none">{item.icon}</div>
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium text-white capitalize">
+                        {item.displayName}
                       </span>
-                    ) : (
-                      <span className="text-[10px] uppercase tracking-wide text-gray-300 bg-gray-700/50 px-2 py-0.5 rounded">
-                        {item.sourceLabel}
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(item.status)}`}>
+                        {toTitle(item.status)}
                       </span>
+                      {isAgent && agentColor ? (
+                        <span className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border ${agentColor.badge}`}>
+                          {item.sourceLabel}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] uppercase tracking-wide text-gray-300 bg-gray-700/50 px-2 py-0.5 rounded">
+                          {item.sourceLabel}
+                        </span>
+                      )}
+                      {item.verifiedOnTpot && (
+                        <span className="text-[10px] uppercase px-2 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30">
+                          Verified on T-Pot
+                        </span>
+                      )}
+                    </div>
+
+                    {item.workflowName && (
+                      <div className="text-xs text-gray-400">
+                        Workflow: <span className="text-gray-200">{item.workflowName}</span>
+                        {item.workflowId ? ` (${item.workflowId})` : ""}
+                      </div>
                     )}
-                    {item.verifiedOnTpot && (
-                      <span className="text-[10px] uppercase px-2 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30">
-                        Verified on T-Pot
-                      </span>
+
+                    {item.executedBy && (
+                      <div className="text-xs text-gray-500">
+                        Executed by {item.executedBy}
+                        {item.executionMethod ? ` · ${toTitle(item.executionMethod)}` : ""}
+                      </div>
+                    )}
+
+                    {item.params && Object.keys(item.params).length > 0 && (
+                      <div className="text-xs text-gray-400">
+                        {Object.entries(item.params).map(([key, value]) => (
+                          <span key={key} className="mr-3">
+                            <span className="text-gray-500">{key}:</span>{" "}
+                            <span className="font-mono">{formatValue(value)}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {item.detail && (
+                      <div className="text-xs text-gray-500 line-clamp-3">
+                        {item.detail}
+                      </div>
+                    )}
+
+                    {!item.detail && item.errorDetails && (
+                      <div className="text-xs text-red-400 line-clamp-3">
+                        ⚠️ {formatValue(item.errorDetails)}
+                      </div>
+                    )}
+
+                    {item.verificationDetails && (
+                      <div
+                        className={`text-xs mt-1 px-2 py-1 rounded ${item.verificationDetails.verified
+                            ? "bg-green-500/10 text-green-400"
+                            : "bg-red-500/10 text-red-400"
+                          }`}
+                      >
+                        {item.verificationDetails.verified ? "✓" : "✗"} {item.verificationDetails.message}
+                      </div>
+                    )}
+
+                    {/* Rollback info for already rolled back agent actions */}
+                    {isAgent && item.rollbackExecuted && item.rollbackTimestamp && (
+                      <div className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/20 rounded px-2 py-1 flex items-center gap-1">
+                        <Undo2 className="w-3 h-3" />
+                        Rolled back {formatTimeAgo(item.rollbackTimestamp)}
+                      </div>
+                    )}
+
+                    {/* Rollback button for agent actions */}
+                    {canRollbackAgent && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAgentRollback(item);
+                        }}
+                        disabled={isRollingBack}
+                        className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/30 text-orange-300 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        {isRollingBack ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            Rolling back...
+                          </>
+                        ) : (
+                          <>
+                            <Undo2 className="w-3.5 h-3.5" />
+                            Rollback Action
+                          </>
+                        )}
+                      </button>
+                    )}
+
+                    {/* Workflow rollback button */}
+                    {item.rollback && item.source === "workflow" && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (item.rollback) {
+                            onRollback?.({
+                              actionType: item.rollback.action_type,
+                              label: item.rollback.label,
+                              source: item.source,
+                              originalId: item.originalId,
+                            });
+                          }
+                        }}
+                        className="mt-2 inline-flex items-center gap-1 text-xs text-blue-300 hover:text-blue-200"
+                      >
+                        ⟲ {item.rollback?.label || 'Rollback'}
+                      </button>
                     )}
                   </div>
+                </div>
 
-                  {item.workflowName && (
-                    <div className="text-xs text-gray-400">
-                      Workflow: <span className="text-gray-200">{item.workflowName}</span>
-                      {item.workflowId ? ` (${item.workflowId})` : ""}
-                    </div>
-                  )}
-
-                  {item.executedBy && (
-                    <div className="text-xs text-gray-500">
-                      Executed by {item.executedBy}
-                      {item.executionMethod ? ` · ${toTitle(item.executionMethod)}` : ""}
-                    </div>
-                  )}
-
-                  {item.params && Object.keys(item.params).length > 0 && (
-                    <div className="text-xs text-gray-400">
-                      {Object.entries(item.params).map(([key, value]) => (
-                        <span key={key} className="mr-3">
-                          <span className="text-gray-500">{key}:</span>{" "}
-                          <span className="font-mono">{formatValue(value)}</span>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {item.detail && (
-                    <div className="text-xs text-gray-500 line-clamp-3">
-                      {item.detail}
-                    </div>
-                  )}
-
-                  {!item.detail && item.errorDetails && (
-                    <div className="text-xs text-red-400 line-clamp-3">
-                      ⚠️ {formatValue(item.errorDetails)}
-                    </div>
-                  )}
-
-                  {item.verificationDetails && (
-                    <div
-                      className={`text-xs mt-1 px-2 py-1 rounded ${
-                        item.verificationDetails.verified
-                          ? "bg-green-500/10 text-green-400"
-                          : "bg-red-500/10 text-red-400"
-                      }`}
-                    >
-                      {item.verificationDetails.verified ? "✓" : "✗"} {item.verificationDetails.message}
-                    </div>
-                  )}
-
-                  {/* Rollback info for already rolled back agent actions */}
-                  {isAgent && item.rollbackExecuted && item.rollbackTimestamp && (
-                    <div className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/20 rounded px-2 py-1 flex items-center gap-1">
-                      <Undo2 className="w-3 h-3" />
-                      Rolled back {formatTimeAgo(item.rollbackTimestamp)}
-                    </div>
-                  )}
-
-                  {/* Rollback button for agent actions */}
-                  {canRollbackAgent && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleAgentRollback(item);
-                      }}
-                      disabled={isRollingBack}
-                      className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/30 text-orange-300 rounded-lg transition-colors disabled:opacity-50"
-                    >
-                      {isRollingBack ? (
-                        <>
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          Rolling back...
-                        </>
-                      ) : (
-                        <>
-                          <Undo2 className="w-3.5 h-3.5" />
-                          Rollback Action
-                        </>
-                      )}
-                    </button>
-                  )}
-
-                  {/* Workflow rollback button */}
-                  {item.rollback && item.source === "workflow" && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (item.rollback) {
-                          onRollback?.({
-                            actionType: item.rollback.action_type,
-                            label: item.rollback.label,
-                            source: item.source,
-                            originalId: item.originalId,
-                          });
-                        }
-                      }}
-                      className="mt-2 inline-flex items-center gap-1 text-xs text-blue-300 hover:text-blue-200"
-                    >
-                      ⟲ {item.rollback?.label || 'Rollback'}
-                    </button>
+                <div className="text-right text-xs text-gray-500 whitespace-nowrap">
+                  <div>{formatTimeAgo(item.createdAt)}</div>
+                  {item.completedAt && (
+                    <div className="text-[10px] text-gray-600">Completed {formatTimeAgo(item.completedAt)}</div>
                   )}
                 </div>
               </div>
-
-              <div className="text-right text-xs text-gray-500 whitespace-nowrap">
-                <div>{formatTimeAgo(item.createdAt)}</div>
-                {item.completedAt && (
-                  <div className="text-[10px] text-gray-600">Completed {formatTimeAgo(item.completedAt)}</div>
-                )}
-              </div>
             </div>
-          </div>
           );
         })}
       </div>

@@ -5,16 +5,33 @@ Pulls events from T-Pot Elasticsearch and ingests them into XDR
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Set
 
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .config import settings
 from .db import AsyncSessionLocal
+from .intelligent_detection import IntelligentDetectionEngine
+from .models import Event, Incident
 from .multi_ingestion import multi_ingestor
 from .tpot_connector import get_tpot_connector
+from .triager import generate_default_triage, run_triage
+from .trigger_evaluator import trigger_evaluator
 
 logger = logging.getLogger(__name__)
+
+# Global detection engine instance
+_detection_engine = None
+
+
+def get_detection_engine() -> IntelligentDetectionEngine:
+    """Get or create the intelligent detection engine"""
+    global _detection_engine
+    if _detection_engine is None:
+        _detection_engine = IntelligentDetectionEngine()
+    return _detection_engine
 
 
 class TPotElasticsearchIngestor:
@@ -109,11 +126,18 @@ class TPotElasticsearchIngestor:
                 if xdr_event:
                     events_by_type[honeypot_type].append(xdr_event)
 
-            # Ingest events by type
+            # Ingest events by type and collect unique IPs
             total_ingested = 0
+            unique_ips: Set[str] = set()
+
             async with AsyncSessionLocal() as db:
                 for honeypot_type, events in events_by_type.items():
                     if events:
+                        # Collect unique source IPs for detection
+                        for event in events:
+                            if event.get("src_ip"):
+                                unique_ips.add(event["src_ip"])
+
                         result = await multi_ingestor.ingest_events(
                             source_type=honeypot_type,
                             hostname=self.connector.host,
@@ -127,8 +151,160 @@ class TPotElasticsearchIngestor:
                     f"✅ Ingested {total_ingested} events from T-Pot Elasticsearch"
                 )
 
+                # Run intelligent detection for all unique source IPs
+                if unique_ips:
+                    await self._run_detection_for_ips(unique_ips)
+
         except Exception as e:
             logger.error(f"Failed to pull and ingest events: {e}")
+
+    async def _run_detection_for_ips(self, unique_ips: Set[str]):
+        """Run intelligent detection for all unique source IPs and trigger AI agents"""
+        try:
+            detection_engine = get_detection_engine()
+            incidents_created = 0
+
+            async with AsyncSessionLocal() as db:
+                for src_ip in unique_ips:
+                    try:
+                        result = await detection_engine.analyze_and_create_incidents(
+                            db=db, src_ip=src_ip
+                        )
+                        if result.get("incident_created"):
+                            incidents_created += 1
+                            incident_id = result.get("incident_id")
+                            logger.info(
+                                f"🚨 Incident created for {src_ip}: "
+                                f"{result.get('classification', {}).get('threat_type', 'Unknown')}"
+                            )
+
+                            # Trigger AI agents and workflows for the new incident
+                            if incident_id:
+                                await self._trigger_agents_for_incident(
+                                    db, incident_id, src_ip
+                                )
+
+                    except Exception as e:
+                        logger.error(f"Detection failed for {src_ip}: {e}")
+
+            if incidents_created > 0:
+                logger.info(
+                    f"🔴 Created {incidents_created} new incidents from T-Pot events"
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to run detection: {e}")
+
+    async def _trigger_agents_for_incident(
+        self, db: AsyncSession, incident_id: int, src_ip: str
+    ):
+        """Trigger AI agents and workflows for a newly created incident"""
+        try:
+            # Fetch the incident
+            incident = (
+                (await db.execute(select(Incident).where(Incident.id == incident_id)))
+                .scalars()
+                .first()
+            )
+
+            if not incident:
+                logger.warning(f"Incident {incident_id} not found for agent triggering")
+                return
+
+            # Get recent events for context
+            recent_events = await self._get_recent_events_for_ip(db, src_ip)
+
+            logger.info(
+                f"🤖 Triggering AI agents for incident #{incident_id} ({src_ip})"
+            )
+
+            # Step 1: Evaluate workflow triggers
+            try:
+                executed_workflows = (
+                    await trigger_evaluator.evaluate_triggers_for_incident(
+                        db, incident, recent_events
+                    )
+                )
+                if executed_workflows:
+                    logger.info(
+                        f"✅ Executed {len(executed_workflows)} workflows for incident #{incident_id}: {executed_workflows}"
+                    )
+            except Exception as e:
+                logger.error(
+                    f"Failed to evaluate triggers for incident #{incident_id}: {e}"
+                )
+
+            # Step 2: Run triage analysis
+            try:
+                triage_input = {
+                    "id": incident.id,
+                    "src_ip": incident.src_ip,
+                    "reason": incident.reason,
+                    "status": incident.status,
+                }
+                event_summaries = [
+                    {
+                        "ts": e.ts.isoformat() if e.ts else None,
+                        "eventid": e.eventid,
+                        "message": e.message,
+                        "source_type": e.source_type,
+                    }
+                    for e in recent_events
+                ]
+
+                triage_note = run_triage(triage_input, event_summaries)
+                incident.triage_note = triage_note
+                logger.info(f"✅ Triage completed for incident #{incident_id}")
+            except Exception as e:
+                logger.error(f"Triage failed for incident #{incident_id}: {e}")
+                incident.triage_note = generate_default_triage(
+                    {"id": incident_id, "src_ip": src_ip}, len(recent_events)
+                )
+
+            # Step 3: Run AI agent containment if enabled
+            auto_contain_enabled = getattr(settings, "auto_contain", False)
+            if auto_contain_enabled:
+                try:
+                    from .agents.containment_agent import ContainmentAgent
+
+                    containment_agent = ContainmentAgent()
+                    response = await containment_agent.orchestrate_response(
+                        incident, recent_events, db
+                    )
+                    logger.info(
+                        f"✅ AI containment agent triggered for incident #{incident_id}: {response.get('action', 'completed')}"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"AI containment failed for incident #{incident_id}: {e}"
+                    )
+            else:
+                logger.info(
+                    f"⏭️ Auto-contain disabled, skipping containment agent for incident #{incident_id}"
+                )
+
+            # Commit changes
+            await db.commit()
+
+            logger.info(f"🎯 AI agent processing complete for incident #{incident_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to trigger agents for incident {incident_id}: {e}")
+
+    async def _get_recent_events_for_ip(
+        self, db: AsyncSession, src_ip: str, seconds: int = 600
+    ) -> List[Event]:
+        """Get recent events for an IP address"""
+        since = datetime.now(timezone.utc) - timedelta(seconds=seconds)
+        query = (
+            select(Event)
+            .where(and_(Event.src_ip == src_ip, Event.ts >= since))
+            .order_by(Event.ts.desc())
+            .limit(200)
+        )
+
+        result = await db.execute(query)
+        return result.scalars().all()
 
     def _map_event_type(self, event_type: str, source: Dict[str, Any]) -> str:
         """Map T-Pot event type to our honeypot type"""

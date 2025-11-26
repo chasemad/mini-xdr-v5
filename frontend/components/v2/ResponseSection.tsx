@@ -24,6 +24,7 @@ interface ResponseSectionProps {
     onBlockIp: () => Promise<void>;
     onUnblockIp: () => Promise<void>;
     onOpenMoreActions: () => void;
+    onOpenEntityActions?: () => void;
     isCopilotOpen: boolean;
     setIsCopilotOpen: (open: boolean) => void;
 }
@@ -37,6 +38,7 @@ export default function ResponseSection({
     onBlockIp,
     onUnblockIp,
     onOpenMoreActions,
+    onOpenEntityActions,
     isCopilotOpen,
     setIsCopilotOpen
 }: ResponseSectionProps) {
@@ -51,9 +53,9 @@ export default function ResponseSection({
                     Response & Automation
                 </h3>
                 <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
-                    className="h-7 text-[10px] text-muted-foreground hover:text-primary"
+                    className="h-7 text-[10px] font-medium text-muted-foreground hover:text-primary border-dashed hover:border-solid"
                     onClick={onOpenMoreActions}
                 >
                     All Actions
@@ -66,7 +68,16 @@ export default function ResponseSection({
 
                     {/* Quick Actions Group */}
                     <div className="space-y-3">
-                        <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Recommended Actions</h4>
+                        <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Recommended Actions</h4>
+                            <button
+                                onClick={onOpenEntityActions}
+                                className="text-[10px] flex items-center gap-1 text-blue-500 hover:text-blue-600 font-medium transition-colors"
+                            >
+                                <Activity className="w-3 h-3" />
+                                View Entity History
+                            </button>
+                        </div>
 
                         {/* Block IP Action Row */}
                         <div className="group bg-card border rounded-lg p-3 hover:border-primary/50 transition-all shadow-sm">
@@ -83,7 +94,7 @@ export default function ResponseSection({
                                             <h5 className="text-sm font-medium text-foreground">
                                                 {isSourceBlocked ? "Unblock Source IP" : "Block Source IP"}
                                             </h5>
-                                            <Badge variant="outline" className="text-[10px] h-4 px-1 bg-primary/5 text-primary border-primary/20">
+                                            <Badge variant="outline" className="text-[10px] py-0.5 px-1.5 bg-primary/5 text-primary border-primary/20 whitespace-nowrap h-auto">
                                                 98% Conf.
                                             </Badge>
                                         </div>
@@ -131,7 +142,7 @@ export default function ResponseSection({
                                     <div>
                                         <div className="flex items-center gap-2">
                                             <h5 className="text-sm font-medium text-foreground">Isolate Host</h5>
-                                            <Badge variant="outline" className="text-[10px] h-4 px-1">
+                                            <Badge variant="outline" className="text-[10px] py-0.5 px-1.5 h-auto whitespace-nowrap">
                                                 85% Conf.
                                             </Badge>
                                         </div>

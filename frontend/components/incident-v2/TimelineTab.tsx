@@ -59,7 +59,7 @@ export function TimelineTab({ incident, coordination }: TimelineTabProps) {
                                 </div>
                                 <div className="flex flex-col gap-1">
                                     <div className="flex items-center gap-2">
-                                        <span className="text-xs font-mono text-muted-foreground">
+                                        <span className="text-xs font-mono text-muted-foreground" suppressHydrationWarning>
                                             {new Date(event.timestamp).toLocaleString()}
                                         </span>
                                         <Badge variant={event.type === "coordination" ? "secondary" : "outline"}>
@@ -93,10 +93,10 @@ export function TimelineTab({ incident, coordination }: TimelineTabProps) {
                         <span className="font-bold">{coordination?.coordination_timeline?.length || 0}</span>
                     </div>
                     <Separator />
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-xs text-muted-foreground" suppressHydrationWarning>
                         First Seen: {incidentEvents[incidentEvents.length - 1]?.timestamp ? new Date(incidentEvents[incidentEvents.length - 1].timestamp).toLocaleString() : "N/A"}
                     </div>
-                     <div className="text-xs text-muted-foreground">
+                     <div className="text-xs text-muted-foreground" suppressHydrationWarning>
                         Last Seen: {incidentEvents[0]?.timestamp ? new Date(incidentEvents[0].timestamp).toLocaleString() : "N/A"}
                     </div>
                 </div>

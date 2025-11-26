@@ -24,110 +24,14 @@ async def get_db():
         yield session
 
 
-@router.get("/coordination-hub/status")
-async def get_coordination_hub_status(current_user: dict = Depends(get_current_user)):
-    """
-    Get overall coordination hub status
-    Returns aggregate statistics about agent coordination across all incidents
-    """
-    return {
-        "status": "active",
-        "active_coordinations": 1,
-        "total_agents": 4,
-        "agents": [
-            {
-                "name": "attribution",
-                "status": "ready",
-                "confidence_avg": 0.78,
-                "decisions_made": 1,
-            },
-            {
-                "name": "containment",
-                "status": "ready",
-                "confidence_avg": 0.92,
-                "decisions_made": 1,
-            },
-            {
-                "name": "forensics",
-                "status": "ready",
-                "confidence_avg": 0.85,
-                "decisions_made": 1,
-            },
-            {
-                "name": "deception",
-                "status": "ready",
-                "confidence_avg": 0.90,
-                "decisions_made": 1,
-            },
-        ],
-        "last_coordination": datetime.utcnow().isoformat(),
-        "coordination_strategies": ["sequential", "parallel", "consensus"],
-    }
+# NOTE: The /coordination-hub/status endpoint is handled by agent_routes.py
+# This duplicate was removed to avoid routing conflicts.
+# The primary endpoint in agent_routes.py returns the correct structure expected by the frontend.
 
 
-@router.get("/ai/{agent_name}/status")
-async def get_agent_status(
-    agent_name: str, current_user: dict = Depends(get_current_user)
-):
-    """
-    Get status for a specific AI agent
-    """
-    agent_statuses = {
-        "attribution": {
-            "name": "Attribution Agent",
-            "status": "ready",
-            "capabilities": [
-                "threat_actor_identification",
-                "campaign_tracking",
-                "ttp_mapping",
-            ],
-            "last_active": datetime.utcnow().isoformat(),
-            "decisions_count": 1,
-            "average_confidence": 0.78,
-        },
-        "containment": {
-            "name": "Containment Agent",
-            "status": "ready",
-            "capabilities": [
-                "host_isolation",
-                "ip_blocking",
-                "firewall_rules",
-                "rollback",
-            ],
-            "last_active": datetime.utcnow().isoformat(),
-            "decisions_count": 1,
-            "average_confidence": 0.92,
-        },
-        "forensics": {
-            "name": "Forensics Agent",
-            "status": "ready",
-            "capabilities": [
-                "evidence_collection",
-                "timeline_analysis",
-                "process_inspection",
-            ],
-            "last_active": datetime.utcnow().isoformat(),
-            "decisions_count": 1,
-            "average_confidence": 0.85,
-        },
-        "deception": {
-            "name": "Deception Agent",
-            "status": "ready",
-            "capabilities": [
-                "honeytoken_deployment",
-                "attacker_tracking",
-                "intelligence_gathering",
-            ],
-            "last_active": datetime.utcnow().isoformat(),
-            "decisions_count": 1,
-            "average_confidence": 0.90,
-        },
-    }
-
-    if agent_name not in agent_statuses:
-        raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
-
-    return agent_statuses[agent_name]
+# NOTE: The /ai/{agent_name}/status endpoint is handled by agent_routes.py
+# This duplicate was removed to avoid routing conflicts and ensure consistent response structure.
+# The primary endpoint in agent_routes.py returns the AIAgentStatusResponse model matching frontend expectations.
 
 
 @router.get("/ai/{agent_name}/decisions")

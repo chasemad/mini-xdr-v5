@@ -206,13 +206,15 @@ async def agent_check_in(request: Dict, db: AsyncSession = Depends(get_db)):
 
 
 class CoordinationHubStatusResponse(BaseModel):
-    """Response model for coordination hub status"""
+    """Response model for coordination hub status - matches frontend CoordinationHubStatus interface"""
 
-    status: str
-    total_incidents_coordinated: int
-    active_agents: List[str]
-    coordination_metrics: Dict
-    last_coordination_timestamp: Optional[str] = None
+    active_agents: int
+    total_decisions_today: int
+    pending_coordinations: int
+    active_incidents: int
+    system_health: str
+    last_updated: str
+    performance_metrics: Dict
 
 
 class AIAgentStatusResponse(BaseModel):
@@ -250,23 +252,43 @@ async def get_coordination_hub_status(db: AsyncSession = Depends(get_db)):
     Get overall coordination hub status (Phase 2)
 
     Returns coordination hub metrics including active agents, coordination count,
-    and performance statistics.
+    and performance statistics. Response matches frontend CoordinationHubStatus interface.
     """
     try:
+        from sqlalchemy import func, select
+
         from .agents.coordination_hub import get_coordination_hub
+        from .models import Incident
 
         # Get coordination hub instance and status
         hub = await get_coordination_hub()
         status = hub.get_coordination_status()
 
+        # Get active incidents count from database
+        active_incidents_result = await db.execute(
+            select(func.count(Incident.id)).filter(Incident.status == "open")
+        )
+        active_incidents_count = active_incidents_result.scalar() or 0
+
+        # Count active agents from coordination hub status
+        active_agents_list = status.get("active_agents", [])
+        active_agents_count = (
+            len(active_agents_list) if isinstance(active_agents_list, list) else 4
+        )
+
+        # Get metrics from hub status
+        metrics = status.get("metrics", {})
+        total_decisions = metrics.get("total_decisions", 0) if metrics else 0
+        pending = metrics.get("pending_coordinations", 0) if metrics else 0
+
         return CoordinationHubStatusResponse(
-            status="operational",
-            total_incidents_coordinated=status.get("total_coordinations", 0),
-            active_agents=status.get("active_agents", []),
-            coordination_metrics=status.get("metrics", {}),
-            last_coordination_timestamp=status.get(
-                "last_coordination_time", datetime.now(timezone.utc).isoformat()
-            ),
+            active_agents=active_agents_count,
+            total_decisions_today=total_decisions,
+            pending_coordinations=pending,
+            active_incidents=active_incidents_count,
+            system_health="healthy",
+            last_updated=datetime.now(timezone.utc).isoformat(),
+            performance_metrics=metrics or {},
         )
 
     except Exception as e:

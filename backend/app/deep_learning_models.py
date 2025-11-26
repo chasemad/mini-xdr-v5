@@ -466,18 +466,32 @@ class DeepLearningModelManager:
         lstm_autoencoder_path = model_dir / "lstm_autoencoder.pth"
         if lstm_autoencoder_path.exists():
             try:
-                # LSTM autoencoder uses 15 base features (from ml_engine.py)
+                # Lazy import to avoid circular dependency with ml_engine
+                from .ml_engine import LSTMAutoencoder
+
+                # Load checkpoint (may contain model_state_dict + metadata)
+                checkpoint = torch.load(
+                    lstm_autoencoder_path,
+                    map_location=self.device,
+                    weights_only=False,  # Trust locally-trained model
+                )
+
+                # Handle checkpoint format (dict with model_state_dict) vs raw state_dict
+                if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+                    input_size = checkpoint.get("input_size", 15)
+                    hidden_size = checkpoint.get("hidden_size", 64)
+                    state_dict = checkpoint["model_state_dict"]
+                else:
+                    input_size = 15
+                    hidden_size = 64
+                    state_dict = checkpoint
+
+                # Create model with saved dimensions
                 self.lstm_autoencoder = LSTMAutoencoder(
-                    input_size=15, hidden_size=64, num_layers=2, dropout=0.2
+                    input_size=input_size, hidden_size=hidden_size, num_layers=2
                 ).to(self.device)
 
-                self.lstm_autoencoder.load_state_dict(
-                    torch.load(
-                        lstm_autoencoder_path,
-                        map_location=self.device,
-                        weights_only=True,
-                    )
-                )
+                self.lstm_autoencoder.load_state_dict(state_dict)
                 self.lstm_autoencoder.eval()
 
                 results["lstm_autoencoder"] = True

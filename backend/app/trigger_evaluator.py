@@ -4,13 +4,14 @@ Evaluates trigger conditions and executes workflows automatically
 """
 import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any, Optional
-from sqlalchemy import select, and_, func, update
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import WorkflowTrigger, Incident, Event, ResponseWorkflow
 from .advanced_response_engine import get_response_engine
+from .models import Event, Incident, ResponseWorkflow, WorkflowTrigger
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +31,7 @@ class TriggerEvaluator:
         return self.response_engine
 
     async def evaluate_triggers_for_incident(
-        self,
-        db: AsyncSession,
-        incident: Incident,
-        events: List[Event] = None
+        self, db: AsyncSession, incident: Incident, events: List[Event] = None
     ) -> List[str]:
         """
         Evaluate all enabled triggers for a newly created incident
@@ -50,20 +48,26 @@ class TriggerEvaluator:
 
         try:
             # Get all enabled triggers
-            query = select(WorkflowTrigger).where(
-                WorkflowTrigger.enabled == True
-            ).order_by(WorkflowTrigger.priority.desc())
+            query = (
+                select(WorkflowTrigger)
+                .where(WorkflowTrigger.enabled == True)
+                .order_by(WorkflowTrigger.priority.desc())
+            )
 
             result = await db.execute(query)
             triggers = result.scalars().all()
 
-            logger.info(f"Evaluating {len(triggers)} enabled triggers for incident #{incident.id}")
+            logger.info(
+                f"Evaluating {len(triggers)} enabled triggers for incident #{incident.id}"
+            )
 
             for trigger in triggers:
                 try:
                     # Check if trigger conditions match
                     if await self._evaluate_conditions(trigger, incident, events):
-                        logger.info(f"Trigger '{trigger.name}' matched incident #{incident.id}")
+                        logger.info(
+                            f"Trigger '{trigger.name}' matched incident #{incident.id}"
+                        )
 
                         # Check rate limits and cooldown
                         if await self._check_rate_limits(trigger):
@@ -84,7 +88,9 @@ class TriggerEvaluator:
                                     db, trigger, success=False
                                 )
                         else:
-                            logger.info(f"Trigger '{trigger.name}' rate limited - skipping")
+                            logger.info(
+                                f"Trigger '{trigger.name}' rate limited - skipping"
+                            )
 
                 except Exception as e:
                     logger.error(f"Error evaluating trigger '{trigger.name}': {e}")
@@ -95,14 +101,15 @@ class TriggerEvaluator:
 
         except Exception as e:
             logger.error(f"Error in trigger evaluation: {e}")
+            try:
+                await db.rollback()
+            except Exception:
+                pass  # Session might already be in bad state
 
         return executed_workflows
 
     async def _evaluate_conditions(
-        self,
-        trigger: WorkflowTrigger,
-        incident: Incident,
-        events: List[Event] = None
+        self, trigger: WorkflowTrigger, incident: Incident, events: List[Event] = None
     ) -> bool:
         """
         Evaluate if trigger conditions match the incident
@@ -200,7 +207,9 @@ class TriggerEvaluator:
                 if "threshold" in conditions:
                     threshold = conditions["threshold"]
                     if len(matching_events) < threshold:
-                        logger.debug(f"Trigger '{trigger.name}': Event count {len(matching_events)} < threshold {threshold}")
+                        logger.debug(
+                            f"Trigger '{trigger.name}': Event count {len(matching_events)} < threshold {threshold}"
+                        )
                         return False
 
             # Check risk score minimum
@@ -208,14 +217,18 @@ class TriggerEvaluator:
                 min_score = conditions["risk_score_min"]
                 incident_score = incident.risk_score or 0.0
                 if incident_score < min_score:
-                    logger.debug(f"Trigger '{trigger.name}': Risk score {incident_score} < minimum {min_score}")
+                    logger.debug(
+                        f"Trigger '{trigger.name}': Risk score {incident_score} < minimum {min_score}"
+                    )
                     return False
 
             # Check pattern match in incident reason
             if "pattern_match" in conditions:
                 pattern = conditions["pattern_match"].lower()
                 if pattern not in incident.reason.lower():
-                    logger.debug(f"Trigger '{trigger.name}': Pattern '{pattern}' not in incident reason")
+                    logger.debug(
+                        f"Trigger '{trigger.name}': Pattern '{pattern}' not in incident reason"
+                    )
                     return False
 
             # Check source (honeypot vs production)
@@ -231,7 +244,9 @@ class TriggerEvaluator:
             return True
 
         except Exception as e:
-            logger.error(f"Error evaluating conditions for trigger '{trigger.name}': {e}")
+            logger.error(
+                f"Error evaluating conditions for trigger '{trigger.name}': {e}"
+            )
             return False
 
     async def _check_rate_limits(self, trigger: WorkflowTrigger) -> bool:
@@ -250,7 +265,9 @@ class TriggerEvaluator:
                 time_since_last = (now - last_execution).total_seconds()
 
                 if time_since_last < trigger.cooldown_seconds:
-                    logger.debug(f"Trigger '{trigger.name}' in cooldown: {int(time_since_last)}s / {trigger.cooldown_seconds}s")
+                    logger.debug(
+                        f"Trigger '{trigger.name}' in cooldown: {int(time_since_last)}s / {trigger.cooldown_seconds}s"
+                    )
                     return False
 
             # Check daily limit
@@ -258,7 +275,9 @@ class TriggerEvaluator:
             current_count = self._daily_counter.get(daily_key, 0)
 
             if current_count >= trigger.max_triggers_per_day:
-                logger.warning(f"Trigger '{trigger.name}' hit daily limit: {current_count}/{trigger.max_triggers_per_day}")
+                logger.warning(
+                    f"Trigger '{trigger.name}' hit daily limit: {current_count}/{trigger.max_triggers_per_day}"
+                )
                 return False
 
             # Update counters
@@ -267,7 +286,11 @@ class TriggerEvaluator:
 
             # Clean old daily counters (older than 2 days)
             cutoff_date = (now - timedelta(days=2)).date()
-            old_keys = [k for k in self._daily_counter.keys() if k.split('_')[-1] < str(cutoff_date)]
+            old_keys = [
+                k
+                for k in self._daily_counter.keys()
+                if k.split("_")[-1] < str(cutoff_date)
+            ]
             for key in old_keys:
                 del self._daily_counter[key]
 
@@ -281,7 +304,7 @@ class TriggerEvaluator:
         self,
         steps: List[Dict[str, Any]],
         incident: Incident,
-        events: List[Event] = None
+        events: List[Event] = None,
     ) -> List[Dict[str, Any]]:
         """
         Resolve template variables in workflow step parameters
@@ -301,7 +324,7 @@ class TriggerEvaluator:
             "escalation_level": incident.escalation_level or "medium",
             "risk_score": incident.risk_score or 0.0,
             "threat_category": incident.threat_category or "unknown",
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
         for step in steps:
@@ -334,10 +357,7 @@ class TriggerEvaluator:
         return resolved_steps
 
     async def _execute_trigger_workflow(
-        self,
-        db: AsyncSession,
-        trigger: WorkflowTrigger,
-        incident: Incident
+        self, db: AsyncSession, trigger: WorkflowTrigger, incident: Incident
     ) -> Optional[str]:
         """
         Execute the workflow associated with this trigger
@@ -348,29 +368,35 @@ class TriggerEvaluator:
         try:
             start_time = datetime.now(timezone.utc)
 
-            logger.info(f"🚀 Executing workflow for trigger '{trigger.name}' on incident #{incident.id}")
+            logger.info(
+                f"🚀 Executing workflow for trigger '{trigger.name}' on incident #{incident.id}"
+            )
 
             # Get response engine
             engine = await self._get_response_engine()
 
             # Resolve template variables in workflow steps
             resolved_steps = self._resolve_template_variables(
-                trigger.workflow_steps,
-                incident
+                trigger.workflow_steps, incident
             )
 
-            logger.info(f"Resolved {len(resolved_steps)} workflow steps with incident context (IP: {incident.src_ip})")
+            logger.info(
+                f"Resolved {len(resolved_steps)} workflow steps with incident context (IP: {incident.src_ip})"
+            )
 
             # Create workflow from trigger definition
             # Convert priority string to ResponsePriority enum
             from .advanced_response_engine import ResponsePriority
+
             priority_map = {
                 "low": ResponsePriority.LOW,
                 "medium": ResponsePriority.MEDIUM,
                 "high": ResponsePriority.HIGH,
-                "critical": ResponsePriority.CRITICAL
+                "critical": ResponsePriority.CRITICAL,
             }
-            priority_enum = priority_map.get(trigger.priority.lower(), ResponsePriority.MEDIUM)
+            priority_enum = priority_map.get(
+                trigger.priority.lower(), ResponsePriority.MEDIUM
+            )
 
             # Create workflow in database - call with positional arguments
             workflow = await engine.create_workflow(
@@ -379,7 +405,7 @@ class TriggerEvaluator:
                 steps=resolved_steps,  # Use resolved steps instead of raw trigger.workflow_steps
                 auto_execute=trigger.auto_execute,
                 priority=priority_enum,
-                db_session=db
+                db_session=db,
             )
 
             if not workflow:
@@ -392,30 +418,39 @@ class TriggerEvaluator:
             logger.info(f"✓ Created workflow {workflow_id} (DB ID: {workflow_db_id})")
 
             # Check if workflow was already executed (when auto_execute=True, create_workflow executes it)
-            if trigger.auto_execute and workflow.get("status") in ["running", "completed"]:
-                logger.info(f"✓ Workflow {workflow_id} was auto-executed during creation (status: {workflow.get('status')})")
+            if trigger.auto_execute and workflow.get("status") in [
+                "running",
+                "completed",
+            ]:
+                logger.info(
+                    f"✓ Workflow {workflow_id} was auto-executed during creation (status: {workflow.get('status')})"
+                )
             elif trigger.auto_execute:
                 # This shouldn't happen now, but keep as fallback
                 try:
                     execution_result = await engine.execute_workflow(
-                        workflow_db_id,
-                        db,
-                        executed_by=f"auto_trigger:{trigger.name}"
+                        workflow_db_id, db, executed_by=f"auto_trigger:{trigger.name}"
                     )
 
                     if execution_result.get("status") == "running":
                         logger.info(f"✓ Workflow {workflow_id} execution started")
                     else:
-                        logger.warning(f"Workflow {workflow_id} execution status: {execution_result.get('status')}")
+                        logger.warning(
+                            f"Workflow {workflow_id} execution status: {execution_result.get('status')}"
+                        )
 
                 except Exception as e:
                     logger.error(f"Failed to execute workflow {workflow_id}: {e}")
                     return workflow_id  # Still return ID even if execution failed
             else:
-                logger.info(f"⏸️  Workflow {workflow_id} created but not auto-executed (requires manual approval)")
+                logger.info(
+                    f"⏸️  Workflow {workflow_id} created but not auto-executed (requires manual approval)"
+                )
 
             # Calculate response time
-            response_time_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+            response_time_ms = (
+                datetime.now(timezone.utc) - start_time
+            ).total_seconds() * 1000
 
             # Store response time for metrics update
             trigger.last_response_time_ms = response_time_ms
@@ -427,10 +462,7 @@ class TriggerEvaluator:
             return None
 
     async def _update_trigger_metrics(
-        self,
-        db: AsyncSession,
-        trigger: WorkflowTrigger,
-        success: bool
+        self, db: AsyncSession, trigger: WorkflowTrigger, success: bool
     ):
         """Update trigger performance metrics"""
         try:
@@ -444,18 +476,23 @@ class TriggerEvaluator:
 
             # Calculate success rate
             if trigger.trigger_count > 0:
-                trigger.success_rate = (trigger.success_count / trigger.trigger_count) * 100
+                trigger.success_rate = (
+                    trigger.success_count / trigger.trigger_count
+                ) * 100
 
             # Update average response time (exponential moving average)
-            if hasattr(trigger, 'last_response_time_ms') and trigger.last_response_time_ms:
+            if (
+                hasattr(trigger, "last_response_time_ms")
+                and trigger.last_response_time_ms
+            ):
                 if trigger.avg_response_time_ms == 0:
                     trigger.avg_response_time_ms = trigger.last_response_time_ms
                 else:
                     # EMA with alpha=0.3 (gives more weight to recent values)
                     alpha = 0.3
                     trigger.avg_response_time_ms = (
-                        alpha * trigger.last_response_time_ms +
-                        (1 - alpha) * trigger.avg_response_time_ms
+                        alpha * trigger.last_response_time_ms
+                        + (1 - alpha) * trigger.avg_response_time_ms
                     )
 
             # Update last triggered timestamp
@@ -464,9 +501,11 @@ class TriggerEvaluator:
             # Save to database
             await db.flush()
 
-            logger.debug(f"Updated metrics for trigger '{trigger.name}': "
-                        f"{trigger.success_count}/{trigger.trigger_count} success, "
-                        f"avg response time: {trigger.avg_response_time_ms:.1f}ms")
+            logger.debug(
+                f"Updated metrics for trigger '{trigger.name}': "
+                f"{trigger.success_count}/{trigger.trigger_count} success, "
+                f"avg response time: {trigger.avg_response_time_ms:.1f}ms"
+            )
 
         except Exception as e:
             logger.error(f"Error updating trigger metrics: {e}")

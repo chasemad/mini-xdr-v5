@@ -38,7 +38,10 @@ def get_openai_client():
 
     if _openai_client is None and OPENAI_AVAILABLE:
         try:
-            api_key = os.getenv("OPENAI_API_KEY")
+            # Use settings to get API key (loaded from .env file)
+            from ..config import settings
+
+            api_key = settings.openai_api_key or os.getenv("OPENAI_API_KEY")
 
             if not api_key:
                 logger.warning(
@@ -102,11 +105,25 @@ async def openai_remediation_node(state: XDRState) -> Dict[str, Any]:
         # Parse response
         remediation_data = _parse_remediation_response(response.content)
 
-        state["openai_remediation"] = response.content
+        # Format for frontend - expects recommended_actions as list of strings
+        action_descriptions = []
+        for action in remediation_data.get("actions", []):
+            if isinstance(action, dict):
+                action_descriptions.append(action.get("description", str(action)))
+            else:
+                action_descriptions.append(str(action))
+
+        state["openai_remediation"] = {
+            "recommended_actions": action_descriptions,
+            "success_criteria": remediation_data.get("success_criteria", ""),
+            "monitoring_plan": remediation_data.get("monitoring_plan", ""),
+            "raw_response": response.content,
+            "actions_detailed": remediation_data.get("actions", []),
+        }
         state["openai_action_plan"] = remediation_data.get("actions", [])
 
         # Update action plan in state
-        state["action_plan"].extend(remediation_data.get("actions", []))
+        state["action_plan"].extend(action_descriptions)
 
         elapsed_ms = (time.time() - start_time) * 1000
         state["processing_time_ms"] += elapsed_ms
@@ -283,7 +300,12 @@ def _template_remediation(state: XDRState) -> Dict[str, Any]:
 
     state["openai_action_plan"] = actions
     state["action_plan"].extend(actions)
-    state["openai_remediation"] = f"Template-based remediation for {attack_type}"
+    state["openai_remediation"] = {
+        "recommended_actions": actions,
+        "success_criteria": f"Threat from {src_ip} contained",
+        "monitoring_plan": "Monitor for 24 hours for any follow-up activity",
+        "template_used": attack_type,
+    }
 
     return state
 

@@ -179,7 +179,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                     "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-300 ease-in-out border border-transparent",
                     isActive
                       ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
-                      : "text-muted-foreground hover:bg-accent/50 hover:text-primary hover:border-primary/10 hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-0.5"
+                      : "text-muted-foreground hover:bg-accent/50 hover:text-primary hover:border-primary/10 hover:shadow-md hover:shadow-primary/5"
                   )}
                   onClick={() => setSidebarOpen(false)}
                 >

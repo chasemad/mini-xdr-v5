@@ -22,8 +22,11 @@ class ResponderAgent:
         self.port = settings.honeypot_ssh_port
         self.username = settings.honeypot_user
         self.key_path = settings.expanded_ssh_key_path
+        # Support password auth via TPOT_API_KEY (same as TPotConnector)
+        self.password = settings.tpot_api_key
+        auth_method = "password" if self.password else f"key {self.key_path}"
         logger.info(
-            f"ResponderAgent initialized: {self.username}@{self.host}:{self.port} using key {self.key_path}"
+            f"ResponderAgent initialized: {self.username}@{self.host}:{self.port} using {auth_method}"
         )
 
     async def test_connection(self) -> Tuple[str, str]:
@@ -70,44 +73,17 @@ class ResponderAgent:
             return "failed", "", str(e)
 
     def _sync_execute_command(self, command: str, timeout: int) -> Tuple[str, str, str]:
-        """Synchronous SSH command execution"""
+        """Synchronous SSH command execution with password or key auth"""
         client = None
         try:
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-            # Load the private key with better error handling - try multiple key types
-            private_key = None
-            key_errors = []
-
-            # Try different key types
-            key_types = [
-                ("Ed25519", paramiko.Ed25519Key),
-                ("RSA", paramiko.RSAKey),
-                ("ECDSA", paramiko.ECDSAKey),
-            ]
-
-            for key_name, key_class in key_types:
-                try:
-                    private_key = key_class.from_private_key_file(self.key_path)
-                    logger.info(
-                        f"Successfully loaded {key_name} key from {self.key_path}"
-                    )
-                    break
-                except Exception as e:
-                    key_errors.append(f"{key_name}: {str(e)}")
-
-            if not private_key:
-                error_msg = f"Failed to load SSH key with any format. Errors: {'; '.join(key_errors)}"
-                logger.error(error_msg)
-                return "failed", "", error_msg
-
-            # Connect to the honeypot with enhanced parameters for subprocess environment
+            # Base connection parameters
             connect_params = {
                 "hostname": self.host,
                 "port": self.port,
                 "username": self.username,
-                "pkey": private_key,
                 "timeout": timeout,
                 "look_for_keys": False,
                 "allow_agent": False,
@@ -118,13 +94,51 @@ class ResponderAgent:
                 "gss_auth": False,
                 "gss_kex": False,
                 "gss_deleg_creds": False,
-                "disabled_algorithms": {"pubkeys": ["ssh-rsa-cert-v01@openssh.com"]},
             }
 
-            logger.info(
-                f"Attempting SSH connection to {self.host}:{self.port} as {self.username}"
-            )
-            client.connect(**connect_params)
+            # Try password authentication first if available (preferred for T-POT)
+            if self.password:
+                logger.info(
+                    f"Attempting SSH connection to {self.host}:{self.port} as {self.username} using password"
+                )
+                connect_params["password"] = self.password
+                client.connect(**connect_params)
+            else:
+                # Fall back to key authentication
+                private_key = None
+                key_errors = []
+
+                # Try different key types
+                key_types = [
+                    ("Ed25519", paramiko.Ed25519Key),
+                    ("RSA", paramiko.RSAKey),
+                    ("ECDSA", paramiko.ECDSAKey),
+                ]
+
+                for key_name, key_class in key_types:
+                    try:
+                        private_key = key_class.from_private_key_file(self.key_path)
+                        logger.info(
+                            f"Successfully loaded {key_name} key from {self.key_path}"
+                        )
+                        break
+                    except Exception as e:
+                        key_errors.append(f"{key_name}: {str(e)}")
+
+                if not private_key:
+                    error_msg = f"Failed to load SSH key with any format. Errors: {'; '.join(key_errors)}"
+                    logger.error(error_msg)
+                    return "failed", "", error_msg
+
+                connect_params["pkey"] = private_key
+                connect_params["disabled_algorithms"] = {
+                    "pubkeys": ["ssh-rsa-cert-v01@openssh.com"]
+                }
+
+                logger.info(
+                    f"Attempting SSH connection to {self.host}:{self.port} as {self.username} using key"
+                )
+                client.connect(**connect_params)
 
             # Execute command
             stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
@@ -153,30 +167,73 @@ class ResponderAgent:
         self, command: str, timeout: int
     ) -> Tuple[str, str, str]:
         """Execute SSH command using subprocess (fallback method)"""
+        import shutil
         import subprocess
 
-        # Build the SSH command
-        ssh_cmd = [
-            "ssh",
-            "-p",
-            str(self.port),
-            "-i",
-            self.key_path,
-            "-o",
-            "StrictHostKeyChecking=yes",
-            "-o",
-            f'UserKnownHostsFile={os.path.expanduser("~/.ssh/known_hosts")}',
-            "-o",
-            "ConnectTimeout=10",
-            "-o",
-            "ServerAliveInterval=5",
-            "-o",
-            "ServerAliveCountMax=2",
-            f"{self.username}@{self.host}",
-            command,
-        ]
-
-        logger.info(f"Executing subprocess SSH: {' '.join(ssh_cmd[:-1])} '<command>'")
+        # Build the SSH command based on auth method
+        if self.password:
+            # Use sshpass for password auth if available
+            sshpass_path = shutil.which("sshpass")
+            if sshpass_path:
+                ssh_cmd = [
+                    "sshpass",
+                    "-p",
+                    self.password,
+                    "ssh",
+                    "-p",
+                    str(self.port),
+                    "-o",
+                    "StrictHostKeyChecking=no",
+                    "-o",
+                    "ConnectTimeout=10",
+                    "-o",
+                    "ServerAliveInterval=5",
+                    "-o",
+                    "ServerAliveCountMax=2",
+                    f"{self.username}@{self.host}",
+                    command,
+                ]
+                logger.info(
+                    f"Executing subprocess SSH with sshpass to {self.host}:{self.port}"
+                )
+            else:
+                # sshpass not available, try without it (will fail for password-only auth)
+                logger.warning(
+                    "sshpass not installed - password auth may fail in subprocess mode"
+                )
+                ssh_cmd = [
+                    "ssh",
+                    "-p",
+                    str(self.port),
+                    "-o",
+                    "StrictHostKeyChecking=no",
+                    "-o",
+                    "ConnectTimeout=10",
+                    f"{self.username}@{self.host}",
+                    command,
+                ]
+        else:
+            # Key-based auth
+            ssh_cmd = [
+                "ssh",
+                "-p",
+                str(self.port),
+                "-i",
+                self.key_path,
+                "-o",
+                "StrictHostKeyChecking=yes",
+                "-o",
+                f'UserKnownHostsFile={os.path.expanduser("~/.ssh/known_hosts")}',
+                "-o",
+                "ConnectTimeout=10",
+                "-o",
+                "ServerAliveInterval=5",
+                "-o",
+                "ServerAliveCountMax=2",
+                f"{self.username}@{self.host}",
+                command,
+            ]
+            logger.info(f"Executing subprocess SSH with key to {self.host}:{self.port}")
 
         try:
             # Run SSH command with subprocess

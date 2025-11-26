@@ -3,28 +3,44 @@
 import React, { useState } from "react";
 import {
     Bot, CheckCircle, Search, AlertTriangle,
-    Activity, Clock, Terminal, ChevronRight
+    Activity, Clock, Terminal, ChevronRight,
+    Filter
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { getEventPriority, getSeverityLevel, getSeverityBg, getSeverityColor } from "@/lib/event-utils";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuCheckboxItem,
+    DropdownMenuTrigger,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuRadioGroup,
+    DropdownMenuRadioItem
+} from "@/components/ui/dropdown-menu";
 
 interface InvestigationWorkspaceProps {
     activeIncident: any;
     allActions: any[];
     onActionClick: (action: any) => void;
     onHistoryOpen: () => void;
+    onEventsOpen: () => void;
 }
 
 export default function InvestigationWorkspace({
     activeIncident,
     allActions,
     onActionClick,
-    onHistoryOpen
+    onHistoryOpen,
+    onEventsOpen
 }: InvestigationWorkspaceProps) {
     const [searchQuery, setSearchQuery] = useState("");
+    const [severityFilter, setSeverityFilter] = useState<string[]>([]); // ["CRITICAL", "HIGH"] etc.
+    const [timeFilter, setTimeFilter] = useState<string>("all");
 
     // Simple timeline visualization using CSS
     const renderEventTimeline = () => {
@@ -69,14 +85,35 @@ export default function InvestigationWorkspace({
         );
     };
 
-    const filteredEvents = (activeIncident.detailed_events || []).filter((event: any) => {
-        if (!searchQuery) return true;
-        const query = searchQuery.toLowerCase();
-        return (
-            event.message?.toLowerCase().includes(query) ||
-            event.eventid?.toLowerCase().includes(query)
-        );
-    });
+    const filteredEvents = (activeIncident.detailed_events || [])
+        .filter((event: any) => {
+            // Text Search
+            if (searchQuery) {
+                const query = searchQuery.toLowerCase();
+                if (!event.message?.toLowerCase().includes(query) &&
+                    !event.eventid?.toLowerCase().includes(query)) {
+                    return false;
+                }
+            }
+
+            // Severity Filter
+            if (severityFilter.length > 0) {
+                const priority = getEventPriority(event);
+                const severity = getSeverityLevel(priority);
+                if (!severityFilter.includes(severity)) return false;
+            }
+
+            // Time Filter
+            if (timeFilter !== "all") {
+                const eventTime = new Date(event.ts).getTime();
+                const now = Date.now();
+                const hours = timeFilter === "1h" ? 1 : 24;
+                if (now - eventTime > hours * 60 * 60 * 1000) return false;
+            }
+
+            return true;
+        })
+        .sort((a: any, b: any) => new Date(b.ts).getTime() - new Date(a.ts).getTime()); // Most recent first
 
     return (
         <section className="h-full flex flex-col overflow-hidden bg-background relative">
@@ -112,64 +149,184 @@ export default function InvestigationWorkspace({
                                 Graph
                             </Button>
                         </div>
-                        <div className="relative w-48">
-                            <Search className="absolute left-2 top-1.5 w-3 h-3 text-muted-foreground" />
-                            <Input
-                                className="w-full h-6 pl-7 pr-3 text-[10px] bg-background border-muted focus-visible:ring-1"
-                                placeholder="Filter events..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                            />
+                        <div className="flex items-center gap-2">
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="outline" size="sm" className={cn("h-6 px-2 text-[10px] font-medium gap-1 border-dashed hover:border-solid", severityFilter.length > 0 ? "text-primary border-primary/50 bg-primary/5" : "text-muted-foreground")}>
+                                        <Filter className="w-3 h-3" />
+                                        {severityFilter.length > 0 ? severityFilter.length : "Filter"}
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-40">
+                                    <DropdownMenuLabel className="text-xs">Severity</DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    {['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'].map((level) => (
+                                        <DropdownMenuCheckboxItem
+                                            key={level}
+                                            checked={severityFilter.includes(level)}
+                                            onCheckedChange={(checked) => {
+                                                setSeverityFilter(prev =>
+                                                    checked ? [...prev, level] : prev.filter(l => l !== level)
+                                                );
+                                            }}
+                                            className="text-xs"
+                                        >
+                                            {level}
+                                        </DropdownMenuCheckboxItem>
+                                    ))}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="outline" size="sm" className={cn("h-6 px-2 text-[10px] font-medium gap-1 border-dashed hover:border-solid", timeFilter !== "all" ? "text-primary border-primary/50 bg-primary/5" : "text-muted-foreground")}>
+                                        <Clock className="w-3 h-3" />
+                                        {timeFilter === "all" ? "Time" : timeFilter}
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-40">
+                                    <DropdownMenuLabel className="text-xs">Time Range</DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuRadioGroup value={timeFilter} onValueChange={setTimeFilter}>
+                                        <DropdownMenuRadioItem value="all" className="text-xs">All Time</DropdownMenuRadioItem>
+                                        <DropdownMenuRadioItem value="1h" className="text-xs">Last Hour</DropdownMenuRadioItem>
+                                        <DropdownMenuRadioItem value="24h" className="text-xs">Last 24 Hours</DropdownMenuRadioItem>
+                                    </DropdownMenuRadioGroup>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+
+                            <div className="relative w-48">
+                                <Search className="absolute left-2 top-1.5 w-3 h-3 text-muted-foreground" />
+                                <Input
+                                    className="w-full h-6 pl-7 pr-3 text-[10px] bg-background border-muted focus-visible:ring-1"
+                                    placeholder="Filter events..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                />
+                            </div>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-6 text-[10px] font-medium text-muted-foreground hover:text-primary gap-1 px-2 border-dashed hover:border-solid"
+                                onClick={onEventsOpen}
+                            >
+                                View All
+                                <ChevronRight className="w-3 h-3" />
+                            </Button>
                         </div>
                     </div>
 
                     <ScrollArea className="flex-1">
                         <div className="p-4 space-y-3">
 
-                            {/* Triggering Events Context */}
-                            {activeIncident.triggering_events && activeIncident.triggering_events.length > 0 && (
-                                <div className="bg-orange-50/50 dark:bg-orange-950/20 rounded-lg border border-orange-200/50 dark:border-orange-800/50 p-3">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <AlertTriangle className="w-3.5 h-3.5 text-orange-500" />
-                                        <span className="text-xs font-semibold text-orange-800 dark:text-orange-200">
-                                            Incident Trigger Context
-                                        </span>
-                                        <Badge variant="outline" className="text-[9px] h-4 px-1 bg-orange-100 dark:bg-orange-900/30 border-orange-300 dark:border-orange-700">
-                                            {activeIncident.triggering_events.length} events
-                                        </Badge>
-                                    </div>
-                                    <div className="space-y-1.5 mt-2">
-                                        {activeIncident.triggering_events.map((event: any, idx: number) => (
-                                            <div
-                                                key={event.id || idx}
-                                                className={cn(
-                                                    "flex items-start gap-2 p-2 rounded-md text-[10px] border",
-                                                    event.is_trigger
-                                                        ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800"
-                                                        : "bg-background/50 border-border/50"
-                                                )}
-                                            >
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        {event.is_trigger && (
-                                                            <span className="text-red-600 dark:text-red-400 font-bold text-[9px]">⚠️ TRIGGER</span>
+                            {/* Key Attack Events - Smart Selection */}
+                            {(() => {
+                                // Combine all event sources and deduplicate
+                                const detailedEvents = activeIncident.detailed_events || [];
+                                const triggeringEvents = activeIncident.triggering_events || [];
+
+                                // Merge and dedupe by event id (prefer detailed_events as they have more data)
+                                const eventMap = new Map();
+                                [...triggeringEvents, ...detailedEvents].forEach((e: any) => {
+                                    const key = e.id || `${e.ts}-${e.eventid}-${e.message?.slice(0,30)}`;
+                                    eventMap.set(key, e);
+                                });
+                                const allEvents = Array.from(eventMap.values());
+
+                                // Sort by priority (highest first) and take top events
+                                const scoredEvents = allEvents
+                                    .map((e: any) => ({ ...e, priority: getEventPriority(e) }))
+                                    .sort((a: any, b: any) => b.priority - a.priority);
+
+                                // Take top 8 most important events (prioritizing diversity of event types)
+                                const keyEvents: any[] = [];
+                                const seenTypes = new Set();
+                                for (const event of scoredEvents) {
+                                    // Always include critical events (priority >= 90)
+                                    if (event.priority >= 90 || !seenTypes.has(event.eventid)) {
+                                        keyEvents.push(event);
+                                        seenTypes.add(event.eventid);
+                                        if (keyEvents.length >= 8) break;
+                                    }
+                                }
+                                // If we have less than 8, fill with next highest priority
+                                if (keyEvents.length < 8) {
+                                    for (const event of scoredEvents) {
+                                        if (!keyEvents.includes(event)) {
+                                            keyEvents.push(event);
+                                            if (keyEvents.length >= 8) break;
+                                        }
+                                    }
+                                }
+                                // Re-sort by priority
+                                keyEvents.sort((a: any, b: any) => b.priority - a.priority);
+
+                                if (keyEvents.length === 0) return null;
+
+                                // Count high-priority events for the badge
+                                const criticalCount = scoredEvents.filter((e: any) => e.priority >= 90).length;
+                                const highCount = scoredEvents.filter((e: any) => e.priority >= 70 && e.priority < 90).length;
+
+                                return (
+                                    <div className="bg-gradient-to-br from-orange-50/50 to-red-50/30 dark:from-orange-950/20 dark:to-red-950/10 rounded-lg border border-orange-200/50 dark:border-orange-800/50 p-3">
+                                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                            <AlertTriangle className="w-3.5 h-3.5 text-orange-500" />
+                                            <span className="text-xs font-semibold text-orange-800 dark:text-orange-200">
+                                                Key Attack Events
+                                            </span>
+                                            {criticalCount > 0 && (
+                                                <Badge variant="outline" className="text-[9px] h-4 px-1 bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700 text-red-700 dark:text-red-300">
+                                                    {criticalCount} critical
+                                                </Badge>
+                                            )}
+                                            {highCount > 0 && (
+                                                <Badge variant="outline" className="text-[9px] h-4 px-1 bg-orange-100 dark:bg-orange-900/30 border-orange-300 dark:border-orange-700">
+                                                    {highCount} high
+                                                </Badge>
+                                            )}
+                                            <Badge variant="outline" className="text-[9px] h-4 px-1 bg-muted/50 border-border">
+                                                {allEvents.length} total
+                                            </Badge>
+                                        </div>
+                                        <div className="space-y-1.5 mt-2">
+                                            {keyEvents.map((event: any, idx: number) => {
+                                                const severityLabel = getSeverityLevel(event.priority);
+                                                const severityColor = getSeverityColor(event.priority);
+                                                const severityBg = getSeverityBg(event.priority);
+
+                                                return (
+                                                    <div
+                                                        key={event.id || idx}
+                                                        className={cn(
+                                                            "flex items-start gap-2 p-2 rounded-md text-[10px] border",
+                                                            severityBg
                                                         )}
-                                                        <span className="text-muted-foreground font-mono text-[9px]">
-                                                            {new Date(event.ts).toLocaleTimeString()}
-                                                        </span>
-                                                        <Badge variant="outline" className="text-[8px] h-3.5 px-1">
-                                                            {event.eventid}
-                                                        </Badge>
+                                                    >
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                                {event.priority >= 40 && (
+                                                                    <span className={cn("font-bold text-[9px] uppercase tracking-wide", severityColor)}>
+                                                                        {severityLabel}
+                                                                    </span>
+                                                                )}
+                                                                <span className="text-muted-foreground font-mono text-[9px]">
+                                                                    <span suppressHydrationWarning>{new Date(event.ts).toLocaleTimeString()}</span>
+                                                                </span>
+                                                                <Badge variant="outline" className="text-[8px] h-3.5 px-1">
+                                                                    {event.eventid}
+                                                                </Badge>
+                                                            </div>
+                                                            <div className="text-foreground/90 leading-relaxed break-words">
+                                                                {event.message}
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                    <div className="text-foreground/90 leading-relaxed break-words">
-                                                        {event.message}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
+                                                );
+                                            })}
+                                        </div>
                                     </div>
-                                </div>
-                            )}
+                                );
+                            })()}
 
                             {/* Event Summary */}
                             {activeIncident.event_summary && (
@@ -253,9 +410,9 @@ export default function InvestigationWorkspace({
                             </Badge>
                         </h3>
                         <Button
-                            variant="ghost"
+                            variant="outline"
                             size="sm"
-                            className="h-6 text-[9px] text-muted-foreground hover:text-primary gap-1"
+                            className="h-6 text-[9px] font-medium text-muted-foreground hover:text-primary gap-1 border-dashed hover:border-solid"
                             onClick={onHistoryOpen}
                         >
                             View All

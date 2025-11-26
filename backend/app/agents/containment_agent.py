@@ -182,9 +182,17 @@ class ContainmentAgent:
                 incident.agent_actions = response.get("actions", [])
                 incident.agent_confidence = response.get("confidence", 0.5)
                 incident.containment_method = "ai_agent"
-                incident.risk_score = decision.risk_score
-                incident.escalation_level = decision.escalation_level
-                incident.threat_category = decision.threat_category
+                # Only update risk_score if new value is HIGHER (risk should never decrease)
+                incident.risk_score = max(incident.risk_score or 0, decision.risk_score)
+                # Only escalate, never de-escalate
+                escalation_order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+                if escalation_order.get(
+                    decision.escalation_level, 0
+                ) > escalation_order.get(incident.escalation_level or "low", 0):
+                    incident.escalation_level = decision.escalation_level
+                # Update threat category if not already set or if more specific
+                if not incident.threat_category or incident.threat_category == "benign":
+                    incident.threat_category = decision.threat_category
 
                 await db_session.commit()
 
@@ -1214,7 +1222,8 @@ class ContainmentAgent:
         """Execute containment action based on SOC request"""
         try:
             action = containment_request.get("action", "block_ip")
-            ip = containment_request.get("ip")
+            # Accept both 'ip' and 'source_ip' for flexibility with workflow triggers
+            ip = containment_request.get("ip") or containment_request.get("source_ip")
             reason = containment_request.get("reason", "SOC manual action")
             duration = containment_request.get("duration", 3600)  # Default 1 hour
 
@@ -2616,18 +2625,19 @@ class RollbackAgent:
         if not db_session:
             return False
 
-        from sqlalchemy import and_
+        from sqlalchemy import and_, select
 
         cutoff_time = datetime.utcnow() - timedelta(hours=1)
 
-        query = (
-            db_session.query(Event)
-            .filter(and_(Event.src_ip == src_ip, Event.ts >= cutoff_time))
+        # Use async SQLAlchemy select() instead of deprecated query()
+        stmt = (
+            select(Event)
+            .where(and_(Event.src_ip == src_ip, Event.ts >= cutoff_time))
             .limit(1)
         )
 
-        result = await asyncio.get_event_loop().run_in_executor(None, query.first)
-        return result is not None
+        result = await db_session.execute(stmt)
+        return result.scalars().first() is not None
 
     async def _ai_rollback_evaluation(
         self,

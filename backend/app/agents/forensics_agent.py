@@ -530,14 +530,14 @@ class ForensicsAgent:
             if not db_session:
                 return None
 
-            # Query events related to the incident
-            from sqlalchemy import and_
+            # Query events related to the incident using async SQLAlchemy
+            from sqlalchemy import and_, select
 
             # Get events from the same IP within a time window
             time_window = timedelta(hours=24)
-            events_query = (
-                db_session.query(Event)
-                .filter(
+            stmt = (
+                select(Event)
+                .where(
                     and_(
                         Event.src_ip == incident.src_ip,
                         Event.ts >= incident.created_at - time_window,
@@ -547,9 +547,8 @@ class ForensicsAgent:
                 .order_by(Event.ts)
             )
 
-            events = await asyncio.get_event_loop().run_in_executor(
-                None, events_query.all
-            )
+            result = await db_session.execute(stmt)
+            events = result.scalars().all()
 
             if not events:
                 return None

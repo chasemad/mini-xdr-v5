@@ -22,6 +22,7 @@ interface DeepAnalysisSheetProps {
   incident: any;
   coordination: any;
   coordinationLoading: boolean;
+  onRefreshIncident?: () => void;
 }
 
 export default function DeepAnalysisSheet({
@@ -29,7 +30,8 @@ export default function DeepAnalysisSheet({
   onClose,
   incident,
   coordination,
-  coordinationLoading
+  coordinationLoading,
+  onRefreshIncident
 }: DeepAnalysisSheetProps) {
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
@@ -78,7 +80,7 @@ export default function DeepAnalysisSheet({
               </TabsContent>
 
               <TabsContent value="council" className="m-0 space-y-6">
-                <CouncilAnalysisTab incident={incident} />
+                <CouncilAnalysisTab incident={incident} onRefresh={onRefreshIncident} />
               </TabsContent>
 
               <TabsContent value="agents" className="m-0 space-y-6">
