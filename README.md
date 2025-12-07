@@ -2,7 +2,7 @@
 
 **Disclaimer:** Personal lab project for learning & portfolio. Not affiliated with any employer. All credentials are dummy or managed via Secrets Manager.
 
-Built in 2025 (78+ commits). 9 specialized autonomous AI agents handle threat hunting, triage, containment, forensics, reporting, and more. Real-time ingestion from Wazuh/Osquery/Suricata via Kafka + Redis. Multi-model LLM reasoning (Claude 3.5 + Grok-4 + local Llama-3.1-70B).
+Built in 2025 (82 commits). 8+ specialized autonomous AI agents handle threat detection, containment, forensics, attribution, deception, and more. Real-time ingestion with Redis Streams and PostgreSQL. Multi-model LLM reasoning (OpenAI GPT, Grok, Gemini, and local Ollama models).
 
 ## Architecture
 
@@ -10,69 +10,69 @@ Built in 2025 (78+ commits). 9 specialized autonomous AI agents handle threat hu
 flowchart LR
     subgraph Agents
         A1[Ingestion]
-        A2[Hunting]
-        A3[Triager]
-        A4[Containment]
-        A5[Forensics]
-        A6[Deception]
-        A7[Attribution]
-        A8[DLP]
-        A9[Reporting]
+        A2[Containment]
+        A3[Forensics]
+        A4[Attribution]
+        A5[Deception]
+        A6[DLP]
+        A7[EDR]
+        A8[IAM]
     end
 
     subgraph Pipeline
-        K[(Kafka)]
         R[(Redis Streams)]
         DB[(PostgreSQL)]
     end
 
     subgraph AI
-        C1[Claude 3.5]
-        G4[Grok-4]
-        L7[Llama 3.1 70B (local)]
+        O1[OpenAI GPT]
+        G2[Grok]
+        Ge3[Gemini]
+        L4[Ollama Local]
     end
 
     subgraph Frontend
-        UI[Streamlit / Next.js Dashboard]
+        UI[Next.js Dashboard]
     end
 
-    A1 --> K
     Agents --> R
-    K --> R
     R --> DB
     DB --> UI
     R --> UI
 
-    R --> C1
-    R --> G4
-    R --> L7
-    C1 --> R
-    G4 --> R
-    L7 --> R
+    R --> O1
+    R --> G2
+    R --> Ge3
+    R --> L4
+    O1 --> R
+    G2 --> R
+    Ge3 --> R
+    L4 --> R
 
     UI -->|Feedback| Agents
 ```
 
-_Source file: `docs/diagrams/mini-xdr-architecture.mmd`_
+_Source: `docs/diagrams/mini-xdr-architecture.mmd`_
 
 ## Current Status
 
 | Capability | Status | Notes |
 | --- | --- | --- |
-| 9 autonomous agents (ingestion, hunting, triage, containment, forensics, deception, attribution, DLP, reporting) | ✅ | LangChain + FastAPI orchestration with Redis/Kafka event bus |
-| Real-time pipeline | ✅ | Kafka + Redis Streams + PostgreSQL; Wazuh/Osquery/Suricata inputs |
-| Multi-LLM reasoning | ✅ | Claude 3.5 + Grok-4 + local Llama-3.1-70B with routing |
-| Dashboard | ⚠️ | Basic Streamlit/Next.js flows; polishing UI/UX and charts |
-| macOS/Linux EDR agents | ⚠️ | Enrollment + live response in progress |
-| Production hardening | ⚠️ | K8s autoscaling + additional zero-trust policies underway |
+| 8+ autonomous agents (ingestion, containment, forensics, attribution, deception, DLP, EDR, IAM) | ✅ | FastAPI orchestration with Redis Streams event bus |
+| Real-time pipeline | ✅ | Redis Streams + PostgreSQL; multi-source log ingestion |
+| Multi-LLM reasoning | ✅ | OpenAI GPT + Grok + Gemini + Ollama local models with routing |
+| Next.js Dashboard | ✅ | Modern React dashboard with real-time updates |
+| Agent coordination | ✅ | Advanced multi-agent orchestration and conflict resolution |
+| Threat intelligence | ✅ | AbuseIPDB, VirusTotal, and custom intelligence feeds |
 
 ## Highlights
 
-- Autonomous pipeline: ingestion → enrichment → ML ensemble scoring → agent-driven containment and reporting
-- AI everywhere: retrieval-augmented reasoning and cross-model debate (Claude/Grok/Llama) for difficult investigations
-- Threat intel aware: AbuseIPDB/VirusTotal hooks, signature + behavior detection, and deception-driven IOC collection
-- Observability: Prometheus metrics, health endpoints, and structured audit trails for every automated action
-- Extensible: modular agents, pluggable playbooks, and message-driven integrations (Kafka, Redis, HTTP webhooks)
+- Autonomous pipeline: multi-source ingestion → AI-powered analysis → coordinated agent response
+- Multi-model AI reasoning: OpenAI GPT, Grok, Gemini, and local Ollama models for comprehensive threat analysis
+- Advanced agent coordination: conflict resolution, decision optimization, and collaborative intelligence
+- Threat intelligence integration: AbuseIPDB, VirusTotal, and custom intelligence feeds
+- Modern observability: health endpoints, structured logging, and real-time monitoring
+- Production-ready: Docker containers, database persistence, and scalable architecture
 
 ## How to Run
 
@@ -86,10 +86,10 @@ _Source file: `docs/diagrams/mini-xdr-architecture.mmd`_
    python3 -m venv .venv && source .venv/bin/activate
    pip install -r requirements.txt
    ```
-3. Configure environment (dummy defaults provided):
+3. Configure environment (optional - defaults provided):
    ```bash
-   cp backend/env.example .env
-   # Set API_KEY, OPENAI_API_KEY, XAI_API_KEY, etc. (demo-minixdr-api-key / demo-tpot-api-key are placeholders)
+   cp backend/env.example backend/.env
+   # Edit backend/.env to set API keys (OPENAI_API_KEY, XAI_API_KEY, etc.)
    ```
 4. Bring up the stack:
    ```bash
@@ -100,28 +100,59 @@ _Source file: `docs/diagrams/mini-xdr-architecture.mmd`_
    docker-compose ps
    curl -s http://localhost:8000/health
    ```
-6. Run a quick ingest/response smoke test (optional):
+6. Run tests (optional):
    ```bash
-   ./tests/run_all_tests.sh  # or use tests/demo_chat_integration.sh for the UI flow
+   ./tests/run_all_tests.sh  # Comprehensive test suite
    ```
 
 ## Demo
 
-- 5-minute overview (unlisted): [insert your YouTube link here]
-- Agent cycle GIF:
+### Quick Start Demo
+1. Start the services: `docker-compose up -d`
+2. Access the dashboard: http://localhost:3000
+3. Generate test data: `./scripts/inject-fake-attack-auth.sh`
+4. Watch real-time threat detection and automated response
 
-  ![Agent cycle placeholder](docs/media/agent-cycle.gif)
+### Screenshots
+_Agent coordination and threat response visualization:_
 
-  _(Replace `docs/media/agent-cycle.gif` with your own capture.)_
+![Agent cycle](docs/media/agent-cycle.gif)
 
 ## Repo Layout
 
-- `backend/` — FastAPI services, agents, ML pipelines
-- `frontend/` — Next.js dashboard + Streamlit utilities
-- `src/` — pointer to code locations for contributors
-- `docs/` — runbooks, architecture notes, and Mermaid diagrams
-- `examples/attack-logs/` — sanitized attack traces for sharing/demos
+- `backend/` — FastAPI services, autonomous agents, ML pipelines
+- `frontend/` — Next.js dashboard with real-time threat visualization
+- `docs/` — comprehensive documentation, architecture diagrams, and guides
+- `examples/` — sanitized attack traces and usage examples
+- `scripts/` — utility scripts for deployment, testing, and operations
+- `config/` — configuration templates and deployment settings
+- `ops/` — infrastructure operations and deployment manifests
+- `tests/` — comprehensive test suite and integration tests
 
 ## Contributing
 
-Pull requests welcome. This is a living project—improvements, docs, and integrations are appreciated.
+Contributions are welcome! This is an active project focused on advancing autonomous threat detection.
+
+### How to Contribute
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Add tests if applicable
+5. Ensure all tests pass
+6. Commit your changes (`git commit -m 'Add amazing feature'`)
+7. Push to the branch (`git push origin feature/amazing-feature`)
+8. Open a Pull Request
+
+### Development Setup
+See the [Local Setup Guide](docs/getting-started/local-setup.md) for detailed development instructions.
+
+### Areas for Contribution
+- New autonomous agents
+- Enhanced ML models
+- UI/UX improvements
+- Documentation
+- Integration with additional threat intelligence sources
+- Performance optimizations
+
+### License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
