@@ -12,7 +12,7 @@ flowchart LR
     end
 
     subgraph Pipeline
-        R[(Redis Streams)]
+        R[(Redis Cache)]
         DB[(PostgreSQL)]
     end
 
@@ -20,7 +20,6 @@ flowchart LR
         O1[OpenAI GPT]
         G2[Grok]
         Ge3[Gemini]
-        L4[Ollama Local]
     end
 
     subgraph Frontend
@@ -35,11 +34,9 @@ flowchart LR
     R --> O1
     R --> G2
     R --> Ge3
-    R --> L4
     O1 --> R
     G2 --> R
     Ge3 --> R
-    L4 --> R
 
     UI -->|Feedback| Agents
 ```

@@ -2,7 +2,7 @@
 
 **Disclaimer:** Personal lab project for learning & portfolio. Not affiliated with any employer. All credentials are dummy or managed via Secrets Manager.
 
-**Mini-XDR** is an autonomous AI-powered threat detection and response system built in 2025. 8+ specialized AI agents handle threat detection, containment, forensics, attribution, deception, and automated response. Real-time data ingestion via Redis Streams with PostgreSQL persistence. Multi-model LLM reasoning combines OpenAI GPT, Grok, Gemini, and local Ollama models for comprehensive threat analysis.
+**Mini-XDR** is an autonomous AI-powered threat detection and response system built in 2025. 8+ specialized AI agents handle threat detection, containment, forensics, attribution, deception, and automated response. PostgreSQL persistence with Redis caching for high-performance operations. Multi-model LLM reasoning combines OpenAI GPT, Grok, and Gemini for comprehensive threat analysis.
 
 ## Architecture
 
@@ -20,7 +20,7 @@ flowchart LR
     end
 
     subgraph Pipeline
-        R[(Redis Streams)]
+        R[(Redis Cache)]
         DB[(PostgreSQL)]
     end
 
@@ -28,7 +28,6 @@ flowchart LR
         O1[OpenAI GPT]
         G2[Grok]
         Ge3[Gemini]
-        L4[Ollama Local]
     end
 
     subgraph Frontend
@@ -43,11 +42,9 @@ flowchart LR
     R --> O1
     R --> G2
     R --> Ge3
-    R --> L4
     O1 --> R
     G2 --> R
     Ge3 --> R
-    L4 --> R
 
     UI -->|Feedback| Agents
 ```
@@ -58,9 +55,9 @@ _Source: `docs/diagrams/mini-xdr-architecture.mmd`_
 
 | Capability | Status | Notes |
 | --- | --- | --- |
-| 8+ autonomous agents (ingestion, containment, forensics, attribution, deception, DLP, EDR, IAM) | ✅ | FastAPI orchestration with Redis Streams event bus |
-| Real-time pipeline | ✅ | Redis Streams + PostgreSQL; multi-source log ingestion |
-| Multi-LLM reasoning | ✅ | OpenAI GPT, Grok, Gemini, and Ollama local models with intelligent routing |
+| 8+ autonomous agents (ingestion, containment, forensics, attribution, deception, DLP, EDR, IAM) | ✅ | FastAPI orchestration with coordinated multi-agent execution |
+| Real-time pipeline | ✅ | PostgreSQL + Redis caching; multi-source log ingestion |
+| Multi-LLM reasoning | ✅ | OpenAI GPT, Grok, and Gemini with intelligent routing |
 | Next.js Dashboard | ✅ | Modern React dashboard with real-time updates |
 | Agent coordination | ✅ | Advanced multi-agent orchestration and conflict resolution |
 | Threat intelligence | ✅ | AbuseIPDB, VirusTotal, and custom intelligence feeds |
@@ -68,7 +65,7 @@ _Source: `docs/diagrams/mini-xdr-architecture.mmd`_
 ## Highlights
 
 - Autonomous pipeline: multi-source ingestion → AI-powered analysis → coordinated agent response
-- Multi-model AI reasoning: OpenAI GPT, Grok, Gemini, and Ollama local models for comprehensive threat analysis
+- Multi-model AI reasoning: OpenAI GPT, Grok, and Gemini for comprehensive threat analysis
 - Advanced agent coordination: conflict resolution, decision optimization, and collaborative intelligence
 - Threat intelligence integration: AbuseIPDB, VirusTotal, and custom intelligence feeds
 - Modern observability: health endpoints, structured logging, and real-time monitoring
