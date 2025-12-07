@@ -9,6 +9,8 @@ An autonomous threat detection and response platform with multi-agent orchestrat
 
 *Personal lab project for learning & portfolio. Not affiliated with any employer.*
 
+[![Demo Video](https://img.shields.io/badge/Demo-Watch%20on%20YouTube-red?logo=youtube)](https://www.youtube.com/watch?v=Zq6WAtTNOcY)
+
 ---
 
 ## Overview
