@@ -78,8 +78,8 @@ _Source file: `docs/diagrams/mini-xdr-architecture.mmd`_
 
 1. Clone the repo:
    ```bash
-   git clone https://github.com/chasemad/mini-xdr.git
-   cd mini-xdr
+   git clone https://github.com/chasemad/mini-xdr-v5.git
+   cd mini-xdr-v5
    ```
 2. (Optional) Create a Python env and install deps:
    ```bash
