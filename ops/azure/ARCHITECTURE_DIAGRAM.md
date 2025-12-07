@@ -264,7 +264,7 @@ T+90min   ─┴─ DEPLOYMENT COMPLETE ✓
 **Ready to deploy!** 🚀
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 ./ops/azure/scripts/deploy-all.sh
 ```
 

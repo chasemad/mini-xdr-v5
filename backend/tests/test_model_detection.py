@@ -5,7 +5,7 @@ Quick test to verify enhanced ML models are working for attack detection
 import sys
 import asyncio
 import numpy as np
-sys.path.append('/Users/chasemad/Desktop/mini-xdr/aws')
+sys.path.append('./aws')
 
 from local_inference import local_ml_client
 

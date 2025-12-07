@@ -69,7 +69,7 @@ ops/azure/
 az login
 
 # Navigate to project root
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 
 # Run complete deployment
 ./ops/azure/scripts/deploy-all.sh

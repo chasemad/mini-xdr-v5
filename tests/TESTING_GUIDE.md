@@ -84,7 +84,7 @@ TPOT_SSH_PORT=64295
 
 ```bash
 # Navigate to tests directory
-cd /Users/chasemad/Desktop/mini-xdr/tests
+cd ./tests
 
 # Run comprehensive test suite
 python3 comprehensive_azure_honeypot_test.py
@@ -118,7 +118,7 @@ SECTION 1: SYSTEM HEALTH & CONFIGURATION
 
 ```bash
 # Navigate to tests directory
-cd /Users/chasemad/Desktop/mini-xdr/tests
+cd ./tests
 
 # Run live attack suite
 bash live_honeypot_attack_suite.sh
@@ -141,7 +141,7 @@ Then run the automated test suite to verify detection.
 ### Option 3: Combined Testing (Recommended)
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/tests
+cd ./tests
 
 # Step 1: Generate real attacks
 bash live_honeypot_attack_suite.sh
@@ -523,7 +523,7 @@ Once all tests pass:
 ### Run Everything
 ```bash
 # Full test cycle
-cd /Users/chasemad/Desktop/mini-xdr/tests
+cd ./tests
 bash live_honeypot_attack_suite.sh && sleep 180 && python3 comprehensive_azure_honeypot_test.py
 ```
 

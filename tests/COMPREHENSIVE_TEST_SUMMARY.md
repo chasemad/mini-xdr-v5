@@ -96,20 +96,20 @@ pip3 install aiohttp
 
 #### Option 1: Interactive Runner (Easiest)
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/tests
+cd ./tests
 ./run_all_tests.sh
 # Choose option 3 for full suite
 ```
 
 #### Option 2: Full Automated Suite
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/tests
+cd ./tests
 python3 comprehensive_azure_honeypot_test.py
 ```
 
 #### Option 3: Live Attacks + Validation
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/tests
+cd ./tests
 
 # Step 1: Generate attacks
 ./live_honeypot_attack_suite.sh
@@ -461,7 +461,7 @@ curl -s -H "x-api-key: $API_KEY" http://localhost:8000/api/response-actions/avai
 
 ```bash
 # Add to crontab for daily testing
-0 2 * * * cd /Users/chasemad/Desktop/mini-xdr/tests && ./run_all_tests.sh << EOF
+0 2 * * * cd ./tests && ./run_all_tests.sh << EOF
 1
 EOF
 ```

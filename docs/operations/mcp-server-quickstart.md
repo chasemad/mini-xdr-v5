@@ -36,7 +36,7 @@ kubectl get pods -n mini-xdr | grep backend
 ## Deployment (One Command)
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 ./ops/deploy-mcp-server.sh --all
 ```
 

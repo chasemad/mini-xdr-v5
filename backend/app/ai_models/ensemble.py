@@ -66,7 +66,7 @@ class EnsembleConfig:
     lstm_sequence_length: int = 10
 
     # Paths
-    models_dir: str = "/Users/chasemad/Desktop/mini-xdr/models"
+    models_dir: str = "./models"
 
 
 class TemporalLSTM(nn.Module):

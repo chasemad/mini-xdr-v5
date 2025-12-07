@@ -46,7 +46,7 @@ All bash scripts have been made executable (`chmod +x` applied):
 
 ### Step 1: Run Setup
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 ./scripts/demo/pre-demo-setup.sh
 ```
 

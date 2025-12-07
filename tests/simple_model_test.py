@@ -7,7 +7,7 @@ import sys
 import os
 import torch
 import numpy as np
-sys.path.append('/Users/chasemad/Desktop/mini-xdr/backend')
+sys.path.append('./backend')
 
 from app.deep_learning_models import XDRThreatDetector
 import joblib
@@ -20,7 +20,7 @@ def test_model_directly():
 
     # Load model metadata
     try:
-        with open('/Users/chasemad/Desktop/mini-xdr/models/model_metadata.json', 'r') as f:
+        with open('./models/model_metadata.json', 'r') as f:
             import json
             metadata = json.load(f)
 
@@ -36,7 +36,7 @@ def test_model_directly():
 
     # Load scaler
     try:
-        scaler = joblib.load('/Users/chasemad/Desktop/mini-xdr/models/scaler.pkl')
+        scaler = joblib.load('./models/scaler.pkl')
         print("✅ Scaler loaded successfully")
     except Exception as e:
         print(f"❌ Scaler failed: {e}")
@@ -53,7 +53,7 @@ def test_model_directly():
 
         # Load trained weights
         model.load_state_dict(torch.load(
-            '/Users/chasemad/Desktop/mini-xdr/models/threat_detector.pth',
+            './models/threat_detector.pth',
             map_location='cpu',
             weights_only=True
         ))

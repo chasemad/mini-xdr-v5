@@ -17,7 +17,7 @@ echo "🔧 Deploying log forwarding to T-Pot at $TPOT_IP"
 echo "📡 Logs will be sent to Mini-XDR at $LOCAL_IP:8000"
 
 # Replace LOCAL_IP in config
-sed "s/YOUR_LOCAL_IP/$LOCAL_IP/g" /Users/chasemad/Desktop/mini-xdr/config/tpot/fluent-bit-tpot.conf > /tmp/fluent-bit-tpot.conf
+sed "s/YOUR_LOCAL_IP/$LOCAL_IP/g" $(cd "$(dirname "$0")/../.." .. pwd)/config/tpot/fluent-bit-tpot.conf > /tmp/fluent-bit-tpot.conf
 
 # Copy configuration to T-Pot
 echo "📁 Copying Fluent Bit configuration..."

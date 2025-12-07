@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 
 echo "🚀 Setting Up Immediate Public Access (NodePort Method)"
 echo "========================================================"

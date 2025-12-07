@@ -97,7 +97,7 @@ threat_type = self._classify_threat_type(events, ml_score)
 
 **Fix**:
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/scripts
+cd ./scripts
 ./generate-agent-secrets-azure.sh
 ```
 
@@ -157,7 +157,7 @@ This creates credentials for:
 
 **Quick Fix - Use Local Models**:
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/backend/app
+cd ./backend/app
 
 # Backup current file
 cp intelligent_detection.py intelligent_detection.py.backup
@@ -178,7 +178,7 @@ curl -s http://localhost:8000/incidents | jq '.[0] | {ml_confidence, threat_type
 #### 2. Configure Agent Credentials ⭐⭐⭐
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/scripts
+cd ./scripts
 ./generate-agent-secrets-azure.sh
 ```
 
@@ -237,7 +237,7 @@ async def get_dashboard_metrics(...):
 After applying fixes, re-run tests:
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/tests
+cd ./tests
 python3 comprehensive_azure_honeypot_test.py
 ```
 
@@ -325,7 +325,7 @@ curl -s http://localhost:8000/events | jq 'length'
 
 ### View Test Results
 ```bash
-cat /Users/chasemad/Desktop/mini-xdr/tests/test_results_*.json | jq '.summary'
+cat ./tests/test_results_*.json | jq '.summary'
 ```
 
 ---
@@ -376,11 +376,11 @@ cat /Users/chasemad/Desktop/mini-xdr/tests/test_results_*.json | jq '.summary'
 
 ## 📞 Support
 
-**Test Results**: `/Users/chasemad/Desktop/mini-xdr/tests/test_results_20251004_215749.json`
+**Test Results**: `./tests/test_results_20251004_215749.json`
 
-**Test Logs**: `/Users/chasemad/Desktop/mini-xdr/tests/test_run_20251004_215749.log`
+**Test Logs**: `./tests/test_run_20251004_215749.log`
 
-**Backend Logs**: `tail -f /Users/chasemad/Desktop/mini-xdr/backend/backend.log`
+**Backend Logs**: `tail -f ./backend/backend.log`
 
 ---
 

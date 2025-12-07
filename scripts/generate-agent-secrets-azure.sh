@@ -16,7 +16,7 @@ NC='\033[0m'
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_DIR="$PROJECT_ROOT/backend"
-AZURE_KEY_VAULT="${1:-minixdrchasemad}"
+AZURE_KEY_VAULT="${1:-minixdr-keyvault}"
 
 # Agent types
 AGENT_TYPES=("containment" "attribution" "forensics" "deception" "hunter" "rollback")

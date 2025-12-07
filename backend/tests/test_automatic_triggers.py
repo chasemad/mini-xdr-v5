@@ -215,6 +215,6 @@ if __name__ == "__main__":
     else:
         print("⚠️  TEST INCONCLUSIVE: Check logs for details")
         print(
-            "   Backend log: /Users/chasemad/Desktop/mini-xdr/backend/logs/backend.log"
+            "   Backend log: ./backend/logs/backend.log"
         )
     print("=" * 80)

@@ -26,7 +26,7 @@ Your Mini-XDR installation has been migrated to **100% local operation**. All AW
 ### 1. Create Environment File
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 
 # Create .env from example (if doesn't exist)
 if [ ! -f .env ]; then
@@ -177,7 +177,7 @@ docker-compose up -d frontend
 docker-compose exec backend ls -la /app/models
 
 # Verify model files exist locally
-ls -la /Users/chasemad/Desktop/mini-xdr/models/local_trained/
+ls -la ./models/local_trained/
 
 # If models are missing, you may need to retrain
 # See: docs/ml/local-models.md

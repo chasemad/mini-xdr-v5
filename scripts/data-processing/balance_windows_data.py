@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class WindowsDataBalancer:
     """Balance Windows attack dataset using augmentation"""
     
-    def __init__(self, input_dir="/Users/chasemad/Desktop/mini-xdr/datasets/windows_converted"):
+    def __init__(self, input_dir="$(cd "$(dirname "$0")/../.." ${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))}${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))} pwd)/datasets/windows_converted"):
         self.input_dir = Path(input_dir)
         self.target_samples_per_class = 30000  # Target for balanced training
         

@@ -26,7 +26,7 @@ Once configured, your AI agents will be able to:
 ### Step 1: Run the Configuration Script
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 ./scripts/tpot-management/setup-tpot-ssh-integration.sh
 ```
 

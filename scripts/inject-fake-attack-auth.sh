@@ -6,7 +6,7 @@
 API_URL="http://localhost:8000"
 
 # Get API key from .env
-API_KEY=$(grep "^API_KEY=" /Users/chasemad/Desktop/mini-xdr/backend/.env | cut -d'=' -f2)
+API_KEY=$(grep "^API_KEY=" $(cd "$(dirname "$0")/../.." .. pwd)/backend/.env | cut -d'=' -f2)
 
 if [ -z "$API_KEY" ] || [ "$API_KEY" = "WILL_BE_GENERATED_DURING_DEPLOYMENT" ]; then
     echo "⚠️  No API key found in .env"
@@ -135,7 +135,7 @@ else
     echo ""
     python3 << 'PYEOF'
 import sqlite3
-db = sqlite3.connect("/Users/chasemad/Desktop/mini-xdr/backend/xdr.db")
+db = sqlite3.connect("$(cd "$(dirname "$0")/../.." .. pwd)/backend/xdr.db")
 cursor = db.cursor()
 cursor.execute("SELECT COUNT(*) FROM incidents WHERE src_ip LIKE '45.%'")
 count = cursor.fetchone()[0]

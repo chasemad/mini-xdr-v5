@@ -33,9 +33,9 @@ class EnsembleMLDetector:
 
     def __init__(
         self,
-        network_model_dir="/Users/chasemad/Desktop/mini-xdr/models/local_trained_enhanced",
-        windows_model_dir="/Users/chasemad/Desktop/mini-xdr/models/windows_specialist_13class",
-        legacy_windows_model_dir="/Users/chasemad/Desktop/mini-xdr/models/windows_specialist",
+        network_model_dir="./models/local_trained_enhanced",
+        windows_model_dir="./models/windows_specialist_13class",
+        legacy_windows_model_dir="./models/windows_specialist",
     ):
         self.network_model_dir = Path(network_model_dir)
         self.windows_model_dir = Path(windows_model_dir)
@@ -124,7 +124,7 @@ class EnsembleMLDetector:
                 self.network_scaler = joblib.load(scaler_path)
             else:
                 self.network_scaler = joblib.load(
-                    "/Users/chasemad/Desktop/mini-xdr/models/scaler.pkl"
+                    "./models/scaler.pkl"
                 )
 
             logger.info("✅ Loaded network model")
@@ -282,7 +282,7 @@ class EnsembleMLDetector:
         """Load legacy 7-class Windows model as fallback"""
         try:
             legacy_path = Path(
-                "/Users/chasemad/Desktop/mini-xdr/models/windows_specialist/windows_specialist.pth"
+                "./models/windows_specialist/windows_specialist.pth"
             )
             if not legacy_path.exists():
                 return None

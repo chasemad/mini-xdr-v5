@@ -212,7 +212,7 @@ class SageMakerEndpointManager:
             }
 
             # Write endpoint info to file
-            info_file = Path('/Users/chasemad/Desktop/mini-xdr/config/sagemaker_endpoints.json')
+            info_file = Path('$(cd "$(dirname "$0")/../.." ${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))}${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))} pwd)/config/sagemaker_endpoints.json')
             info_file.parent.mkdir(exist_ok=True)
 
             with open(info_file, 'w') as f:

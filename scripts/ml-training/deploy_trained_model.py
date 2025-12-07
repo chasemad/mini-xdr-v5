@@ -153,7 +153,7 @@ class TrainedModelDeployer:
         }
 
         # Save to config file
-        config_file = '/Users/chasemad/Desktop/mini-xdr/config/sagemaker_endpoints.json'
+        config_file = '$(cd "$(dirname "$0")/../.." ${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))}${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))} pwd)/config/sagemaker_endpoints.json'
         with open(config_file, 'w') as f:
             json.dump(config_data, f, indent=2)
 

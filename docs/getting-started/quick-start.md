@@ -40,7 +40,7 @@ curl -X POST http://k8s-minixdr-minixdri-dc5fc1df8b-1132128475.us-east-1.elb.ama
 For best experience with all latest features:
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/frontend
+cd ./frontend
 
 # Set AWS backend URL
 export NEXT_PUBLIC_API_BASE=http://k8s-minixdr-minixdri-dc5fc1df8b-1132128475.us-east-1.elb.amazonaws.com

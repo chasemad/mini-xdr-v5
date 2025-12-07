@@ -42,7 +42,7 @@ if ssh -p 64295 -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHost
     sleep 2
 
     # Restart backend
-    cd /Users/chasemad/Desktop/mini-xdr/backend
+    cd $(cd "$(dirname "$0")/../.." .. pwd)/backend
     nohup ../venv/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > backend_tpot.log 2>&1 &
 
     echo "Backend restarting... waiting 15 seconds..."

@@ -9,7 +9,7 @@
 - ⚛️ **Frontend**: ✅ Running on port 3000, dashboard accessible
 
 ### Your Account
-- **Email**: chasemadrian@protonmail.com
+- **Email**: admin@example.com
 - **Password**: demo-tpot-api-key
 - **Role**: Admin
 - **Organization**: Mini-XDR Local

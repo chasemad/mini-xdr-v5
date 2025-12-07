@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 
 echo "🚀 Mini-XDR Public ALB Deployment with Clean Organization Setup"
 echo "================================================================"

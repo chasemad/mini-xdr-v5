@@ -30,8 +30,8 @@ class EnhancedWindowsConverter:
     """Enhanced converter for Windows attack datasets"""
     
     def __init__(self, 
-                 source_dir="/Users/chasemad/Desktop/mini-xdr/datasets/windows_ad_datasets",
-                 output_dir="/Users/chasemad/Desktop/mini-xdr/datasets/windows_converted"):
+                 source_dir="$(cd "$(dirname "$0")/../.." ${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))}${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))} pwd)/datasets/windows_ad_datasets",
+                 output_dir="$(cd "$(dirname "$0")/../.." ${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))}${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))} pwd)/datasets/windows_converted"):
         
         self.source_dir = Path(source_dir)
         self.output_dir = Path(output_dir)

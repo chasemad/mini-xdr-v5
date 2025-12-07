@@ -83,14 +83,14 @@ Your Mini-XDR system is now fully integrated with the T-Pot honeypot infrastruct
 ### 1. Install Dependencies
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/backend
+cd ./backend
 source venv/bin/activate
 pip install asyncssh==2.14.2
 ```
 
 ### 2. Configure T-Pot Connection
 
-Create `/Users/chasemad/Desktop/mini-xdr/backend/.env` with:
+Create `./backend/.env` with:
 
 ```bash
 # T-Pot Configuration
@@ -105,7 +105,7 @@ HONEYPOT_SSH_KEY=~/.ssh/id_rsa
 ### 3. Start Backend
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/backend
+cd ./backend
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -125,7 +125,7 @@ INFO:     ✅ T-Pot monitoring initialized successfully
 ### 4. Start Frontend
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/frontend
+cd ./frontend
 npm run dev
 ```
 
@@ -436,7 +436,7 @@ ERROR: Connection timeout to T-Pot at 24.11.0.176:64295
 - **Configuration**: See `docs/getting-started/environment-config.md`
 - **Architecture**: See `docs/architecture/system-overview.md`
 - **API Documentation**: http://localhost:8000/docs (Swagger UI)
-- **Logs**: `tail -f /Users/chasemad/Desktop/mini-xdr/backend/backend.log`
+- **Logs**: `tail -f ./backend/backend.log`
 
 ---
 

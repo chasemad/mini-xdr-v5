@@ -15,7 +15,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Project root
-PROJECT_ROOT="/Users/chasemad/Desktop/mini-xdr"
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." .. pwd)"
 
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${BLUE}  Mini-XDR System Restart${NC}"

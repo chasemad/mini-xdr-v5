@@ -15,7 +15,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 async def reset_password():
-    email = "chasemadrian@protonmail.com"
+    email = "admin@example.com"
     new_password = "demo-tpot-api-key"
 
     print("🔄 Connecting to database...")

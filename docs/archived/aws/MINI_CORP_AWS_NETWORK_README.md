@@ -37,7 +37,7 @@ This document provides a comprehensive plan for creating a "mini corporate netwo
 - **EKS Cluster**: `mini-xdr-cluster` in `us-east-1`
 - **Namespace**: `mini-xdr` with backend and frontend pods running
 - **ALB Endpoint**: `http://k8s-minixdr-minixdri-dc5fc1df8b-1132128475.us-east-1.elb.amazonaws.com`
-- **Authentication**: Working JWT authentication with user `chasemadrian@protonmail.com`
+- **Authentication**: Working JWT authentication with user `admin@example.com`
 - **Onboarding System**: Complete 4-step wizard (Profile → Network Scan → Agents → Validation)
 
 ### 🔧 Onboarding Architecture
@@ -700,7 +700,7 @@ nmap -p 22,80,443,445,3389 10.100.10.0/24  # Port scanning
 
 ### 2. Mini-XDR Onboarding
 1. Access Mini-XDR frontend: `http://k8s-minixdr-minixdri-dc5fc1df8b-1132128475.us-east-1.elb.amazonaws.com`
-2. Login with `chasemadrian@protonmail.com`
+2. Login with `admin@example.com`
 3. Start onboarding wizard
 4. Configure network scan for `10.100.10.0/24`
 5. Verify asset discovery and classification
@@ -873,7 +873,7 @@ If instances are missing, confirm they use the `MiniCorpSSMInstanceProfile` role
 
 ### Step 1: Access Mini-XDR Frontend
 1. **URL**: `http://k8s-minixdr-minixdri-dc5fc1df8b-1132128475.us-east-1.elb.amazonaws.com`
-2. **Login**: Use `chasemadrian@protonmail.com`
+2. **Login**: Use `admin@example.com`
 3. **Navigation**: Access Organization Settings → Onboarding
 
 ### Step 2: Profile Setup

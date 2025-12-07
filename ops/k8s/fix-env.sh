@@ -1,7 +1,7 @@
 #!/bin/bash
 # Fix .env file issues
 
-cd /Users/chasemad/Desktop/mini-xdr/backend
+cd ./backend
 
 echo "🔧 Fixing .env file issues..."
 

@@ -84,7 +84,7 @@ This demo showcases Mini-XDR AI agents automatically defending your T-Pot honeyp
 ### One-Command Setup
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 ./scripts/SETUP_TPOT_DEMO.sh
 ```
 

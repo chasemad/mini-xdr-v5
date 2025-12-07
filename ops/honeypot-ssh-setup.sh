@@ -17,7 +17,7 @@ sudo chmod 700 /home/xdrops/.ssh
 # 3. Add the public key (you'll need to paste your public key here)
 echo "Adding SSH public key..."
 cat << 'EOF' | sudo tee /home/xdrops/.ssh/authorized_keys
-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPvpS9tZDSnYx9WZyymXagulQLnxIdxXtwOTzAYgwWUL chasemad@Chases-MacBook-Pro.local
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPvpS9tZDSnYx9WZyymXagulQLnxIdxXtwOTzAYgwWUL user@localhost
 EOF
 
 sudo chmod 600 /home/xdrops/.ssh/authorized_keys

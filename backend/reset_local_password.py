@@ -8,7 +8,7 @@ import bcrypt
 
 
 async def reset_password():
-    db_path = "/Users/chasemad/Desktop/mini-xdr/backend/xdr.db"
+    db_path = "./backend/xdr.db"
     email = "admin@example.com"
     new_password = "demo-tpot-api-key"  # Your actual password
 

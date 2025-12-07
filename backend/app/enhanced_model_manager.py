@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 class EnhancedModelManager:
     """Complete management interface for enhanced threat detection models"""
 
-    def __init__(self, models_dir: str = "/Users/chasemad/Desktop/mini-xdr/models"):
+    def __init__(self, models_dir: str = "./models"):
         self.models_dir = Path(models_dir)
         self.models_dir.mkdir(parents=True, exist_ok=True)
 

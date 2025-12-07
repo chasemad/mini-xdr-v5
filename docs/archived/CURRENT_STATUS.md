@@ -37,7 +37,7 @@ The database tables need to be initialized. This is causing the login issue.
 Run this command to initialize the database:
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 
 # Restart backend to trigger table creation
 docker-compose restart backend

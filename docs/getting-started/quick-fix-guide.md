@@ -10,7 +10,7 @@ Incident detail page action buttons (like "Block IP") were failing:
 
 ### Step 1: Configure T-Pot Password
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 ./scripts/configure_tpot.sh
 ```
 

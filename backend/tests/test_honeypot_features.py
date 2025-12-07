@@ -177,7 +177,7 @@ def test_frontend_forensics():
     print("\n🔍 Testing Digital Forensics Frontend...")
     
     try:
-        frontend_file = "/Users/chasemad/Desktop/mini-xdr/frontend/app/incidents/incident/[id]/page.tsx"
+        frontend_file = "./frontend/app/incidents/incident/[id]/page.tsx"
         
         with open(frontend_file, 'r') as f:
             content = f.read()

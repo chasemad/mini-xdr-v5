@@ -219,7 +219,7 @@ dependencies:
     - boto3
 """
         
-        env_dir = Path("/Users/chasemad/Desktop/mini-xdr/scripts/azure-ml/environment")
+        env_dir = Path("$(cd "$(dirname "$0")/../.." ${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))}${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))} pwd)/scripts/azure-ml/environment")
         env_dir.mkdir(parents=True, exist_ok=True)
         
         conda_file = env_dir / "conda.yaml"
@@ -244,7 +244,7 @@ dependencies:
             logger.warning(f"   ⚠️  Failed to create environment: {e}")
             return None
     
-    def upload_training_data(self, data_path="/Users/chasemad/Desktop/mini-xdr/datasets/real_datasets"):
+    def upload_training_data(self, data_path="$(cd "$(dirname "$0")/../.." ${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))}${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))} pwd)/datasets/real_datasets"):
         """Upload training data to Azure ML datastore"""
         logger.info(f"\n📤 Uploading Training Data")
         logger.info(f"   Source: {data_path}")
@@ -281,7 +281,7 @@ dependencies:
             'location': self.location
         }
         
-        config_file = Path("/Users/chasemad/Desktop/mini-xdr/scripts/azure-ml/workspace_config.json")
+        config_file = Path("$(cd "$(dirname "$0")/../.." ${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))}${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))} pwd)/scripts/azure-ml/workspace_config.json")
         config_file.parent.mkdir(parents=True, exist_ok=True)
         
         with open(config_file, 'w') as f:

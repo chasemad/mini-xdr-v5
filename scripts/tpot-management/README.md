@@ -7,7 +7,7 @@ Management scripts for T-Pot honeypot deployment and integration with Mini-XDR.
 ### 1️⃣ Setup All T-Pot Workflows (Recommended)
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 source backend/venv/bin/activate
 python3 scripts/tpot-management/setup-tpot-workflows.py
 ```
@@ -104,7 +104,7 @@ export MINI_XDR_API_KEY="your-api-key-here"
 
 ### T-Pot Connection
 
-T-Pot configuration: `/Users/chasemad/Desktop/mini-xdr/config/tpot/tpot-config.json`
+T-Pot configuration: `./config/tpot/tpot-config.json`
 
 ### Database
 

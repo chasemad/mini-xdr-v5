@@ -24,7 +24,7 @@ Fixed critical issues preventing incident action execution buttons from working 
 ### 1. Configure T-Pot Credentials (REQUIRED)
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 ./scripts/configure_tpot.sh
 ```
 

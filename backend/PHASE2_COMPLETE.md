@@ -320,7 +320,7 @@ thresholds = threshold_opt.optimize(val_probs, val_labels)
 
 1. **Apply Database Migration**:
    ```bash
-   cd /Users/chasemad/Desktop/mini-xdr/backend
+   cd ./backend
    ./venv/bin/alembic upgrade head
    ```
 

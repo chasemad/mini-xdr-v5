@@ -377,7 +377,7 @@ async def main():
             return
     except Exception:
         print("❌ Cannot connect to backend. Please start Mini-XDR first:")
-        print("   cd /Users/chasemad/Desktop/mini-xdr && ./scripts/start-all.sh")
+        print("   cd $(cd "$(dirname "$0")/../.." ${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))}${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))} pwd) && ./scripts/start-all.sh")
         return
     
     print("🧠 Training Data Generator for Adaptive Detection")

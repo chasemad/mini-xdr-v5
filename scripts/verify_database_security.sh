@@ -7,7 +7,7 @@ echo "🔒 MINI-XDR DATABASE SECURITY & FUNCTIONALITY VERIFICATION"
 echo "=========================================================="
 echo ""
 
-cd /Users/chasemad/Desktop/mini-xdr/backend
+cd $(cd "$(dirname "$0")/../.." .. pwd)/backend
 
 # Color codes
 GREEN='\033[0;32m'

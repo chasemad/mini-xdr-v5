@@ -169,7 +169,7 @@ echo ""
 log "Checking T-Pot connectivity..."
 
 # Read T-Pot config if available
-TPOT_CONFIG="/Users/chasemad/Desktop/mini-xdr/config/tpot/tpot-config.json"
+TPOT_CONFIG="$(cd "$(dirname "$0")/../.." .. pwd)/config/tpot/tpot-config.json"
 if [ -f "$TPOT_CONFIG" ]; then
     TPOT_IP=$(grep -o '"allowed_ips":\s*\["[^"]*"' "$TPOT_CONFIG" | grep -o '[0-9.]*' | head -1)
     if [ -n "$TPOT_IP" ]; then

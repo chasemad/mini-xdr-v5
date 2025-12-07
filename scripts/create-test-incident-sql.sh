@@ -12,7 +12,7 @@ echo ""
 echo "Attacker IP: $ATTACKER_IP"
 echo ""
 
-sqlite3 /Users/chasemad/Desktop/mini-xdr/backend/xdr.db << SQL
+sqlite3 $(cd "$(dirname "$0")/../.." .. pwd)/backend/xdr.db << SQL
 -- Insert events
 INSERT INTO events (src_ip, dst_port, eventid, message, raw, source_type, hostname, ts)
 VALUES

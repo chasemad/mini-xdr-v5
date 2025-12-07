@@ -8,7 +8,7 @@ set -euo pipefail
 # Configuration
 REGION="${AWS_REGION:-us-east-1}"
 STACK_NAME="mini-xdr-backend"
-PROJECT_DIR="/Users/chasemad/Desktop/mini-xdr"
+PROJECT_DIR="."
 KEY_NAME="${KEY_NAME:-mini-xdr-tpot-key}"
 
 # Colors for output

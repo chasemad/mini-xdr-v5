@@ -20,7 +20,7 @@ This guide provides instructions for deploying a T-Pot honeypot on AWS using the
 
 ### 1. Run the Deployment Script
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/ops
+cd ./ops
 ./aws-tpot-honeypot-setup.sh
 ```
 

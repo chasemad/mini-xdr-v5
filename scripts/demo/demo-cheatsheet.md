@@ -8,7 +8,7 @@
 
 ```bash
 # 1. Start services
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 docker-compose up -d
 
 # 2. Run pre-demo setup

@@ -22,7 +22,7 @@ TPOT_HOST="74.235.242.205"
 TPOT_SSH_PORT=64295
 TPOT_WEB_PORT=64297
 SSH_KEY="$HOME/.ssh/mini-xdr-tpot-azure"
-AZURE_KEY_VAULT="minixdrchasemad"
+AZURE_KEY_VAULT="minixdr-keyvault"
 
 # Test counters
 TESTS_PASSED=0

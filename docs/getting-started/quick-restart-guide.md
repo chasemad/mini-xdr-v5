@@ -13,7 +13,7 @@ Frontend needs restart to:
 
 ### Option 1: Use the Restart Script
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 ./RESTART_SERVERS.sh
 ```
 
@@ -36,7 +36,7 @@ lsof -Pi :3000 -sTCP:LISTEN -t | xargs kill
 
 #### Start Backend
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/backend
+cd ./backend
 source venv/bin/activate
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
@@ -45,7 +45,7 @@ Wait for: `✅ Successfully connected to T-Pot at 24.11.0.176`
 
 #### Start Frontend (in new terminal)
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/frontend
+cd ./frontend
 npm run dev
 ```
 
@@ -84,7 +84,7 @@ INFO:     Uvicorn running on http://0.0.0.0:8000
 lsof -Pi :8000 -sTCP:LISTEN
 
 # View backend logs
-tail -f /Users/chasemad/Desktop/mini-xdr/backend/logs/server.log
+tail -f ./backend/logs/server.log
 ```
 
 ### Frontend Won't Start
@@ -93,7 +93,7 @@ tail -f /Users/chasemad/Desktop/mini-xdr/backend/logs/server.log
 lsof -Pi :3000 -sTCP:LISTEN
 
 # View frontend logs
-tail -f /Users/chasemad/Desktop/mini-xdr/frontend/logs/server.log
+tail -f ./frontend/logs/server.log
 ```
 
 ### Still Getting 401 Errors

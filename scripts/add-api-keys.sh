@@ -11,7 +11,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-KEY_VAULT_NAME="minixdrchasemad"
+KEY_VAULT_NAME="minixdr-keyvault"
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║           Add API Keys to Azure Key Vault                     ║${NC}"

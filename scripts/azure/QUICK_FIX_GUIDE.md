@@ -11,7 +11,7 @@ Based on expert analysis, follow this sequence:
 **Why**: Bypasses LoadBalancer issues, most reliable in AKS
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 
 # Run the NGINX Ingress deployment script
 chmod +x scripts/azure/deploy-nginx-ingress.sh
@@ -71,7 +71,7 @@ kubectl get pods -n mini-xdr
 
 1. **Run the deployment script**:
    ```bash
-   cd /Users/chasemad/Desktop/mini-xdr
+   cd .
    chmod +x scripts/azure/deploy-nginx-ingress.sh
    ./scripts/azure/deploy-nginx-ingress.sh
    ```
@@ -247,7 +247,7 @@ kubectl apply -f /tmp/mini-xdr-lb-backup-[TIMESTAMP].yaml
 **Ready to go?** Run this now:
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 ./scripts/azure/deploy-nginx-ingress.sh
 ```
 

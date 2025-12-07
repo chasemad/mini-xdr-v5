@@ -177,7 +177,7 @@
    lsof -ti:8000 | xargs kill -9
 
    # Restart backend
-   cd /Users/chasemad/Desktop/mini-xdr/backend
+   cd ./backend
    ./venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
    ```
 
@@ -218,7 +218,7 @@ Open in browser: http://localhost:3000
 
 ### Database Verification
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/backend
+cd ./backend
 ./venv/bin/python -c "from app.models import TrainingSample; print('✅ TrainingSample model imported successfully')"
 ```
 **Expected**: Success message ✅
@@ -274,11 +274,11 @@ lsof -ti:8000 | xargs kill -9
 lsof -ti:3000 | xargs kill -9
 
 # Restart backend
-cd /Users/chasemad/Desktop/mini-xdr/backend
+cd ./backend
 ./venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &
 
 # Restart frontend
-cd /Users/chasemad/Desktop/mini-xdr/frontend
+cd ./frontend
 npm run dev &
 ```
 
@@ -300,8 +300,8 @@ npm run dev &
 ---
 
 **Documentation**:
-- Phase 2 Complete Guide: `/Users/chasemad/Desktop/mini-xdr/backend/PHASE2_COMPLETE.md`
-- Phase 2 Progress Summary: `/Users/chasemad/Desktop/mini-xdr/backend/PHASE2_PROGRESS_SUMMARY.md`
+- Phase 2 Complete Guide: `./backend/PHASE2_COMPLETE.md`
+- Phase 2 Progress Summary: `./backend/PHASE2_PROGRESS_SUMMARY.md`
 
 **Last Updated**: November 21, 2025
 **Status**: ALL SYSTEMS GO 🚀

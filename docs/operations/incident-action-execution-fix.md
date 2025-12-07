@@ -215,7 +215,7 @@ Created `/scripts/configure_tpot.sh` to help users:
 
 ### 1. Configure T-Pot Credentials
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 ./scripts/configure_tpot.sh
 ```
 

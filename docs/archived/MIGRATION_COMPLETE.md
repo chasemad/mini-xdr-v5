@@ -30,7 +30,7 @@ Your Mini-XDR has been successfully migrated from AWS-dependent architecture to 
 ### 1. Set Your API Keys (Required)
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 
 # Create .env file
 cat > .env << 'EOF'
@@ -276,7 +276,7 @@ Your Mini-XDR is now:
 **Ready to start?**
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 
 # Add your API keys to .env
 nano .env

@@ -160,7 +160,7 @@ async def lifespan(app: FastAPI):
             Path(__file__).parent.parent.parent / "models",  # Project root models
             Path(__file__).parent.parent / "models",  # Backend models
             Path(
-                "/Users/chasemad/Desktop/mini-xdr/models"
+                "./models"
             ),  # Absolute path as fallback
         ]
 

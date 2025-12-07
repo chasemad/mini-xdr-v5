@@ -44,7 +44,7 @@
 
 ```bash
 # Navigate to project
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 
 # Run pre-demo setup script
 ./scripts/demo/pre-demo-setup.sh

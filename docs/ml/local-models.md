@@ -339,7 +339,7 @@ curl http://localhost:8000/api/ml/training/status
 
 ```bash
 # Local training (advanced users)
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 python scripts/train_local_models.py \
   --data-path ./datasets/training \
   --output-path ./models/local_trained \
@@ -805,7 +805,7 @@ Planned: Privacy-preserving distributed training
 
 ```bash
 # Check model files exist
-ls -la /Users/chasemad/Desktop/mini-xdr/models/local_trained/
+ls -la ./models/local_trained/
 
 # Verify file permissions
 chmod -R 755 models/

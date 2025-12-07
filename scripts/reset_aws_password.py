@@ -11,7 +11,7 @@ from sqlalchemy import text
 async def reset_password():
     # AWS RDS connection details
     db_url = "postgresql://user:password@mini-xdr-postgres.ccnkck4wij3r.us-east-1.rds.amazonaws.com:5432/xdrdb"
-    email = "chasemadrian@protonmail.com"
+    email = "admin@example.com"
     new_password = "SecurePass123!"
 
     print("🔄 Connecting to AWS RDS database...")

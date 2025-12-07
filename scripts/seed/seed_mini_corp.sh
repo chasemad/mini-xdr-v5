@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ALB_URL=${ALB_URL:-${1:-}}
-ADMIN_EMAIL=${ADMIN_EMAIL:-"chasemadrian@protonmail.com"}
+ADMIN_EMAIL=${ADMIN_EMAIL:-"admin@example.com"}
 ADMIN_PASSWORD=${ADMIN_PASSWORD:-"demo-tpot-api-key"}
 ORG_NAME=${ORG_NAME:-"Mini Corp"}
 

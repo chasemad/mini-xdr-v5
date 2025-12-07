@@ -3,7 +3,7 @@
 ## One-Command Testing
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 ./scripts/test-seamless-onboarding.sh full
 ```
 
@@ -21,7 +21,7 @@ This single command will:
 
 ```bash
 # From your Mac
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 
 # Make sure latest code is committed
 git add .
@@ -100,7 +100,7 @@ EOF
 ## Run Full Test
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 ./scripts/test-seamless-onboarding.sh full
 ```
 

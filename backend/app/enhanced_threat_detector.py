@@ -77,7 +77,7 @@ class SpecialistModelManager:
     SPECIALIST_CONFIRMATION_THRESHOLD = 0.85
 
     def __init__(
-        self, models_dir: str = "/Users/chasemad/Desktop/mini-xdr/models/local_trained"
+        self, models_dir: str = "./models/local_trained"
     ):
         self.models_dir = Path(models_dir)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

@@ -281,14 +281,14 @@ aws/launch_all_models_sagemaker.py # Training pipeline (if retraining needed)
 
 **Step 1: Verify AWS Credentials**
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/aws
+cd ./aws
 aws sts get-caller-identity
 # Should show your AWS account
 ```
 
 **Step 2: Upload Models to S3**
 ```bash
-# Your models are in: /Users/chasemad/Desktop/mini-xdr/models/
+# Your models are in: ./models/
 
 # Package models (script handles this)
 python3 deploy_all_models.py
@@ -452,7 +452,7 @@ All scripts in `aws/` directory:
 ### Deploy to SageMaker (Serverless)
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/aws
+cd ./aws
 
 # Update deploy_all_models.py to use serverless
 # Change instance_type to 'serverless'

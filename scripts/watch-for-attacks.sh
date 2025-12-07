@@ -47,14 +47,14 @@ if data and len(data) > 0:
     last_incident_count=$incident_count
 
     # Check database for events
-    event_count=$(sqlite3 /Users/chasemad/Desktop/mini-xdr/backend/xdr.db "SELECT COUNT(*) FROM events WHERE eventid LIKE '%cowrie%'" 2>/dev/null || echo "0")
+    event_count=$(sqlite3 $(cd "$(dirname "$0")/../.." .. pwd)/backend/xdr.db "SELECT COUNT(*) FROM events WHERE eventid LIKE '%cowrie%'" 2>/dev/null || echo "0")
 
     if [ "$event_count" -gt "$last_event_count" ]; then
         new_events=$((event_count - last_event_count))
         echo "[$(date +%H:%M:%S)] 📥 +$new_events new events (Total: $event_count events, $incident_count incidents)"
 
         # Show latest event
-        sqlite3 /Users/chasemad/Desktop/mini-xdr/backend/xdr.db "
+        sqlite3 $(cd "$(dirname "$0")/../.." .. pwd)/backend/xdr.db "
             SELECT src_ip, eventid, ts
             FROM events
             WHERE eventid LIKE '%cowrie%'

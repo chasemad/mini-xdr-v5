@@ -7,7 +7,7 @@ import sys
 import os
 import torch
 import numpy as np
-sys.path.append('/Users/chasemad/Desktop/mini-xdr/backend')
+sys.path.append('./backend')
 
 from app.deep_learning_models import DeepLearningModelManager
 
@@ -27,7 +27,7 @@ def test_comprehensive_model():
 
     # Load models
     try:
-        model_dir = "/Users/chasemad/Desktop/mini-xdr/models"
+        model_dir = "./models"
         results = manager.load_models(model_dir)
         print(f"📊 Model loading results: {results}")
 

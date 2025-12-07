@@ -15,7 +15,7 @@ Allowed Subnet:  172.16.110.0/24
 ### One Command Setup
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 ./scripts/SETUP_TPOT_DEMO.sh
 ```
 

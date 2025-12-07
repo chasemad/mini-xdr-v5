@@ -9,7 +9,7 @@ This document covers data management operations for Mini-XDR, including cleanup 
 If you need to clear test/mock data or reset the system:
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/backend
+cd ./backend
 
 # Clear all incidents and events (requires API key)
 curl -X DELETE http://localhost:8000/admin/clear-database \
@@ -27,7 +27,7 @@ sqlite3 xdr.db "VACUUM; ANALYZE;"
 Evidence files are stored in `backend/evidence/` directory:
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/backend
+cd ./backend
 rm -rf evidence/*
 ```
 
@@ -36,7 +36,7 @@ rm -rf evidence/*
 Qdrant vector embeddings are stored in `backend/qdrant_storage/`:
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/backend
+cd ./backend
 rm -rf qdrant_storage/*
 ```
 
@@ -118,12 +118,12 @@ BACKUP_DIR="/path/to/backups"
 DATE=$(date +%Y%m%d_%H%M%S)
 
 # Backup SQLite database
-cp /Users/chasemad/Desktop/mini-xdr/backend/xdr.db \
+cp ./backend/xdr.db \
    $BACKUP_DIR/xdr.db.$DATE
 
 # Backup evidence
 tar -czf $BACKUP_DIR/evidence.$DATE.tar.gz \
-   /Users/chasemad/Desktop/mini-xdr/backend/evidence/
+   ./backend/evidence/
 
 # Cleanup old backups (keep 30 days)
 find $BACKUP_DIR -name "xdr.db.*" -mtime +30 -delete

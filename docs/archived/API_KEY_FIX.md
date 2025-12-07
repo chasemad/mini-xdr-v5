@@ -30,13 +30,13 @@ The API key placeholders have been updated in:
 
 ### Check Backend API Key
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/backend
+cd ./backend
 grep "^API_KEY=" .env
 ```
 
 ### Check Frontend API Key
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/frontend
+cd ./frontend
 grep "^NEXT_PUBLIC_API_KEY=" env.local
 ```
 

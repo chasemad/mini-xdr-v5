@@ -9,7 +9,7 @@ This guide covers the comprehensive workflow automation system for your T-Pot ho
 ### 1. Run the Setup Script
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 source backend/venv/bin/activate
 python3 scripts/tpot-management/setup-tpot-workflows.py
 ```

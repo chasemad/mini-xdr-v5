@@ -107,7 +107,7 @@ URL: mini-xdr-postgres.ccnkck4wij3r.us-east-1.rds.amazonaws.com:5432/xdrdb
 
 ```
 Method: JWT + API Key
-Admin Login: ✅ Working (chasemadrian@protonmail.com)
+Admin Login: ✅ Working (admin@example.com)
 Demo Login: ✅ Working (demo@minicorp.com)
 API Key: ✅ Found and functional
 ```

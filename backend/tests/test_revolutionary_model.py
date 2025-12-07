@@ -9,7 +9,7 @@ import sys
 
 import numpy as np
 
-sys.path.append("/Users/chasemad/Desktop/mini-xdr/backend")
+sys.path.append("./backend")
 
 
 async def test_revolutionary_model():

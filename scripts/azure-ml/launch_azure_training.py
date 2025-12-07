@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 class AzureMLTrainingLauncher:
     """Launch fast GPU training on Azure ML"""
     
-    def __init__(self, config_file="/Users/chasemad/Desktop/mini-xdr/scripts/azure-ml/workspace_config.json"):
+    def __init__(self, config_file="$(cd "$(dirname "$0")/../.." ${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))}${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))} pwd)/scripts/azure-ml/workspace_config.json"):
         # Load workspace config
         with open(config_file, 'r') as f:
             self.config = json.load(f)
@@ -363,7 +363,7 @@ if __name__ == '__main__':
     train_model(args)
 '''
         
-        script_path = Path("/Users/chasemad/Desktop/mini-xdr/scripts/azure-ml/azure_train.py")
+        script_path = Path("$(cd "$(dirname "$0")/../.." ${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))}${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))} pwd)/scripts/azure-ml/azure_train.py")
         script_path.parent.mkdir(parents=True, exist_ok=True)
         
         with open(script_path, 'w') as f:
@@ -386,7 +386,7 @@ if __name__ == '__main__':
             inputs={
                 "training_data": Input(
                     type="uri_folder",
-                    path="/Users/chasemad/Desktop/mini-xdr/datasets/real_datasets"
+                    path="$(cd "$(dirname "$0")/../.." ${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))}${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))} pwd)/datasets/real_datasets"
                 )
             },
             outputs={
@@ -418,7 +418,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='Launch Azure ML Training')
-    parser.add_argument('--config', type=str, default='/Users/chasemad/Desktop/mini-xdr/scripts/azure-ml/workspace_config.json')
+    parser.add_argument('--config', type=str, default='$(cd "$(dirname "$0")/../.." ${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))}${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))} pwd)/scripts/azure-ml/workspace_config.json')
     parser.add_argument('--compute', type=str, default='gpu-cluster-t4', help='Compute target (gpu-cluster-t4, gpu-cluster-v100, cpu-cluster)')
     parser.add_argument('--spot', action='store_true', help='Use spot instances for lower cost')
     

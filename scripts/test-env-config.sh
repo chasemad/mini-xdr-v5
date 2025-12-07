@@ -2,7 +2,7 @@
 # Quick test script to verify .env configuration
 # Run this to check your API keys and T-Pot workflows
 
-cd /Users/chasemad/Desktop/mini-xdr/backend
+cd $(cd "$(dirname "$0")/../.." .. pwd)/backend
 
 echo ""
 echo "🔍 Mini-XDR Configuration Test"

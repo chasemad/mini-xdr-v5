@@ -21,7 +21,7 @@ def create_model_package():
     code_dir.mkdir(exist_ok=True)
 
     # Copy inference script
-    inference_src = Path("/Users/chasemad/Desktop/mini-xdr/scripts/ml-training/inference.py")
+    inference_src = Path("$(cd "$(dirname "$0")/../.." ${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))}${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))} pwd)/scripts/ml-training/inference.py")
     inference_dst = code_dir / "inference.py"
     shutil.copy2(inference_src, inference_dst)
 
@@ -50,7 +50,7 @@ numpy>=1.21.0
         }, f, indent=2)
 
     # Create the tar.gz archive
-    output_path = Path("/Users/chasemad/Desktop/mini-xdr/models/model.tar.gz")
+    output_path = Path("$(cd "$(dirname "$0")/../.." ${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))}${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))} pwd)/models/model.tar.gz")
     output_path.parent.mkdir(exist_ok=True)
 
     with tarfile.open(output_path, "w:gz") as tar:

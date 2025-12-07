@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 class WindowsDatasetDownloader:
     """Downloads and extracts Windows/AD attack datasets"""
     
-    def __init__(self, base_dir="/Users/chasemad/Desktop/mini-xdr/datasets/windows_ad_datasets"):
+    def __init__(self, base_dir="$(cd "$(dirname "$0")/../.." ${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))}${PROJECT_ROOT:-$(dirname $(dirname $(dirname $(realpath "$0"))))} pwd)/datasets/windows_ad_datasets"):
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
         

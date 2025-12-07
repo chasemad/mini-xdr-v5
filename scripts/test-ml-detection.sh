@@ -11,7 +11,7 @@ RED='\033[0;31m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-API_KEY=$(cat /Users/chasemad/Desktop/mini-xdr/backend/.env | grep "^API_KEY=" | cut -d'=' -f2)
+API_KEY=$(cat $(cd "$(dirname "$0")/../.." .. pwd)/backend/.env | grep "^API_KEY=" | cut -d'=' -f2)
 BACKEND="http://localhost:8000"
 
 echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"

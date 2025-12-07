@@ -16,7 +16,7 @@ This directory contains everything you need to deliver a professional demo of Mi
 This checks all services, verifies connectivity, and opens browser windows:
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 ./scripts/demo/pre-demo-setup.sh
 ```
 

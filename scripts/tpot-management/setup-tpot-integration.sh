@@ -25,9 +25,9 @@ TPOT_API_KEY=$(openssl rand -hex 32)
 
 # 2. Create T-Pot configuration
 log "Creating T-Pot configuration..."
-mkdir -p /Users/chasemad/Desktop/mini-xdr/config/tpot
+mkdir -p $(cd "$(dirname "$0")/../.." .. pwd)/config/tpot
 
-cat > /Users/chasemad/Desktop/mini-xdr/config/tpot/tpot-config.json << EOF
+cat > $(cd "$(dirname "$0")/../.." .. pwd)/config/tpot/tpot-config.json << EOF
 {
   "name": "T-Pot Honeypot",
   "api_key": "$TPOT_API_KEY",
@@ -52,7 +52,7 @@ EOF
 
 # 3. Create Fluent Bit configuration for T-Pot
 log "Creating Fluent Bit configuration for T-Pot..."
-cat > /Users/chasemad/Desktop/mini-xdr/config/tpot/fluent-bit-tpot.conf << 'EOF'
+cat > $(cd "$(dirname "$0")/../.." .. pwd)/config/tpot/fluent-bit-tpot.conf << 'EOF'
 [SERVICE]
     Flush         5
     Log_Level     info
@@ -131,7 +131,7 @@ EOF
 
 # 4. Create T-Pot deployment script for Fluent Bit
 log "Creating T-Pot deployment script..."
-cat > /Users/chasemad/Desktop/mini-xdr/deploy-tpot-logging.sh << 'DEPLOYEOF'
+cat > $(cd "$(dirname "$0")/../.." .. pwd)/deploy-tpot-logging.sh << 'DEPLOYEOF'
 #!/bin/bash
 # Deploy Fluent Bit configuration to T-Pot honeypot
 # Run this AFTER T-Pot is started and accessible
@@ -151,7 +151,7 @@ echo "🔧 Deploying log forwarding to T-Pot at $TPOT_IP"
 echo "📡 Logs will be sent to Mini-XDR at $LOCAL_IP:8000"
 
 # Replace LOCAL_IP in config
-sed "s/YOUR_LOCAL_IP/$LOCAL_IP/g" /Users/chasemad/Desktop/mini-xdr/config/tpot/fluent-bit-tpot.conf > /tmp/fluent-bit-tpot.conf
+sed "s/YOUR_LOCAL_IP/$LOCAL_IP/g" $(cd "$(dirname "$0")/../.." .. pwd)/config/tpot/fluent-bit-tpot.conf > /tmp/fluent-bit-tpot.conf
 
 # Copy configuration to T-Pot
 echo "📁 Copying Fluent Bit configuration..."
@@ -200,18 +200,18 @@ echo "✅ T-Pot log forwarding deployed successfully!"
 echo "📊 Logs should now be flowing to Mini-XDR at $LOCAL_IP:8000"
 DEPLOYEOF
 
-chmod +x /Users/chasemad/Desktop/mini-xdr/deploy-tpot-logging.sh
+chmod +x $(cd "$(dirname "$0")/../.." .. pwd)/deploy-tpot-logging.sh
 
 # 5. Update Mini-XDR environment with T-Pot settings
 log "Updating Mini-XDR environment..."
-if [ -f "/Users/chasemad/Desktop/mini-xdr/backend/.env" ]; then
+if [ -f "$(cd "$(dirname "$0")/../.." .. pwd)/backend/.env" ]; then
     # Add T-Pot configuration to existing .env
-    echo "" >> /Users/chasemad/Desktop/mini-xdr/backend/.env
-    echo "# T-Pot Honeypot Integration" >> /Users/chasemad/Desktop/mini-xdr/backend/.env
-    echo "TPOT_API_KEY=$TPOT_API_KEY" >> /Users/chasemad/Desktop/mini-xdr/backend/.env
-    echo "TPOT_HOST=34.193.101.171" >> /Users/chasemad/Desktop/mini-xdr/backend/.env
-    echo "TPOT_SSH_PORT=64295" >> /Users/chasemad/Desktop/mini-xdr/backend/.env
-    echo "TPOT_WEB_PORT=64297" >> /Users/chasemad/Desktop/mini-xdr/backend/.env
+    echo "" >> $(cd "$(dirname "$0")/../.." .. pwd)/backend/.env
+    echo "# T-Pot Honeypot Integration" >> $(cd "$(dirname "$0")/../.." .. pwd)/backend/.env
+    echo "TPOT_API_KEY=$TPOT_API_KEY" >> $(cd "$(dirname "$0")/../.." .. pwd)/backend/.env
+    echo "TPOT_HOST=34.193.101.171" >> $(cd "$(dirname "$0")/../.." .. pwd)/backend/.env
+    echo "TPOT_SSH_PORT=64295" >> $(cd "$(dirname "$0")/../.." .. pwd)/backend/.env
+    echo "TPOT_WEB_PORT=64297" >> $(cd "$(dirname "$0")/../.." .. pwd)/backend/.env
     success "Added T-Pot configuration to existing .env file"
 else
     warning ".env file not found - you may need to create it"

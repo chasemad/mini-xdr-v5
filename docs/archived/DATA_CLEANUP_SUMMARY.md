@@ -74,7 +74,7 @@ sudo docker-compose up -d
 ### 3. Start Simulated Attacks
 ```bash
 # Use Kali VM or attack scripts
-cd /Users/chasemad/Desktop/mini-xdr/scripts/attack-simulation
+cd ./scripts/attack-simulation
 
 # Run targeted attacks
 ./multi_ip_attack.sh
@@ -114,7 +114,7 @@ If you need to restore test data for demos:
 
 ```bash
 # Run test incident creation
-cd /Users/chasemad/Desktop/mini-xdr
+cd .
 python3 scripts/testing/trigger_test_incident.py
 ```
 
@@ -127,7 +127,7 @@ Automated cleanup via Cursor AI assistant
 ## Verification
 To verify system is clean at any time:
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/backend
+cd ./backend
 sqlite3 xdr.db "SELECT COUNT(*) FROM incidents; SELECT COUNT(*) FROM events;"
 ```
 

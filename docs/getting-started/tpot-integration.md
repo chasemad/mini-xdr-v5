@@ -41,7 +41,7 @@ Attack Map: localhost:64299 (tunneled)
 
 1. Copy the T-Pot configuration template:
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/backend
+cd ./backend
 cp .env.tpot .env
 ```
 
@@ -56,7 +56,7 @@ HONEYPOT_USER=luxieum
 ### Step 2: Install Required Dependencies
 
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/backend
+cd ./backend
 source venv/bin/activate  # or activate your virtual environment
 pip install asyncssh==2.14.2
 ```
@@ -85,7 +85,7 @@ You should see JSON-formatted attack logs streaming in real-time.
 
 Start the backend which will automatically connect to T-Pot:
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/backend
+cd ./backend
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -104,7 +104,7 @@ INFO:     ✅ T-Pot monitoring initialized successfully
 
 1. Start the frontend:
 ```bash
-cd /Users/chasemad/Desktop/mini-xdr/frontend
+cd ./frontend
 npm run dev
 ```
 
@@ -328,7 +328,7 @@ ERROR: Elasticsearch tunnel not established
 ## Support
 
 For issues or questions:
-1. Check logs: `tail -f /Users/chasemad/Desktop/mini-xdr/backend/backend.log`
+1. Check logs: `tail -f ./backend/backend.log`
 2. Review T-Pot logs: `ssh luxieum@24.11.0.176 -p 64295 "sudo journalctl -u tpot -f"`
 3. Test connectivity: Use the **T-Pot Status** endpoint in Swagger docs at http://localhost:8000/docs
 
