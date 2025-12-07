@@ -1,8 +1,6 @@
-# Mini-XDR: Autonomous AI-Powered Detection & Response Platform
+# Mini-XDR
 
-<div align="center">
-
-**A next-generation Extended Detection and Response (XDR) platform featuring a swarm of 12 AI agents, multi-LLM reasoning, and real-time honeypot integration.**
+An autonomous threat detection and response platform with multi-agent orchestration and LLM-powered analysis.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com)
@@ -11,22 +9,20 @@
 
 *Personal lab project for learning & portfolio. Not affiliated with any employer.*
 
-</div>
+---
+
+## Overview
+
+Mini-XDR implements a two-layer detection architecture:
+
+- **Layer 1 (Fast ML)**: Ensemble ML models process events in <50ms using 79-dimensional feature extraction
+- **Layer 2 (Council of Models)**: Multi-LLM reasoning with Gemini, Grok, and OpenAI for uncertain predictions
+
+The system coordinates 12 specialized agents for threat detection, containment, forensics, attribution, and automated response.
 
 ---
 
-## 🎯 Overview
-
-Mini-XDR is an autonomous AI-powered threat detection and response system built in 2025. It implements a **two-layer intelligence architecture**:
-
-- **Layer 1 (Fast ML)**: Traditional ML ensemble processes events in <50ms using 79-dimensional feature extraction
-- **Layer 2 (Council of Models)**: Multi-LLM reasoning with Gemini, Grok, and OpenAI for deep analysis on uncertain predictions
-
-The platform orchestrates **12 specialized AI agents** that collaborate on threat detection, containment, forensics, attribution, deception, and automated response—all coordinated through an advanced orchestration framework with conflict resolution.
-
----
-
-## 🤖 AI Agent Swarm
+## AI Agents
 
 Mini-XDR deploys **12 specialized AI agents** that work collaboratively:
 
@@ -47,7 +43,7 @@ Mini-XDR deploys **12 specialized AI agents** that work collaboratively:
 
 ---
 
-## 🧠 Council of Models
+## Council of Models
 
 The Council provides **multi-LLM reasoning** for uncertain predictions (ML confidence between 0.5-0.9):
 
@@ -66,7 +62,7 @@ Generates precise remediation scripts:
 
 ---
 
-## 🔬 Machine Learning Stack
+## Machine Learning
 
 ### Feature Engineering
 Extracts **79 features** from security events covering:
@@ -94,7 +90,7 @@ Extracts **79 features** from security events covering:
 
 ---
 
-## 🍯 T-Pot Honeypot Integration
+## T-Pot Honeypot Integration
 
 Real-time integration with [T-Pot](https://github.com/telekom-security/tpotce) honeypot infrastructure:
 
@@ -112,7 +108,7 @@ Real-time integration with [T-Pot](https://github.com/telekom-security/tpotce) h
 
 ---
 
-## 📋 Playbook Engine
+## Playbook Engine
 
 SOAR-style workflow automation with built-in playbooks:
 
@@ -130,7 +126,7 @@ Playbooks support:
 
 ---
 
-## 🖥️ SOC Dashboard
+## SOC Dashboard
 
 Modern Next.js 15 frontend with:
 
@@ -146,7 +142,7 @@ Modern Next.js 15 frontend with:
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 - Docker & Docker Compose
@@ -189,7 +185,7 @@ Open http://localhost:3000 in your browser.
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Layer | Technologies |
 |-------|--------------|
@@ -204,7 +200,7 @@ Open http://localhost:3000 in your browser.
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 mini-xdr/
@@ -228,7 +224,7 @@ mini-xdr/
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! This is an active project focused on advancing autonomous threat detection.
 
@@ -256,7 +252,7 @@ See [docs/getting-started/local-setup.md](docs/getting-started/local-setup.md) f
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
