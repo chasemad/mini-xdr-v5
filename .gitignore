@@ -228,3 +228,4 @@ backend/logs/
 # Large log files
 *.log.*backend/xdr.db
 *.db
+backend/*.log.*
