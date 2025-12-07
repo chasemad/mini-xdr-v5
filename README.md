@@ -2,7 +2,7 @@
 
 **Disclaimer:** Personal lab project for learning & portfolio. Not affiliated with any employer. All credentials are dummy or managed via Secrets Manager.
 
-Built in 2025 (82 commits). 8+ specialized autonomous AI agents handle threat detection, containment, forensics, attribution, deception, and more. Real-time ingestion with Redis Streams and PostgreSQL. Multi-model LLM reasoning (OpenAI GPT, Grok, Gemini, and local Ollama models).
+**Mini-XDR** is an autonomous AI-powered threat detection and response system built in 2025. 8+ specialized AI agents handle threat detection, containment, forensics, attribution, deception, and automated response. Real-time data ingestion via Redis Streams with PostgreSQL persistence. Multi-model LLM reasoning combines OpenAI GPT, Grok, Gemini, and local Ollama models for comprehensive threat analysis.
 
 ## Architecture
 
@@ -60,7 +60,7 @@ _Source: `docs/diagrams/mini-xdr-architecture.mmd`_
 | --- | --- | --- |
 | 8+ autonomous agents (ingestion, containment, forensics, attribution, deception, DLP, EDR, IAM) | ✅ | FastAPI orchestration with Redis Streams event bus |
 | Real-time pipeline | ✅ | Redis Streams + PostgreSQL; multi-source log ingestion |
-| Multi-LLM reasoning | ✅ | OpenAI GPT + Grok + Gemini + Ollama local models with routing |
+| Multi-LLM reasoning | ✅ | OpenAI GPT, Grok, Gemini, and Ollama local models with intelligent routing |
 | Next.js Dashboard | ✅ | Modern React dashboard with real-time updates |
 | Agent coordination | ✅ | Advanced multi-agent orchestration and conflict resolution |
 | Threat intelligence | ✅ | AbuseIPDB, VirusTotal, and custom intelligence feeds |
@@ -68,7 +68,7 @@ _Source: `docs/diagrams/mini-xdr-architecture.mmd`_
 ## Highlights
 
 - Autonomous pipeline: multi-source ingestion → AI-powered analysis → coordinated agent response
-- Multi-model AI reasoning: OpenAI GPT, Grok, Gemini, and local Ollama models for comprehensive threat analysis
+- Multi-model AI reasoning: OpenAI GPT, Grok, Gemini, and Ollama local models for comprehensive threat analysis
 - Advanced agent coordination: conflict resolution, decision optimization, and collaborative intelligence
 - Threat intelligence integration: AbuseIPDB, VirusTotal, and custom intelligence feeds
 - Modern observability: health endpoints, structured logging, and real-time monitoring
