@@ -1,155 +1,342 @@
-# Mini-XDR: Autonomous AI-Powered Detection & Response Lab
+# Mini-XDR: Autonomous AI-Powered Detection & Response Platform
 
-**Disclaimer:** Personal lab project for learning & portfolio. Not affiliated with any employer. All credentials are dummy or managed via Secrets Manager.
+<div align="center">
 
-**Mini-XDR** is an autonomous AI-powered threat detection and response system built in 2025. 8+ specialized AI agents handle threat detection, containment, forensics, attribution, deception, and automated response. PostgreSQL persistence with Redis caching for high-performance operations. Multi-model LLM reasoning combines OpenAI GPT, Grok, and Gemini for comprehensive threat analysis.
+**A next-generation Extended Detection and Response (XDR) platform featuring a swarm of 12 AI agents, multi-LLM reasoning, and real-time honeypot integration.**
 
-## Architecture
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com)
+[![Next.js](https://img.shields.io/badge/Next.js-15-black.svg)](https://nextjs.org)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+*Personal lab project for learning & portfolio. Not affiliated with any employer.*
+
+</div>
+
+---
+
+## 🎯 Overview
+
+Mini-XDR is an autonomous AI-powered threat detection and response system built in 2025. It implements a **two-layer intelligence architecture**:
+
+- **Layer 1 (Fast ML)**: Traditional ML ensemble processes events in <50ms using 79-dimensional feature extraction
+- **Layer 2 (Council of Models)**: Multi-LLM reasoning with Gemini, Grok, and OpenAI for deep analysis on uncertain predictions
+
+The platform orchestrates **12 specialized AI agents** that collaborate on threat detection, containment, forensics, attribution, deception, and automated response—all coordinated through an advanced orchestration framework with conflict resolution.
+
+---
+
+## 🏗️ Architecture
 
 ```mermaid
-flowchart LR
-    subgraph Agents
-        A1[Ingestion]
-        A2[Containment]
-        A3[Forensics]
-        A4[Attribution]
-        A5[Deception]
-        A6[DLP]
-        A7[EDR]
-        A8[IAM]
+flowchart TB
+    subgraph Sources["📥 Data Sources"]
+        S1[Syslog/CEF]
+        S2[JSON Events]
+        S3[Webhooks]
+        S4[🍯 T-Pot Honeypot]
     end
 
-    subgraph Pipeline
-        R[(Redis Cache)]
-        DB[(PostgreSQL)]
+    subgraph Ingestion["Ingestion Layer"]
+        ING[Multi-Source Ingestor]
+        NORM[Event Normalizer]
     end
 
-    subgraph AI
-        O1[OpenAI GPT]
-        G2[Grok]
-        Ge3[Gemini]
+    subgraph FastML["⚡ Layer 1: Fast ML Pipeline"]
+        FE["79-Feature Extractor"]
+        subgraph Models["Ensemble Models"]
+            ISO[Isolation Forest]
+            LSTM[LSTM Autoencoder]
+            XGB[XGBoost]
+            DNN[Deep Neural Network]
+        end
+        ENS[Ensemble Optimizer]
     end
 
-    subgraph Frontend
-        UI[Next.js Dashboard]
+    subgraph Council["🧠 Layer 2: Council of Models"]
+        GEM["Gemini Judge<br/><i>Deep Reasoning</i>"]
+        GROK["Grok Intel<br/><i>X/Twitter OSINT</i>"]
+        OAI["OpenAI<br/><i>Remediation Scripts</i>"]
     end
 
-    Agents --> R
-    R --> DB
-    DB --> UI
-    R --> UI
+    subgraph Agents["🤖 AI Agent Swarm (12 Agents)"]
+        direction LR
+        CONT[Containment]
+        FOR[Forensics]
+        ATTR[Attribution]
+        DEC[Deception]
+        HUNT[Predictive Hunter]
+        COORD[Coordination Hub]
+    end
 
-    R --> O1
-    R --> G2
-    R --> Ge3
-    O1 --> R
-    G2 --> R
-    Ge3 --> R
+    subgraph Response["🎯 Response Engine"]
+        PB[Playbook Engine]
+        RESP[Advanced Responder]
+    end
 
-    UI -->|Feedback| Agents
+    subgraph Data["💾 Persistence"]
+        PG[(PostgreSQL)]
+        RD[(Redis)]
+    end
+
+    subgraph Frontend["🖥️ SOC Dashboard"]
+        UI[Next.js 15]
+        WS[Real-time WebSocket]
+    end
+
+    Sources --> Ingestion
+    Ingestion --> FastML
+    FastML -->|"confidence < 0.9"| Council
+    FastML -->|"confidence ≥ 0.9"| Agents
+    Council --> Agents
+    Agents <--> Response
+    Response <--> Data
+    Data <--> Frontend
+    Frontend -->|"Analyst Actions"| Response
 ```
 
-_Source: `docs/diagrams/mini-xdr-architecture.mmd`_
+---
 
-## Current Status
+## 🤖 AI Agent Swarm
 
-| Capability | Status | Notes |
-| --- | --- | --- |
-| 8+ autonomous agents (ingestion, containment, forensics, attribution, deception, DLP, EDR, IAM) | ✅ | FastAPI orchestration with coordinated multi-agent execution |
-| Real-time pipeline | ✅ | PostgreSQL + Redis caching; multi-source log ingestion |
-| Multi-LLM reasoning | ✅ | OpenAI GPT, Grok, and Gemini with intelligent routing |
-| Next.js Dashboard | ✅ | Modern React dashboard with real-time updates |
-| Agent coordination | ✅ | Advanced multi-agent orchestration and conflict resolution |
-| Threat intelligence | ✅ | AbuseIPDB, VirusTotal, and custom intelligence feeds |
+Mini-XDR deploys **12 specialized AI agents** that work collaboratively:
 
-## Highlights
+| Agent | Capability | Key Features |
+|-------|------------|--------------|
+| **Containment Agent** | Autonomous threat response | LangChain orchestration, IP blocking, host isolation, honeypot-aware containment |
+| **Forensics Agent** | Digital forensics & evidence | Evidence collection, chain of custody, timeline reconstruction, PCAP analysis |
+| **Attribution Agent** | Threat actor identification | Campaign correlation, TTP analysis, infrastructure clustering, actor signatures |
+| **Deception Agent** | Honeypot management | Dynamic honeypot deployment (Cowrie, Dionaea, Conpot), attacker profiling |
+| **EDR Agent** | Endpoint detection & response | Process control, file quarantine, registry monitoring |
+| **IAM Agent** | Identity & access management | Active Directory monitoring, credential protection, privilege analysis |
+| **DLP Agent** | Data loss prevention | Sensitive data scanning, exfiltration blocking, upload monitoring |
+| **Predictive Hunter** | Proactive threat hunting | Time-series forecasting, behavioral baselines, hypothesis generation |
+| **NLP Analyzer** | Natural language interface | Semantic search, query parsing, analyst-friendly insights |
+| **Ingestion Agent** | Multi-source ingestion | Syslog, CEF, JSON normalization, deduplication |
+| **Coordination Hub** | Multi-agent orchestration | Conflict resolution, decision optimization, collaborative intelligence |
+| **LangChain Orchestrator** | ReAct-style orchestration | GPT-4 powered tool selection, multi-step reasoning |
 
-- Autonomous pipeline: multi-source ingestion → AI-powered analysis → coordinated agent response
-- Multi-model AI reasoning: OpenAI GPT, Grok, and Gemini for comprehensive threat analysis
-- Advanced agent coordination: conflict resolution, decision optimization, and collaborative intelligence
-- Threat intelligence integration: AbuseIPDB, VirusTotal, and custom intelligence feeds
-- Modern observability: health endpoints, structured logging, and real-time monitoring
-- Production-ready: Docker containers, database persistence, and scalable architecture
+---
 
-## How to Run
+## 🧠 Council of Models
 
-1. Clone the repo:
-   ```bash
-   git clone https://github.com/chasemad/mini-xdr-v5.git
-   cd mini-xdr-v5
-   ```
-2. (Optional) Create a Python env and install deps:
-   ```bash
-   python3 -m venv .venv && source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
-3. Configure environment (optional - defaults provided):
-   ```bash
-   cp backend/env.example backend/.env
-   # Edit backend/.env to set API keys (OPENAI_API_KEY, XAI_API_KEY, etc.)
-   ```
-4. Bring up the stack:
-   ```bash
-   docker-compose up -d
-   ```
-5. Check services:
-   ```bash
-   docker-compose ps
-   curl -s http://localhost:8000/health
-   ```
-6. Run tests (optional):
-   ```bash
-   ./tests/run_all_tests.sh  # Comprehensive test suite
-   ```
+The Council provides **multi-LLM reasoning** for uncertain predictions (ML confidence between 0.5-0.9):
 
-## Demo
+### Gemini Judge
+Deep reasoning engine with 1M+ token context. Analyzes the 79-dimensional feature vector and event timeline to verify or override ML predictions. Provides explainable reasoning for SOC analysts.
 
-### Quick Start Demo
-1. Start the services: `docker-compose up -d`
-2. Access the dashboard: http://localhost:3000
-3. Generate test data: `./scripts/inject-fake-attack-auth.sh`
-4. Watch real-time threat detection and automated response
+### Grok Intel
+Real-time threat intelligence from X (Twitter). Queries security researcher discussions about file hashes, domains, and IPs. Returns social proof of malicious activity.
 
-### Screenshots
-_Agent coordination and threat response visualization:_
+### OpenAI Remediation
+Generates precise remediation scripts:
+- Firewall rules (Palo Alto, Cisco, iptables)
+- PowerShell/Bash response scripts
+- Network isolation commands
+- Step-by-step action plans
 
-![Agent cycle](docs/media/agent-cycle.gif)
+---
 
-## Repo Layout
+## 🔬 Machine Learning Stack
 
-- `backend/` — FastAPI services, autonomous agents, ML pipelines
-- `frontend/` — Next.js dashboard with real-time threat visualization
-- `docs/` — comprehensive documentation, architecture diagrams, and guides
-- `examples/` — sanitized attack traces and usage examples
-- `scripts/` — utility scripts for deployment, testing, and operations
-- `config/` — configuration templates and deployment settings
-- `ops/` — infrastructure operations and deployment manifests
-- `tests/` — comprehensive test suite and integration tests
+### Feature Engineering
+Extracts **79 features** from security events covering:
+- Temporal patterns (event frequency, time windows)
+- Network behavior (port diversity, connection patterns)
+- Authentication metrics (failed logins, brute force indicators)
+- Payload analysis (command patterns, malware signatures)
+- Behavioral baselines (deviation scores)
 
-## Contributing
+### Detection Models
+
+| Model | Type | Purpose |
+|-------|------|---------|
+| **XDRThreatDetector** | Deep Neural Network | Multi-class threat classification |
+| **XDRAnomalyDetector** | Autoencoder | Unsupervised anomaly detection via reconstruction error |
+| **LSTMAttentionDetector** | LSTM + Attention | Sequential attack pattern recognition |
+| **IsolationForest** | Ensemble | Outlier-based anomaly detection |
+| **XGBoost** | Gradient Boosting | High-precision threat scoring |
+
+### Advanced Capabilities
+- **Ensemble Optimizer**: Weighted voting with model agreement scoring
+- **Federated Learning**: Distributed model training across deployments
+- **Concept Drift Detection**: Automatic model retraining on distribution shift
+- **Explainable AI**: Feature importance and decision reasoning
+
+---
+
+## 🍯 T-Pot Honeypot Integration
+
+Real-time integration with [T-Pot](https://github.com/telekom-security/tpotce) honeypot infrastructure:
+
+- **SSH Monitoring**: Secure tunnel to T-Pot for log streaming
+- **Supported Honeypots**: Cowrie, Dionaea, Suricata, Conpot, ElasticHoney, and more
+- **Automated Response**: UFW-based IP blocking, container management
+- **Elasticsearch Queries**: Direct access to honeypot attack data
+
+**Data Flow:**
+1. Attackers hit T-Pot honeypots (SSH, HTTP, malware, etc.)
+2. Honeypots log attacks to JSON files
+3. `TPotConnector` streams events via SSH tunnel
+4. Events processed through ML pipeline → AI agents
+5. Defensive actions executed on T-Pot infrastructure
+
+---
+
+## 📋 Playbook Engine
+
+SOAR-style workflow automation with built-in playbooks:
+
+- **SSH Brute Force Response**: Rate limiting → IP blocking → forensic collection
+- **Malware Detection**: File quarantine → hash analysis → attribution lookup
+- **Lateral Movement**: Host isolation → credential reset → network sweep
+- **Data Exfiltration**: Connection termination → data audit → compliance notification
+- **Comprehensive Investigation**: Full forensic case with timeline reconstruction
+
+Playbooks support:
+- Conditional execution based on incident context
+- Parallel step execution with dependency graphs
+- Rollback actions for containment reversal
+- AI-powered action suggestions
+
+---
+
+## 🖥️ SOC Dashboard
+
+Modern Next.js 15 frontend with:
+
+| Component | Description |
+|-----------|-------------|
+| **Tactical Decision Center** | Real-time incident queue with AI recommendations |
+| **Enhanced AI Analysis** | LLM-generated threat insights and context |
+| **Workflow Designer** | Visual drag-and-drop playbook builder |
+| **Threat Status Bar** | Live attack metrics and trend indicators |
+| **Action History Panel** | Full audit trail of response actions |
+| **Honeypot Dashboard** | T-Pot attack monitoring and container control |
+| **NLP Query Interface** | Natural language incident search |
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Docker & Docker Compose
+- Git
+- (Optional) Python 3.11+ for local development
+
+### 1. Clone & Configure
+
+```bash
+git clone https://github.com/chasemad/mini-xdr-v5.git
+cd mini-xdr-v5
+
+# Configure API keys (optional - system works without them)
+cp backend/env.example backend/.env
+# Edit .env to add: OPENAI_API_KEY, XAI_API_KEY, ABUSEIPDB_API_KEY, VIRUSTOTAL_API_KEY
+```
+
+### 2. Start the Stack
+
+```bash
+docker-compose up -d
+```
+
+### 3. Verify Services
+
+```bash
+docker-compose ps
+curl -s http://localhost:8000/health | jq
+```
+
+### 4. Access the Dashboard
+
+Open http://localhost:3000 in your browser.
+
+### 5. Generate Test Data (Optional)
+
+```bash
+./scripts/inject-fake-attack-auth.sh
+```
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technologies |
+|-------|--------------|
+| **Backend** | FastAPI, Python 3.11+, SQLAlchemy (async), APScheduler |
+| **Frontend** | Next.js 15, React, TypeScript, TailwindCSS |
+| **Database** | PostgreSQL 15 (asyncpg) |
+| **Cache** | Redis 7 |
+| **ML/AI** | PyTorch, scikit-learn, XGBoost, LangChain |
+| **LLMs** | OpenAI GPT-4, Google Gemini, xAI Grok |
+| **Honeypot** | T-Pot, Cowrie, Dionaea, Suricata |
+| **Infrastructure** | Docker, Kubernetes (optional) |
+
+---
+
+## 📁 Repository Structure
+
+```
+mini-xdr/
+├── backend/                 # FastAPI services and AI agents
+│   └── app/
+│       ├── agents/         # 12 specialized AI agents
+│       ├── council/        # Gemini, Grok, OpenAI nodes
+│       ├── ai_models/      # ML model wrappers
+│       ├── orchestrator/   # LangGraph state machine
+│       └── ...
+├── frontend/               # Next.js 15 SOC dashboard
+│   ├── app/               # App Router pages
+│   └── components/        # React components
+├── docs/                   # Comprehensive documentation
+├── models/                 # Trained ML model files
+├── scripts/                # Utility and demo scripts
+├── config/                 # Configuration templates
+├── ops/                    # Infrastructure manifests
+└── tests/                  # Test suite
+```
+
+---
+
+## 🤝 Contributing
 
 Contributions are welcome! This is an active project focused on advancing autonomous threat detection.
 
 ### How to Contribute
+
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Add tests if applicable
-5. Ensure all tests pass
-6. Commit your changes (`git commit -m 'Add amazing feature'`)
-7. Push to the branch (`git push origin feature/amazing-feature`)
-8. Open a Pull Request
-
-### Development Setup
-See the [Local Setup Guide](docs/getting-started/local-setup.md) for detailed development instructions.
+3. Make your changes and add tests
+4. Ensure all tests pass (`./tests/run_all_tests.sh`)
+5. Commit with a descriptive message
+6. Push and open a Pull Request
 
 ### Areas for Contribution
-- New autonomous agents
-- Enhanced ML models
-- UI/UX improvements
-- Documentation
-- Integration with additional threat intelligence sources
+
+- New AI agents or agent capabilities
+- Additional ML models or detection techniques
+- UI/UX improvements and visualizations
+- Documentation and tutorials
+- Threat intelligence source integrations
 - Performance optimizations
 
-### License
+### Development Setup
+
+See [docs/getting-started/local-setup.md](docs/getting-started/local-setup.md) for detailed instructions.
+
+---
+
+## 📄 License
+
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+<div align="center">
+
+**Built with ❤️ for the security community**
+
+[Documentation](docs/README.md) · [Report Bug](../../issues) · [Request Feature](../../issues)
+
+</div>
