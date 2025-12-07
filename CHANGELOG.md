@@ -97,7 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Created backend-deployment-patched.yaml for ConfigMap mounting
 
 ### Database
-- Reset admin password: chasemadrian@protonmail.com
+- Reset admin password: admin@example.com
 - Created demo account: demo@minicorp.com
 - Reset organization onboarding status to 'not_started'
 - Cleared all mock/test data for clean production state

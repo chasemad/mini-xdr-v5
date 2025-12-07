@@ -115,9 +115,9 @@ RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "http://$NODE_PUBLIC_IP:30800/api
   -H "Content-Type: application/json" \
   -d '{
     "organization_name": "mini corp",
-    "admin_email": "chasemadrian@protonmail.com",
+    "admin_email": "admin@example.com",
     "admin_password": "demo-tpot-api-key",
-    "admin_name": "Chase Madison"
+    "admin_name": "Demo Admin"
   }')
 
 HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
@@ -140,7 +140,7 @@ echo "🌐 Your Public Dashboard:"
 echo "   http://$NODE_PUBLIC_IP:30300"
 echo ""
 echo "🔐 Login Credentials:"
-echo "   Email:    chasemadrian@protonmail.com"
+echo "   Email:    admin@example.com"
 echo "   Password: demo-tpot-api-key"
 echo ""
 echo "⚠️  Limitations:"
@@ -159,5 +159,3 @@ echo "   You'll get: https://your-domain.com (proper URL)"
 echo ""
 echo "🚀 Opening dashboard in browser..."
 open "http://$NODE_PUBLIC_IP:30300"
-
-

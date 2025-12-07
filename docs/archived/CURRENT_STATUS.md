@@ -77,7 +77,7 @@ curl -X POST http://localhost:8000/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "organization_name": "Mini-XDR Local",
-    "admin_email": "chasemadrian@protonmail.com",
+    "admin_email": "admin@example.com",
     "admin_password": "demo-tpot-api-key",
     "admin_name": "Chase Mad"
   }'
@@ -85,7 +85,7 @@ curl -X POST http://localhost:8000/api/auth/register \
 # Test login
 curl -X POST http://localhost:8000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"chasemadrian@protonmail.com","password":"demo-tpot-api-key"}'
+  -d '{"email":"admin@example.com","password":"demo-tpot-api-key"}'
 ```
 
 ---
@@ -213,5 +213,5 @@ docker-compose up -d
 **Status**: 95% Complete - Just need database initialization!
 
 **Your credentials**:
-- Email: `chasemadrian@protonmail.com`
+- Email: `admin@example.com`
 - Password: `demo-tpot-api-key`

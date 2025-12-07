@@ -9,7 +9,7 @@ import bcrypt
 
 async def reset_password():
     db_path = "/Users/chasemad/Desktop/mini-xdr/backend/xdr.db"
-    email = "chasemadrian@protonmail.com"
+    email = "admin@example.com"
     new_password = "demo-tpot-api-key"  # Your actual password
 
     # Hash the password
@@ -28,7 +28,7 @@ async def reset_password():
     print(f"✅ Password reset successfully for {email}")
     print(f"📧 Email: {email}")
     print(f"🔑 Password: {new_password}")
-    print(f"\n🌐 Login at: http://localhost:3001/login")
+    print("\n🌐 Login at: http://localhost:3001/login")
 
 
 if __name__ == "__main__":

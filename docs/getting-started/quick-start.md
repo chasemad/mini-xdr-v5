@@ -4,7 +4,7 @@
 
 ### Admin Account
 ```
-Email:    chasemadrian@protonmail.com
+Email:    admin@example.com
 Password: demo-tpot-api-key
 Role:     Admin
 ```
@@ -30,7 +30,7 @@ Role:     Security Analyst
 # Test admin login
 curl -X POST http://k8s-minixdr-minixdri-dc5fc1df8b-1132128475.us-east-1.elb.amazonaws.com/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email": "chasemadrian@protonmail.com", "password": "demo-tpot-api-key"}'
+  -d '{"email": "admin@example.com", "password": "demo-tpot-api-key"}'
 
 # You'll get JWT tokens back - authentication is WORKING!
 ```

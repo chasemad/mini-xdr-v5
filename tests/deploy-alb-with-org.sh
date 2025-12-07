@@ -74,16 +74,16 @@ echo ""
 echo "👤 Step 7/7: Creating organization 'mini corp' with clean database state..."
 echo ""
 echo "   Organization: mini corp"
-echo "   Admin: Chase Madison (chasemadrian@protonmail.com)"
+echo "   Admin: Demo Admin (admin@example.com)"
 echo ""
 
 RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "http://$ALB_URL/api/auth/register" \
   -H "Content-Type: application/json" \
   -d '{
     "organization_name": "mini corp",
-    "admin_email": "chasemadrian@protonmail.com",
+    "admin_email": "admin@example.com",
     "admin_password": "demo-tpot-api-key",
-    "admin_name": "Chase Madison"
+    "admin_name": "Demo Admin"
   }')
 
 HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
@@ -99,7 +99,7 @@ elif echo "$BODY" | grep -q "already"; then
   LOGIN_RESPONSE=$(curl -s -X POST "http://$ALB_URL/api/auth/login" \
     -H "Content-Type: application/json" \
     -d '{
-      "email": "chasemadrian@protonmail.com",
+      "email": "admin@example.com",
       "password": "demo-tpot-api-key"
     }')
   if echo "$LOGIN_RESPONSE" | grep -q "access_token"; then
@@ -121,7 +121,7 @@ echo "🌐 Your Public Dashboard:"
 echo "   http://$ALB_URL"
 echo ""
 echo "🔐 Login Credentials:"
-echo "   Email:    chasemadrian@protonmail.com"
+echo "   Email:    admin@example.com"
 echo "   Password: demo-tpot-api-key"
 echo ""
 echo "📊 Database Status:"
@@ -155,5 +155,3 @@ fi
 
 echo ""
 echo "✨ Your XDR platform is now live and demo-ready!"
-
-
