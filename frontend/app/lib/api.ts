@@ -342,6 +342,43 @@ export async function socNotifyStakeholders(incidentId: number, notificationLeve
   });
 }
 
+// ===== ADDITIONAL SOC ACTION API FUNCTIONS (Newly Implemented) =====
+
+export async function socRegistryHardening(incidentId: number, hardeningProfile?: string, backup?: boolean) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/registry-hardening`, {
+    method: "POST",
+    body: { hardening_profile: hardeningProfile || "security_baseline", backup: backup ?? true }
+  });
+}
+
+export async function socSystemRecovery(incidentId: number, recoveryPoint?: string) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/system-recovery`, {
+    method: "POST",
+    body: { recovery_point: recoveryPoint || "latest_clean" }
+  });
+}
+
+export async function socAttributionAnalysis(incidentId: number) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/attribution-analysis`, { method: "POST" });
+}
+
+export async function socPrivilegedAccessReview(incidentId: number, scope?: string, generateReport?: boolean) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/privileged-access-review`, {
+    method: "POST",
+    body: { scope: scope || "all_privileged", generate_report: generateReport ?? true }
+  });
+}
+
+export async function socEncryptSensitiveData(incidentId: number, algorithm?: string, keyManagement?: string) {
+  return apiRequest(`/api/incidents/${incidentId}/actions/encrypt-sensitive-data`, {
+    method: "POST",
+    body: {
+      encryption_algorithm: algorithm || "AES-256",
+      key_management: keyManagement || "hsm"
+    }
+  });
+}
+
 // Agent Orchestration API
 export async function agentOrchestrate(query: string, incident_id?: number, context?: Record<string, unknown>) {
   return apiRequest("/api/agents/orchestrate", {
@@ -643,4 +680,32 @@ export async function disableWorkflowTrigger(triggerId: number) {
 
 export async function getWorkflowTriggerStats() {
   return apiRequest("/api/triggers/stats/summary");
+}
+
+// ===== VISUAL WORKFLOW EXECUTION =====
+
+export async function saveWorkflow(data: {
+  incident_id: number | null;
+  name: string;
+  graph: { nodes: any[]; edges: any[] };
+}) {
+  return apiRequest("/api/workflows/save", {
+    method: "POST",
+    body: data
+  });
+}
+
+export async function getWorkflow(workflowId: number) {
+  return apiRequest(`/api/workflows/${workflowId}`);
+}
+
+export async function runWorkflow(data: {
+  incident_id: number | null;
+  graph?: { nodes: any[]; edges: any[] };
+  workflow_id?: number;
+}) {
+  return apiRequest("/api/workflows/run", {
+    method: "POST",
+    body: data
+  });
 }

@@ -203,5 +203,3 @@ echo -e "   - Workflows: http://localhost:3000/workflows"
 echo -e "   - Incident Actions: Check incident detail page"
 echo -e "   - Database: backend/xdr.db (response_workflows & actions tables)"
 echo ""
-
-

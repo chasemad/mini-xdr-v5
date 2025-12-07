@@ -372,6 +372,38 @@ class TriggerEvaluator:
                 f"🚀 Executing workflow for trigger '{trigger.name}' on incident #{incident.id}"
             )
 
+            # Check if this is a visual workflow (Neural Grid)
+            if trigger.visual_graph:
+                logger.info(f"Executing Visual Workflow for trigger '{trigger.name}'")
+                from app.visual_workflow_executor import VisualWorkflowExecutor
+
+                # Create workflow record first to track execution
+                workflow_record = ResponseWorkflow(
+                    workflow_id=f"wf-{trigger.id}-{int(datetime.now().timestamp())}",
+                    incident_id=incident.id,
+                    playbook_name=trigger.playbook_name,
+                    visual_graph=trigger.visual_graph,
+                    status="running",
+                    auto_executed=True,
+                    steps=[],
+                )
+                db.add(workflow_record)
+                await db.commit()
+                await db.refresh(workflow_record)
+
+                # Execute Graph
+                executor = VisualWorkflowExecutor(db, incident.id, workflow_record.id)
+                nodes = trigger.visual_graph.get("nodes", [])
+                edges = trigger.visual_graph.get("edges", [])
+
+                # Run in background to not block trigger loop?
+                # For now run inline to ensure completion or spawn task
+                # Ideally we spawn a task, but let's await for simplicity in this MVP phase
+                await executor.execute_graph(nodes, edges)
+
+                return str(workflow_record.id)
+
+            # Legacy Workflow Execution
             # Get response engine
             engine = await self._get_response_engine()
 

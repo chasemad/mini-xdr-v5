@@ -1,0 +1,46 @@
+```mermaid
+flowchart LR
+    subgraph Agents
+        A1[Ingestion]
+        A2[Hunting]
+        A3[Triager]
+        A4[Containment]
+        A5[Forensics]
+        A6[Deception]
+        A7[Attribution]
+        A8[DLP]
+        A9[Reporting]
+    end
+
+    subgraph Pipeline
+        K[(Kafka)]
+        R[(Redis Streams)]
+        DB[(PostgreSQL)]
+    end
+
+    subgraph AI
+        C1[Claude 3.5]
+        G4[Grok-4]
+        L7[Llama 3.1 70B (local)]
+    end
+
+    subgraph Frontend
+        UI[Streamlit/Next.js Dashboard]
+    end
+
+    A1 --> K
+    Agents --> R
+    K --> R
+    R --> DB
+    DB --> UI
+    R --> UI
+
+    R --> C1
+    R --> G4
+    R --> L7
+    C1 --> R
+    G4 --> R
+    L7 --> R
+
+    UI -->|Feedback| Agents
+```

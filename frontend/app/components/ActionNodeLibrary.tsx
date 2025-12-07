@@ -2,10 +2,9 @@
 
 /**
  * Action Node Library Component
- * 
- * Provides a draggable palette of available response actions that can be
- * dropped onto the workflow canvas. Organizes actions by category with
- * visual indicators for safety levels and capabilities.
+ *
+ * Provides a categorized catalog of available workflow nodes (Triggers, Agents, Apps, Core).
+ * Features a sidebar navigation and a grid layout for actions, similar to n8n.
  */
 
 import React, { useState, useMemo } from 'react'
@@ -13,74 +12,82 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { 
-  Shield, 
-  Network, 
-  Server, 
-  Mail, 
-  Cloud, 
-  Key, 
+import { Input } from "@/components/ui/input"
+import {
+  Shield,
+  Network,
+  Server,
+  Mail,
+  Cloud,
+  Key,
   Database,
   X,
   Search,
-  Filter,
-  Clock,
-  RotateCcw,
   Zap,
   Target,
-  AlertTriangle
+  Bot,
+  Webhook,
+  Clock,
+  AlertCircle,
+  Globe,
+  Lock,
+  FileSearch,
+  Terminal,
+  Cpu,
+  Layers,
+  Box
 } from 'lucide-react'
+import { WorkflowAction, ActionCategory } from './workflow/workflow-actions'
 
 interface ActionNodeLibraryProps {
-  actions: Record<string, any>
-  onClose: () => void
+  actions: Record<string, WorkflowAction>
+  onClose?: () => void
+  isEmbedded?: boolean
 }
 
 const ActionNodeLibrary: React.FC<ActionNodeLibraryProps> = ({
   actions,
-  onClose
+  onClose,
+  isEmbedded = false
 }) => {
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState('all')
+  const [activeTab, setActiveTab] = useState<ActionCategory | 'all'>('all')
 
-  // Category icons and colors
-  const categoryConfig = {
-    network: { icon: Network, color: 'text-blue-600', bgColor: 'bg-blue-50', borderColor: 'border-blue-200' },
-    endpoint: { icon: Server, color: 'text-green-600', bgColor: 'bg-green-50', borderColor: 'border-green-200' },
-    email: { icon: Mail, color: 'text-purple-600', bgColor: 'bg-purple-50', borderColor: 'border-purple-200' },
-    cloud: { icon: Cloud, color: 'text-orange-600', bgColor: 'bg-orange-50', borderColor: 'border-orange-200' },
-    identity: { icon: Key, color: 'text-yellow-600', bgColor: 'bg-yellow-50', borderColor: 'border-yellow-200' },
-    data: { icon: Database, color: 'text-gray-600', bgColor: 'bg-gray-50', borderColor: 'border-gray-200' },
-    compliance: { icon: Shield, color: 'text-indigo-600', bgColor: 'bg-indigo-50', borderColor: 'border-indigo-200' },
-    forensics: { icon: Target, color: 'text-pink-600', bgColor: 'bg-pink-50', borderColor: 'border-pink-200' }
-  }
-
-  // Safety level colors
-  const safetyColors = {
-    low: 'bg-green-100 text-green-800 border-green-200',
-    medium: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-    high: 'bg-red-100 text-red-800 border-red-200'
-  }
+  // Navigation Categories
+  const navItems = [
+    { id: 'all', label: 'All Nodes', icon: Layers },
+    { id: 'trigger', label: 'Triggers', icon: Zap },
+    { id: 'agent', label: 'AI Agents', icon: Bot },
+    { id: 'app', label: 'Integrations', icon: Box },
+    { id: 'core', label: 'Core Logic', icon: Cpu },
+  ]
 
   // Filter actions based on search and category
   const filteredActions = useMemo(() => {
-    return Object.entries(actions).filter(([actionType, action]) => {
-      const matchesSearch = !searchTerm || 
-        actionType.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    return Object.entries(actions).filter(([_, action]) => {
+      const matchesSearch = !searchTerm ||
         action.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        action.description.toLowerCase().includes(searchTerm.toLowerCase())
-      
-      const matchesCategory = selectedCategory === 'all' || action.category === selectedCategory
-      
+        action.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (action.subcategory && action.subcategory.toLowerCase().includes(searchTerm.toLowerCase()))
+
+      const matchesCategory = activeTab === 'all' || action.category === activeTab
+
       return matchesSearch && matchesCategory
     })
-  }, [actions, searchTerm, selectedCategory])
+  }, [actions, searchTerm, activeTab])
 
-  // Get unique categories
-  const categories = useMemo(() => {
-    const cats = new Set(Object.values(actions).map((action: any) => action.category))
-    return Array.from(cats)
-  }, [actions])
+  // Group by Subcategory (Vendor) for Apps
+  const groupedActions = useMemo(() => {
+    const groups: Record<string, typeof filteredActions> = {}
+
+    filteredActions.forEach(([key, action]) => {
+      const groupName = action.subcategory || 'General'
+      if (!groups[groupName]) groups[groupName] = []
+      groups[groupName].push([key, action])
+    })
+
+    return groups
+  }, [filteredActions])
 
   // Handle drag start
   const onDragStart = (event: React.DragEvent, actionType: string) => {
@@ -88,151 +95,126 @@ const ActionNodeLibrary: React.FC<ActionNodeLibraryProps> = ({
     event.dataTransfer.effectAllowed = 'move'
   }
 
-  return (
-    <Card className="shadow-lg border-2">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <Zap className="h-4 w-4" />
-            Action Library
-          </CardTitle>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-      </CardHeader>
-      
-      <CardContent className="space-y-3">
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-2 top-2.5 h-3 w-3 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search actions..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-7 pr-3 py-2 border rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
-        </div>
-
-        {/* Category Filter */}
-        <div className="flex flex-wrap gap-1">
+  const Content = (
+    <div className="flex h-full">
+      {/* Left Sidebar Navigation */}
+      <div className="w-12 flex flex-col items-center py-4 gap-2 border-r border-white/5 bg-[#0A0A0A]">
+        {navItems.map(item => (
           <Button
-            variant={selectedCategory === 'all' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setSelectedCategory('all')}
-            className="text-xs h-6"
+            key={item.id}
+            variant="ghost"
+            size="icon"
+            onClick={() => setActiveTab(item.id as any)}
+            className={`
+              w-8 h-8 rounded-lg transition-all
+              ${activeTab === item.id
+                ? 'bg-cyan-500/20 text-cyan-400'
+                : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'}
+            `}
+            title={item.label}
           >
-            All
+            <item.icon size={18} />
           </Button>
-          {categories.map(category => {
-            const config = categoryConfig[category as keyof typeof categoryConfig]
-            const Icon = config?.icon || Shield
-            return (
-              <Button
-                key={category}
-                variant={selectedCategory === category ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSelectedCategory(category)}
-                className="text-xs h-6 flex items-center gap-1"
-              >
-                <Icon className="h-3 w-3" />
-                {category}
-              </Button>
-            )
-          })}
+        ))}
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 bg-[#0A0A0A]">
+        {/* Search Header */}
+        <div className="p-3 border-b border-white/5">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-500" />
+            <Input
+              type="text"
+              placeholder="Search nodes..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-8 h-9 bg-[#111] border-white/10 text-xs text-slate-200 focus:border-cyan-500/50"
+            />
+          </div>
         </div>
 
-        {/* Actions List */}
-        <ScrollArea className="h-64">
-          <div className="space-y-2">
-            {filteredActions.map(([actionType, action]) => {
-              const config = categoryConfig[action.category as keyof typeof categoryConfig]
-              const Icon = config?.icon || Shield
+        {/* Nodes Grid */}
+        <ScrollArea className="flex-1 p-3">
+          <div className="space-y-6 pb-4">
+            {Object.entries(groupedActions).map(([group, items]) => (
+              <div key={group}>
+                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 pl-1">
+                  {group}
+                </h3>
+                <div className="grid grid-cols-1 gap-2">
+                  {items.map(([actionType, action]) => {
+                    const Icon = action.icon || Box
 
-              return (
-                <div
-                  key={actionType}
-                  draggable
-                  onDragStart={(e) => onDragStart(e, actionType)}
-                  className={`p-2 rounded-lg border cursor-move hover:shadow-md transition-all ${
-                    config?.bgColor || 'bg-gray-50'
-                  } ${config?.borderColor || 'border-gray-200'} hover:border-opacity-100`}
-                >
-                  <div className="flex items-start justify-between mb-1">
-                    <div className="flex items-center gap-2">
-                      <Icon className={`h-4 w-4 ${config?.color || 'text-gray-600'}`} />
-                      <span className="font-semibold text-xs">{action.name}</span>
-                    </div>
-                    <Badge 
-                      variant="outline" 
-                      className={`text-xs ${safetyColors[action.safety_level as keyof typeof safetyColors]}`}
-                    >
-                      {action.safety_level}
-                    </Badge>
-                  </div>
-                  
-                  <p className="text-xs text-gray-600 mb-2 line-clamp-2">
-                    {action.description}
-                  </p>
-                  
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1 text-gray-500">
-                      <Clock className="h-3 w-3" />
-                      {Math.floor(action.estimated_duration / 60)}m
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                      {action.rollback_supported && (
-                        <div className="flex items-center gap-1 text-green-600">
-                          <RotateCcw className="h-3 w-3" />
-                          <span>Rollback</span>
+                    return (
+                      <div
+                        key={actionType}
+                        draggable
+                        onDragStart={(e) => onDragStart(e, actionType)}
+                        className={`
+                          group flex items-center gap-3 p-2 rounded-lg border cursor-grab active:cursor-grabbing transition-all
+                          bg-[#111] border-white/5 hover:border-cyan-500/30 hover:bg-[#161616]
+                        `}
+                      >
+                        <div className={`
+                          p-2 rounded-md bg-[#0A0A0A] border border-white/5 text-slate-400 group-hover:text-cyan-400 group-hover:border-cyan-500/20 transition-colors
+                        `}>
+                          <Icon size={16} />
                         </div>
-                      )}
-                      
-                      <Badge variant="outline" className="text-xs">
-                        {action.category}
-                      </Badge>
-                    </div>
-                  </div>
-                  
-                  {/* Drag indicator */}
-                  <div className="mt-2 text-center">
-                    <span className="text-xs text-gray-400 italic">
-                      Drag to canvas to add
-                    </span>
-                  </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-medium text-slate-200 truncate pr-2">
+                              {action.name}
+                            </span>
+                            {action.safety_level === 'high' && (
+                              <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 border-red-500/30 text-red-400 bg-red-950/10">
+                                High Risk
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-slate-500 truncate">
+                            {action.description}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
-              )
-            })}
-            
-            {filteredActions.length === 0 && (
+              </div>
+            ))}
+
+            {Object.keys(groupedActions).length === 0 && (
               <div className="text-center py-8">
-                <AlertTriangle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-600">No actions found</p>
-                <p className="text-xs text-gray-500">Try adjusting your search or category filter</p>
+                <p className="text-xs text-slate-500">No nodes found</p>
               </div>
             )}
           </div>
         </ScrollArea>
+      </div>
+    </div>
+  )
 
-        {/* Quick Stats */}
-        <div className="pt-2 border-t">
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <div>
-              <div className="text-xs font-bold text-blue-600">{Object.keys(actions).length}</div>
-              <div className="text-xs text-gray-500">Total</div>
-            </div>
-            <div>
-              <div className="text-xs font-bold text-green-600">{filteredActions.length}</div>
-              <div className="text-xs text-gray-500">Filtered</div>
-            </div>
-            <div>
-              <div className="text-xs font-bold text-orange-600">{categories.length}</div>
-              <div className="text-xs text-gray-500">Categories</div>
-            </div>
-          </div>
+  if (isEmbedded) {
+    return Content
+  }
+
+  return (
+    <Card className="shadow-2xl border border-white/10 bg-[#0A0A0A]/95 backdrop-blur-xl text-slate-200 w-[400px] h-[600px] overflow-hidden flex flex-col">
+      <CardHeader className="py-3 px-4 border-b border-white/5 shrink-0">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm flex items-center gap-2 font-semibold text-white">
+            <Layers className="h-4 w-4 text-cyan-400" />
+            Node Library
+          </CardTitle>
+          <Button variant="ghost" size="sm" onClick={onClose} className="h-6 w-6 p-0 hover:bg-white/10 text-slate-400 hover:text-white">
+            <X className="h-4 w-4" />
+          </Button>
         </div>
+      </CardHeader>
+
+      <CardContent className="flex-1 p-0 overflow-hidden">
+        {Content}
       </CardContent>
     </Card>
   )

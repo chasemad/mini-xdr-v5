@@ -65,7 +65,7 @@ services:
       - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY:-}
       - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
       # Agent API Key
-      - AGENT_API_KEY=${AGENT_API_KEY:-mini-xdr-agent-key-2024}
+      - AGENT_API_KEY=${AGENT_API_KEY:-demo-agent-key-change-me}
       - API_KEY=${API_KEY:-demo-minixdr-api-key}
     volumes:
       - ./models:/app/models:ro

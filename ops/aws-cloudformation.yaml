@@ -5,18 +5,18 @@ Parameters:
   KeyPairName:
     Type: AWS::EC2::KeyPair::KeyName
     Description: EC2 Key Pair for SSH access
-    
+
   YourPublicIP:
     Type: String
     Description: Your public IP address (get from: curl -4 icanhazip.com)
     AllowedPattern: '^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$'
-    
+
   InstanceType:
     Type: String
     Default: t3.micro
     AllowedValues: [t3.micro, t3.small, t3.medium]
     Description: EC2 instance type (t3.micro is free tier eligible)
-    
+
   DeploymentRegions:
     Type: CommaDelimitedList
     Default: "us-east-1,eu-west-1,ap-southeast-1"
@@ -27,7 +27,7 @@ Mappings:
     us-east-1:
       AMI: ami-0e001c9271cf7f3b9  # Ubuntu 22.04 LTS
     us-west-2:
-      AMI: ami-017fecd1353bcc96e  # Ubuntu 22.04 LTS  
+      AMI: ami-017fecd1353bcc96e  # Ubuntu 22.04 LTS
     eu-west-1:
       AMI: ami-0905a3c97561e0b69  # Ubuntu 22.04 LTS
     ap-southeast-1:
@@ -123,14 +123,14 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash
           set -e
-          
+
           # Update system
           apt-get update -y
           apt-get upgrade -y
-          
+
           # Install dependencies
           apt-get install -y python3 python3-venv python3-pip git curl wget htop vim ufw
-          
+
           # Configure firewall
           ufw --force enable
           ufw allow 22022/tcp
@@ -140,19 +140,19 @@ Resources:
           ufw allow 21/tcp
           ufw allow 23/tcp
           ufw allow 3306/tcp
-          
+
           # Move SSH to alternate port
           sed -i 's/#Port 22/Port 22022/' /etc/ssh/sshd_config
           sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
           systemctl restart sshd
-          
+
           # Create XDR user
           useradd -m -s /bin/bash xdrops
           usermod -aG sudo xdrops
           mkdir -p /home/xdrops/.ssh
           chmod 700 /home/xdrops/.ssh
           chown -R xdrops:xdrops /home/xdrops/.ssh
-          
+
           # Install Cowrie honeypot
           cd /opt
           git clone https://github.com/cowrie/cowrie.git
@@ -161,30 +161,30 @@ Resources:
           source cowrie-env/bin/activate
           pip install --upgrade pip
           pip install -r requirements.txt
-          
+
           # Configure Cowrie
           cp etc/cowrie.cfg.dist etc/cowrie.cfg
           cat >> etc/cowrie.cfg << 'COWRIEEOF'
-          
+
           [output_jsonlog]
           enabled = true
           logfile = var/log/cowrie/cowrie.json
           epoch_timestamp = false
-          
+
           [honeypot]
           hostname = aws-honeypot-${AWS::Region}
           COWRIEEOF
-          
+
           # Create cowrie user and service
           useradd -r -s /bin/false cowrie
           chown -R cowrie:cowrie /opt/cowrie
-          
+
           # Service file
           cat > /etc/systemd/system/cowrie.service << 'SERVICEEOF'
           [Unit]
           Description=Cowrie SSH/Telnet Honeypot
           After=network.target
-          
+
           [Service]
           Type=forking
           User=cowrie
@@ -194,31 +194,31 @@ Resources:
           PIDFile=/opt/cowrie/var/run/cowrie.pid
           WorkingDirectory=/opt/cowrie
           PrivateTmp=yes
-          
+
           [Install]
           WantedBy=multi-user.target
           SERVICEEOF
-          
+
           # Port forwarding
           iptables -t nat -A PREROUTING -p tcp --dport 22 -j REDIRECT --to-port 2222
           apt-get install -y iptables-persistent
           iptables-save > /etc/iptables/rules.v4
-          
+
           # Start Cowrie
           systemctl daemon-reload
           systemctl enable cowrie
           systemctl start cowrie
-          
+
           # Install Fluent Bit
           curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh
-          
+
           # Configure log forwarding
           cat > /etc/fluent-bit/fluent-bit.conf << 'FLUENTEOF'
           [SERVICE]
               Flush         1
               Log_Level     info
               Daemon        off
-          
+
           [INPUT]
               Name              tail
               Path              /opt/cowrie/var/log/cowrie/cowrie.json
@@ -226,7 +226,7 @@ Resources:
               Tag               cowrie
               Refresh_Interval  5
               Read_from_Head    false
-          
+
           [OUTPUT]
               Name  http
               Match cowrie
@@ -234,19 +234,19 @@ Resources:
               Port  8000
               URI   /ingest/multi
               Format json
-              Header Authorization Bearer aws-honeypot-key
+              Header Authorization Bearer demo-honeypot-key
               Retry_Limit 5
           FLUENTEOF
-          
+
           systemctl enable fluent-bit
           systemctl start fluent-bit
-          
+
           # Install CloudWatch agent
           wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
           dpkg -i amazon-cloudwatch-agent.deb
-          
+
           echo "Honeypot setup complete!" > /var/log/honeypot-setup.log
-          
+
       Tags:
         - Key: Name
           Value: !Sub "mini-xdr-honeypot-${AWS::Region}"
@@ -280,20 +280,19 @@ Outputs:
     Value: !Ref HoneypotEIP
     Export:
       Name: !Sub "${AWS::StackName}-PublicIP"
-      
+
   HoneypotInstanceId:
     Description: Instance ID of the honeypot
     Value: !Ref PrimaryHoneypot
     Export:
       Name: !Sub "${AWS::StackName}-InstanceId"
-      
+
   SSHCommand:
     Description: SSH command to connect to honeypot for management
     Value: !Sub "ssh -i ~/.ssh/${KeyPairName}.pem -p 22022 ubuntu@${HoneypotEIP}"
-    
+
   SecurityGroupId:
     Description: Security Group ID for honeypots
     Value: !Ref HoneypotSecurityGroup
     Export:
       Name: !Sub "${AWS::StackName}-SecurityGroup"
-

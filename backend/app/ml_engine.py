@@ -24,8 +24,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import OneClassSVM
 from torch.utils.data import DataLoader, TensorDataset
 
+from . import models as db_models
 from .config import settings
-from .models import Event, Incident, MLModel
 
 # Federated Learning imports
 logger = logging.getLogger(__name__)
@@ -115,7 +115,7 @@ class BaseMLDetector:
         self.model_dir.mkdir(exist_ok=True)
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
-    def _extract_features(self, src_ip: str, events: List[Event]) -> Dict[str, float]:
+    def _extract_features(self, src_ip: str, events: List) -> Dict[str, float]:
         """Extract features from events for ML analysis"""
         if not events:
             return {col: 0.0 for col in self.feature_columns}
@@ -239,7 +239,7 @@ class IsolationForestDetector(BaseMLDetector):
         )
         self.is_trained = False
 
-    async def calculate_anomaly_score(self, src_ip: str, events: List[Event]) -> float:
+    async def calculate_anomaly_score(self, src_ip: str, events: List) -> float:
         """Calculate anomaly score for the given IP and events"""
         if not self.is_trained:
             return 0.0
@@ -322,7 +322,7 @@ class LSTMDetector(BaseMLDetector):
         self.is_trained = False
         self.reconstruction_threshold = 0.05  # Will be set during training
 
-    async def calculate_anomaly_score(self, src_ip: str, events: List[Event]) -> float:
+    async def calculate_anomaly_score(self, src_ip: str, events: List) -> float:
         """Calculate anomaly score using LSTM reconstruction error"""
         if not self.is_trained or len(events) < self.sequence_length:
             return 0.0
@@ -354,7 +354,7 @@ class LSTMDetector(BaseMLDetector):
             self.logger.error(f"LSTM scoring error: {e}")
             return 0.0
 
-    def _prepare_sequence_data(self, events: List[Event]) -> np.ndarray:
+    def _prepare_sequence_data(self, events: List) -> np.ndarray:
         """Prepare event sequence for LSTM input"""
         # Extract features for each event in time order
         event_features = []
@@ -515,7 +515,7 @@ class EnhancedMLDetector:
             "dbscan_clustering": 0.2,
         }
 
-    async def analyze_events(self, events: List[Event]) -> float:
+    async def analyze_events(self, events: List) -> float:
         """Analyze events and return anomaly score"""
         if not self.is_trained or not events:
             return 0.0
@@ -699,7 +699,7 @@ class EnsembleMLDetector:
         # Model weights for ensemble
         self.weights = {"isolation_forest": 0.3, "lstm": 0.3, "enhanced_ml": 0.4}
 
-    async def calculate_anomaly_score(self, src_ip: str, events: List[Event]) -> float:
+    async def calculate_anomaly_score(self, src_ip: str, events: List) -> float:
         """Calculate ensemble anomaly score"""
         scores = {}
 
@@ -821,7 +821,7 @@ class FederatedEnsembleDetector:
             self.logger.error(f"Failed to initialize federated components: {e}")
             self.federated_enabled = False
 
-    async def calculate_anomaly_score(self, src_ip: str, events: List[Event]) -> float:
+    async def calculate_anomaly_score(self, src_ip: str, events: List) -> float:
         """Calculate anomaly score using ensemble and federated models"""
         try:
             # Get standard ensemble score
@@ -854,7 +854,7 @@ class FederatedEnsembleDetector:
             # Fall back to standard ensemble
             return await self.ensemble_detector.calculate_anomaly_score(src_ip, events)
 
-    async def _get_federated_score(self, src_ip: str, events: List[Event]) -> float:
+    async def _get_federated_score(self, src_ip: str, events: List) -> float:
         """Get anomaly score from federated model"""
         try:
             if not self.federated_manager:
@@ -972,7 +972,7 @@ class EnhancedFederatedDetector:
             except Exception as e:
                 self.logger.warning(f"Failed to load deep learning models: {e}")
 
-    async def calculate_anomaly_score(self, src_ip: str, events: List[Event]) -> float:
+    async def calculate_anomaly_score(self, src_ip: str, events: List) -> float:
         """Enhanced anomaly scoring with local ML models and deep learning integration"""
         try:
             # Get traditional ML score
@@ -1148,12 +1148,98 @@ class EnhancedFederatedDetector:
             return False
 
 
-# Global enhanced detector instance
-ml_detector = EnhancedFederatedDetector()
+class RevolutionaryXDRDetector:
+    """
+    Revolutionary XDR Detector - integrates the new ensemble model
+    with the existing XDR architecture for seamless operation.
+    """
+
+    def __init__(self, revolutionary_detector):
+        self.revolutionary_detector = revolutionary_detector
+        self.logger = logging.getLogger(__name__)
+        self.is_trained = True  # Revolutionary model is pre-trained
+
+    async def calculate_anomaly_score(self, src_ip: str, events: List) -> float:
+        """Calculate anomaly score using revolutionary ensemble model"""
+        try:
+            # Extract features using existing logic
+            base_detector = BaseMLDetector()
+            features = base_detector._extract_features(src_ip, events)
+
+            # Convert to numpy array and reshape for model input
+            feature_vector = np.array([list(features.values())]).astype(np.float32)
+
+            # Get prediction from revolutionary model
+            result = await self.revolutionary_detector.predict(feature_vector)
+
+            # Convert to anomaly score (higher confidence = higher anomaly score for attacks)
+            predicted_class = result["predicted_class"][0]
+
+            # For attack classes (1-6), use confidence as anomaly score
+            # For normal class (0), use 1 - confidence as anomaly score
+            if predicted_class == 0:  # Normal
+                anomaly_score = 1.0 - result["confidence"][0]
+            else:  # Attack class
+                anomaly_score = result["confidence"][0]
+
+            # Apply uncertainty penalty (higher uncertainty = lower anomaly score)
+            uncertainty_penalty = result["uncertainty"][0]
+            anomaly_score = anomaly_score * (1.0 - uncertainty_penalty)
+
+            self.logger.info(
+                f"🔍 Revolutionary model analysis for {src_ip}: "
+                f"class={result['threat_type'][0]}, "
+                f"confidence={result['confidence'][0]:.3f}, "
+                f"uncertainty={uncertainty_penalty:.3f}, "
+                f"anomaly_score={anomaly_score:.3f}"
+            )
+
+            return max(0.0, min(1.0, anomaly_score))  # Clamp to [0,1]
+
+        except Exception as e:
+            self.logger.error(f"Revolutionary model prediction failed: {e}")
+            # Fallback to basic scoring
+            return 0.5
+
+    async def train_models(
+        self, training_data: List[Dict[str, float]]
+    ) -> Dict[str, bool]:
+        """Training not needed for pre-trained revolutionary model"""
+        self.logger.info("🚫 Revolutionary model is pre-trained - no training needed")
+        return {"revolutionary": True}
+
+    def load_models(self) -> Dict[str, bool]:
+        """Models are loaded via get_ensemble_detector()"""
+        self.logger.info("✅ Revolutionary ensemble models already loaded")
+        return {"revolutionary": True}
+
+    def get_model_status(self) -> Dict[str, bool]:
+        """Get revolutionary model status"""
+        return {
+            "revolutionary_ensemble": True,
+            "ft_transformer": self.revolutionary_detector.models_loaded.get(
+                "ft_transformer", False
+            ),
+            "xgboost": self.revolutionary_detector.models_loaded.get("xgboost", False),
+            "lstm": self.revolutionary_detector.models_loaded.get("lstm", False),
+        }
+
+
+# Global revolutionary detector instance
+try:
+    from .ai_models.ensemble import get_ensemble_detector
+
+    revolutionary_detector = get_ensemble_detector()
+    ml_detector = RevolutionaryXDRDetector(revolutionary_detector)
+    logger.info("🎉 Revolutionary ensemble detector loaded successfully!")
+except ImportError as e:
+    logger.warning(f"Failed to import revolutionary detector: {e}")
+    logger.warning("Falling back to enhanced federated detector")
+    ml_detector = EnhancedFederatedDetector()
 
 
 async def prepare_training_data_from_events(
-    events: List[Event],
+    events: List,
 ) -> List[Dict[str, float]]:
     """Prepare training data from event history"""
     if not events:

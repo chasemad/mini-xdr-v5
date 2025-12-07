@@ -482,6 +482,302 @@ curl http://localhost:8000/api/ml/features/importance
 }
 ```
 
+## False Positive Reduction (Phase 3)
+
+Mini-XDR implements multiple layers of false positive reduction to ensure high-quality detections.
+
+### Multi-Gate Detection System
+
+Events pass through 5 verification gates before incident creation:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         EVENT STREAM                             │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────┐
+│ GATE 1: Heuristic Pre-filter (microseconds)                     │
+│ - Minimum event count check                                      │
+│ - Clear attack indicator detection                               │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ PASS
+┌────────────────────────────▼────────────────────────────────────┐
+│ GATE 2: ML Classification with Temperature Scaling               │
+│ - General threat detector                                        │
+│ - Temperature T=1.5 for confidence calibration                  │
+│ - Uncertainty quantification                                     │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ PASS
+┌────────────────────────────▼────────────────────────────────────┐
+│ GATE 3: Specialist Verification (Classes 1, 3, 4)               │
+│ - Binary classifier confirms/rejects detection                  │
+│ - 85% threshold for confirmation                                │
+│ - Rejects reduce confidence by 70%                              │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ PASS
+┌────────────────────────────▼────────────────────────────────────┐
+│ GATE 4: Vector Memory Check                                      │
+│ - Compare to past false positives                               │
+│ - 90% similarity threshold blocks detection                     │
+│ - Learns from analyst feedback                                  │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ PASS
+┌────────────────────────────▼────────────────────────────────────┐
+│ GATE 5: Council Verification (50-85% confidence)                │
+│ - Gemini/OpenAI reasoning verification                          │
+│ - Human-level threat assessment                                 │
+│ - Can override or confirm ML                                    │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ PASS
+                             ▼
+                    ┌─────────────────┐
+                    │ CREATE INCIDENT │
+                    └─────────────────┘
+```
+
+### Per-Class Confidence Thresholds
+
+Different threat classes require different confidence levels based on training precision:
+
+| Class | Threat Type | Training Precision | Required Confidence |
+|-------|-------------|-------------------|---------------------|
+| 0 | Normal | 99.9% | 95% |
+| 1 | DDoS | 73.2% | 50% (specialist verified) |
+| 2 | Reconnaissance | 73.3% | 50% |
+| 3 | Brute Force | 17.8% | **80%** (high FP risk) |
+| 4 | Web Attack | 32.4% | **75%** (high FP risk) |
+| 5 | Malware | 84.2% | 45% |
+| 6 | APT | 46.9% | 60% |
+
+### Temperature Scaling
+
+Confidence calibration using temperature scaling (T=1.5):
+
+```python
+# Before: raw model output
+logits = model(features)
+probs = softmax(logits)  # May be overconfident
+
+# After: calibrated confidence
+scaled_logits = logits / temperature  # T=1.5
+calibrated_probs = softmax(scaled_logits)  # More realistic
+```
+
+### Specialist Model Routing
+
+High false-positive classes (1, 3, 4) are verified by specialist binary classifiers:
+
+- **DDoS Specialist**: 93.29% accuracy (vs 73% general)
+- **Brute Force Specialist**: 90.52% accuracy (vs 17.8% precision)
+- **Web Attack Specialist**: 95.29% accuracy (vs 32.4% precision)
+
+```python
+# Specialist verification flow
+if predicted_class in [1, 3, 4]:
+    confirmed, confidence, reason = specialist_manager.verify_prediction(
+        predicted_class=predicted_class,
+        features=features,
+    )
+    if not confirmed:
+        # Reduce confidence by 70%
+        final_confidence = original_confidence * 0.3
+```
+
+### Event Content Override
+
+Pattern-based corrections when ML misclassifies due to statistical features:
+
+- **Time-based analysis**: High-rate single-type events != DDoS
+- **Username patterns**: Dictionary attacks (5+ usernames) = Brute Force
+- **Command analysis**: Malware downloads (wget, curl) = Malware
+- **Attack phase correlation**: 3+ phases = APT
+
+### Vector Memory Learning
+
+The system learns from past false positives:
+
+```python
+# Check similarity to past FPs before creating incident
+is_similar, fp_details = await check_similar_false_positives(
+    features=features,
+    ml_prediction=threat_type,
+    threshold=0.90,  # High similarity
+)
+
+if is_similar:
+    # Block or significantly reduce confidence
+    confidence *= 0.4
+```
+
+### Configuration
+
+```python
+# In backend/app/intelligent_detection.py
+@dataclass
+class DetectionConfig:
+    confidence_thresholds: Dict[int, float]  # Per-class thresholds
+    min_anomaly_score: float = 0.3           # Minimum anomaly score
+    openai_verify_uncertain: bool = True     # Use OpenAI for uncertain
+    temperature: float = 1.5                 # Temperature scaling
+    specialist_threshold: float = 0.85       # Specialist confirmation
+```
+
+### Multi-Gate Detection Method
+
+For explicit multi-gate detection with detailed gate results:
+
+```python
+from backend.app.intelligent_detection import intelligent_detector
+
+# Use multi-gate detection (modular architecture)
+result = await intelligent_detector.analyze_with_multi_gate(
+    db=db_session,
+    src_ip="192.168.1.100",
+    events=event_list,
+)
+
+# Response includes gate results:
+# {
+#     "incident_created": True,
+#     "detection_method": "multi_gate",
+#     "gate_results": [
+#         {"gate": "heuristic", "verdict": "pass", "reason": "..."},
+#         {"gate": "ml_classification", "verdict": "pass", "reason": "..."},
+#         {"gate": "specialist_verification", "verdict": "escalate", "reason": "..."},
+#         {"gate": "vector_memory", "verdict": "pass", "reason": "..."},
+#     ],
+#     "escalation_reasons": [...],
+#     "processing_time_ms": 125.3,
+# }
+```
+
+## LangChain Agent Orchestration
+
+Mini-XDR integrates LangChain for intelligent incident response orchestration with **36 specialized tools** across 6 capability domains.
+
+### ReAct Agent
+
+The LangChain orchestrator uses GPT-4o with ReAct (Reasoning + Acting) pattern:
+
+```
+Incident → Analysis → Tool Selection → Action → Verification → Report
+```
+
+### Available Tools (36 Total)
+
+#### Network & Firewall (7 tools)
+| Tool | Description |
+|------|-------------|
+| `block_ip` | Block malicious IP at firewall (T-Pot/UFW integration) |
+| `dns_sinkhole` | Redirect malicious domains to sinkhole server |
+| `traffic_redirection` | Redirect traffic to honeypot/analyzer for analysis |
+| `network_segmentation` | Isolate network segments (VLAN/ACL-based) |
+| `capture_traffic` | Capture network PCAP for forensic analysis |
+| `deploy_waf_rules` | Deploy Web Application Firewall rules |
+
+#### Endpoint & Host (7 tools)
+| Tool | Description |
+|------|-------------|
+| `isolate_host` | Network isolation for compromised hosts |
+| `memory_dump` | Capture RAM snapshot for malware analysis |
+| `kill_process` | Terminate malicious processes by name/PID |
+| `registry_hardening` | Apply Windows registry hardening profiles |
+| `system_recovery` | Restore system to clean checkpoint |
+| `malware_removal` | Scan and remove malware from endpoint |
+| `endpoint_scan` | Full antivirus/EDR scan of endpoint |
+
+#### Investigation & Forensics (6 tools)
+| Tool | Description |
+|------|-------------|
+| `behavior_analysis` | Analyze attack patterns and TTPs |
+| `threat_hunting` | Hunt for IOCs across environment |
+| `threat_intel_lookup` | Query external threat intelligence feeds |
+| `collect_evidence` | Gather and preserve forensic artifacts |
+| `analyze_logs` | Correlate and analyze security logs |
+| `attribution_analysis` | Identify threat actor using ML and OSINT |
+
+#### Identity & Access (5 tools)
+| Tool | Description |
+|------|-------------|
+| `reset_passwords` | Force password reset for compromised accounts |
+| `revoke_sessions` | Terminate all active user sessions |
+| `disable_user` | Disable compromised user accounts |
+| `enforce_mfa` | Require multi-factor authentication |
+| `privileged_access_review` | Audit and review privileged access |
+
+#### Data Protection (4 tools)
+| Tool | Description |
+|------|-------------|
+| `check_db_integrity` | Verify database for tampering |
+| `emergency_backup` | Create immutable backup of critical data |
+| `encrypt_data` | Apply encryption to sensitive data at rest |
+| `enable_dlp` | Activate Data Loss Prevention policies |
+
+#### Alerting & Notification (3 tools)
+| Tool | Description |
+|------|-------------|
+| `alert_analysts` | Send urgent notification to SOC team |
+| `create_case` | Generate incident case in ticketing system |
+| `notify_stakeholders` | Alert executive leadership |
+
+#### Legacy Compatibility (4 tools)
+| Tool | Description |
+|------|-------------|
+| `check_ip_reputation` | Quick IP reputation check |
+| `collect_forensics` | Legacy forensics collection |
+| `query_threat_intel` | Legacy threat intel query |
+| `send_alert` | Legacy alert sending |
+| `get_attribution` | Legacy attribution analysis |
+
+### Usage
+
+LangChain orchestration is automatically enabled when:
+1. OpenAI API key is configured
+2. LangChain packages are installed
+
+```python
+# Automatic integration with agent orchestrator
+result = await agent_orchestrator.orchestrate_incident_response(
+    incident=incident,
+    recent_events=events,
+    use_langchain=True,  # Default: True
+)
+
+# Access all 36 tools programmatically
+from backend.app.agents.tools import create_xdr_tools
+tools = create_xdr_tools()
+print(f"Available tools: {len(tools)}")  # 36 tools
+```
+
+### Tool Input Schemas
+
+Each tool has a validated Pydantic input schema:
+
+```python
+from backend.app.agents.tools import (
+    BlockIPInput,
+    DNSSinkholeInput,
+    MemoryDumpInput,
+    # ... 30+ more input schemas
+)
+
+# Example: Block IP with custom parameters
+block_input = BlockIPInput(
+    ip_address="192.168.1.100",
+    duration_seconds=7200,  # 2 hours
+    reason="Detected brute force attack"
+)
+```
+
+### Fallback Mode
+
+When LangChain is unavailable (no API key, packages missing), the system
+falls back to rule-based orchestration that still provides:
+- Automatic IP blocking for critical threats
+- Severity-based response escalation
+- Event correlation and analysis
+- All 32 UI-facing actions via REST API endpoints
+
 ## Advanced Topics
 
 ### Ensemble Strategies

@@ -203,6 +203,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if path in ALLOWED_PATHS or path.startswith("/static"):
             return False
 
+        # Special case for investigation streaming endpoints (EventSource can't send headers)
+        if "investigations/stream" in path:
+            return False
+
         # Check for paths that use simple API key auth (bypass HMAC)
         if any(path.startswith(prefix) for prefix in SIMPLE_AUTH_PREFIXES):
             return False

@@ -203,7 +203,7 @@ sudo systemctl status fluent-bit
 
 # Test Mini-XDR connectivity
 curl -X POST http://YOUR_MINI_XDR_IP:8000/ingest/multi \
-  -H "Authorization: Bearer tpot-honeypot-key" \
+  -H "Authorization: Bearer demo-tpot-api-key" \
   -H "Content-Type: application/json" \
   -d '{"test": "connectivity"}'
 ```
@@ -287,5 +287,3 @@ The T-Pot deployment script provides:
 - ✅ **Comprehensive monitoring**
 
 Run `./aws-tpot-honeypot-setup.sh` to begin deployment!
-
-

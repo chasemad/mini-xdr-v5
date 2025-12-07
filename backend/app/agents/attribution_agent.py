@@ -26,7 +26,8 @@ except ImportError:
 
 from ..config import settings
 from ..external_intel import ThreatIntelligence
-from ..models import Event, Incident, ThreatIntelSource
+
+# Import models directly from models.py to avoid circular import issues
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +159,7 @@ class AttributionAgent:
         return None
 
     async def analyze_attribution(
-        self, incidents: List[Incident], events: List[Event], db_session=None
+        self, incidents: List, events: List, db_session=None
     ) -> Dict[str, Any]:
         """
         Comprehensive attribution analysis for incidents and events
@@ -296,7 +297,7 @@ class AttributionAgent:
             }
 
     async def _analyze_infrastructure(
-        self, incidents: List[Incident], events: List[Event]
+        self, incidents: List, events: List
     ) -> Dict[str, Any]:
         """Analyze infrastructure relationships and patterns"""
 
@@ -498,8 +499,9 @@ class AttributionAgent:
 
         return shared_hosting
 
-    async def _analyze_ttps(self, events: List[Event]) -> Dict[str, Any]:
+    async def _analyze_ttps(self, events: List) -> Dict[str, Any]:
         """Analyze Tactics, Techniques, and Procedures (TTPs)"""
+        from .. import models as db_models  # Import models.py directly
 
         ttp_analysis = {
             "identified_ttps": {},
@@ -567,7 +569,7 @@ class AttributionAgent:
 
         return ttp_analysis
 
-    async def _extract_ttps_from_event(self, event: Event) -> Dict[str, float]:
+    async def _extract_ttps_from_event(self, event) -> Dict[str, float]:
         """Extract TTPs from a single event"""
         ttps = {}
 
@@ -655,7 +657,7 @@ class AttributionAgent:
         return patterns
 
     async def _analyze_temporal_patterns(
-        self, incidents: List[Incident], events: List[Event]
+        self, incidents: List, events: List
     ) -> Dict[str, Any]:
         """Analyze temporal patterns in attack activity"""
 
@@ -752,7 +754,7 @@ class AttributionAgent:
 
     async def _correlate_campaigns(
         self,
-        incidents: List[Incident],
+        incidents: List,
         ttp_analysis: Dict[str, Any],
         infrastructure_analysis: Dict[str, Any],
     ) -> Dict[str, Any]:
@@ -870,7 +872,7 @@ class AttributionAgent:
 
     async def _attribute_threat_actors(
         self,
-        incidents: List[Incident],
+        incidents: List,
         ttp_analysis: Dict[str, Any],
         infrastructure_analysis: Dict[str, Any],
         campaign_analysis: Dict[str, Any],
@@ -914,7 +916,7 @@ class AttributionAgent:
     async def _match_actor_signature(
         self,
         signature: Dict[str, Any],
-        incidents: List[Incident],
+        incidents: List,
         ttp_analysis: Dict[str, Any],
         infrastructure_analysis: Dict[str, Any],
     ) -> float:
@@ -957,7 +959,7 @@ class AttributionAgent:
         return total_score / max_score if max_score > 0 else 0.0
 
     async def _match_password_patterns(
-        self, patterns: List[str], incidents: List[Incident]
+        self, patterns: List[str], incidents: List
     ) -> float:
         """Match password patterns against incidents"""
         # This would analyze actual password attempts from related events
@@ -965,7 +967,7 @@ class AttributionAgent:
         return 0.5
 
     async def _match_username_patterns(
-        self, patterns: List[str], incidents: List[Incident]
+        self, patterns: List[str], incidents: List
     ) -> float:
         """Match username patterns against incidents"""
         # This would analyze actual username attempts from related events
@@ -973,7 +975,7 @@ class AttributionAgent:
         return 0.5
 
     async def _match_timing_patterns(
-        self, patterns: Dict[str, Any], incidents: List[Incident]
+        self, patterns: Dict[str, Any], incidents: List
     ) -> float:
         """Match timing patterns against incidents"""
         # This would analyze timing characteristics
@@ -991,7 +993,7 @@ class AttributionAgent:
     async def _collect_attribution_evidence(
         self,
         signature: Dict[str, Any],
-        incidents: List[Incident],
+        incidents: List,
         ttp_analysis: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Collect evidence supporting actor attribution"""
@@ -1011,7 +1013,7 @@ class AttributionAgent:
 
     async def _identify_new_actor_clusters(
         self,
-        incidents: List[Incident],
+        incidents: List,
         ttp_analysis: Dict[str, Any],
         infrastructure_analysis: Dict[str, Any],
         campaign_analysis: Dict[str, Any],
@@ -1040,8 +1042,8 @@ class AttributionAgent:
 
     async def _ai_attribution_analysis(
         self,
-        incidents: List[Incident],
-        events: List[Event],
+        incidents: List,
+        events: List,
         ttp_analysis: Dict[str, Any],
         infrastructure_analysis: Dict[str, Any],
     ) -> Dict[str, Any]:

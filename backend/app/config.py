@@ -24,7 +24,9 @@ class Settings(BaseSettings):
     # Detection Configuration
     fail_window_seconds: int = 60
     fail_threshold: int = 6
-    auto_contain: bool = False
+    auto_contain: bool = (
+        True  # Enable auto-containment to trigger LangChain orchestration
+    )
 
     # Containment Configuration
     allow_private_ip_blocking: bool = True  # Enable for testing simulated attacks

@@ -56,13 +56,13 @@ FAILED=0
 
 for ID in $INCIDENT_IDS; do
     echo "  Deleting incident #$ID..."
-    
+
     RESPONSE=$(curl -s -X DELETE http://localhost:8000/incidents/$ID \
       -H "x-api-key: demo-minixdr-api-key" \
       -w "\n%{http_code}")
-    
+
     HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-    
+
     if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
         DELETED=$((DELETED + 1))
         echo "    ✅ Deleted"
@@ -89,4 +89,3 @@ else
     echo "⚠️  Some incidents failed to delete."
     echo "Check backend logs for details."
 fi
-

@@ -10,6 +10,7 @@ Grok searches X (Twitter) for real-time threat intelligence about:
 This adds "Feature #80" - Internet-aware threat detection.
 """
 
+import json
 import logging
 import os
 import time
@@ -168,38 +169,100 @@ def _is_private_ip(ip: str) -> bool:
 
 async def _query_grok_api(ioc_type: str, ioc_value: str) -> Dict[str, Any]:
     """
-    Query Grok API for threat intelligence (placeholder for when API is available).
-
-    Args:
-        ioc_type: Type of IOC (hash, domain, ip)
-        ioc_value: The IOC value
-
-    Returns:
-        Dict with threat intelligence
+    Query Grok API for threat intelligence.
     """
-    # TODO: Implement actual Grok API call when xAI releases the API
+    try:
+        import asyncio
+        import urllib.request
 
-    # For now, return placeholder
-    return _placeholder_grok_response(ioc_type, ioc_value)
+        prompt = f"""
+        Analyze this Indicator of Compromise (IOC) for security threats:
+        Type: {ioc_type}
+        Value: {ioc_value}
+
+        Search your knowledge base for:
+        1. Is this known malicious?
+        2. Associated threat actors or campaigns?
+        3. Recent security researcher discussions?
+
+        Return JSON format:
+        {{
+            "threat_score": 0-100,
+            "summary": "Brief summary...",
+            "threat_actor": "Name or Unknown",
+            "related_campaigns": ["list"],
+            "mentions": estimated_count
+        }}
+        """
+
+        headers = {
+            "Authorization": f"Bearer {GROK_API_KEY}",
+            "Content-Type": "application/json",
+            "User-Agent": "Mini-XDR/1.0",
+        }
+
+        payload = {
+            "model": "grok-3",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a senior threat intelligence analyst.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "response_format": {"type": "json_object"},
+        }
+
+        def _make_request():
+            req = urllib.request.Request(
+                f"{GROK_API_URL}/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers=headers,
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=30) as response:
+                return json.load(response)
+
+        # Run blocking I/O in executor
+        loop = asyncio.get_running_loop()
+        data = await loop.run_in_executor(None, _make_request)
+
+        content = data["choices"][0]["message"]["content"]
+        result = json.loads(content)
+
+        # Add metadata
+        result["ioc_type"] = ioc_type
+        result["ioc_value"] = ioc_value
+        result["status"] = "analyzed"
+
+        return result
+
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8")
+        logger.error(f"Grok API HTTP Error {e.code}: {e.reason}")
+        logger.error(f"Error Body: {error_body}")
+        return _placeholder_grok_response(ioc_type, ioc_value)
+    except Exception as e:
+        logger.error(f"Grok API call failed: {e}")
+        return _placeholder_grok_response(ioc_type, ioc_value)
 
 
 def _placeholder_grok_response(ioc_type: str, ioc_value: str) -> Dict[str, Any]:
     """
-    Placeholder response until Grok API is available.
-
-    In production, this would query X for security researcher discussions.
+    Placeholder response when API fails or is unconfigured.
     """
     return {
         "ioc_type": ioc_type,
         "ioc_value": ioc_value,
-        "threat_score": 0,  # 0-100
+        "threat_score": 0,
         "mentions": 0,
         "sentiment": "neutral",
         "related_campaigns": [],
         "researcher_notes": [],
         "url": None,
         "last_updated": "N/A",
-        "status": "grok_api_not_configured",
+        "status": "grok_api_error",
+        "summary": "External intelligence unavailable",
     }
 
 

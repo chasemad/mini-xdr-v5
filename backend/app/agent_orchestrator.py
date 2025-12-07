@@ -33,7 +33,25 @@ from .agents.predictive_hunter import PredictiveThreatHunter
 from .config import settings
 from .models import Action, Event, Incident
 
+# Define logger BEFORE imports that might use it in except blocks
 logger = logging.getLogger(__name__)
+
+# LangChain orchestrator integration (Phase 3)
+try:
+    from .agents.langchain_orchestrator import (
+        OrchestrationResult,
+        langchain_orchestrator,
+        orchestrate_with_langchain,
+    )
+
+    LANGCHAIN_ORCHESTRATOR_AVAILABLE = (
+        langchain_orchestrator._initialized if langchain_orchestrator else False
+    )
+except ImportError:
+    LANGCHAIN_ORCHESTRATOR_AVAILABLE = False
+    langchain_orchestrator = None
+    orchestrate_with_langchain = None
+    logger.info("LangChain orchestrator not available - using standard orchestration")
 
 
 class AgentRole(Enum):
@@ -1579,19 +1597,46 @@ class AgentOrchestrator:
         recent_events: List[Event],
         db_session=None,
         workflow_type: str = "comprehensive",
+        use_langchain: bool = True,
     ) -> Dict[str, Any]:
         """
-        Orchestrate a comprehensive incident response using all available agents
+        Orchestrate a comprehensive incident response using all available agents.
+
+        When LangChain is available and use_langchain=True, uses the ReAct-style
+        GPT-4 agent for intelligent reasoning. Falls back to rule-based workflow
+        when LangChain is unavailable.
 
         Args:
             incident: The incident to respond to
             recent_events: Recent events related to the incident
             db_session: Database session for persistence
             workflow_type: Type of orchestration workflow
+            use_langchain: Whether to try LangChain orchestrator first
 
         Returns:
             Comprehensive orchestration results
         """
+
+        # Try LangChain orchestrator first if available and enabled
+        if (
+            use_langchain
+            and LANGCHAIN_ORCHESTRATOR_AVAILABLE
+            and langchain_orchestrator
+        ):
+            try:
+                langchain_result = await self._orchestrate_with_langchain(
+                    incident, recent_events, db_session
+                )
+                if langchain_result.get("success"):
+                    return langchain_result
+                # If LangChain fails, fall through to regular workflow
+                self.logger.warning(
+                    "LangChain orchestration failed, using standard workflow"
+                )
+            except Exception as e:
+                self.logger.warning(
+                    f"LangChain orchestration error: {e}, using standard workflow"
+                )
 
         workflow_id = f"wf_{incident.id}_{int(datetime.utcnow().timestamp())}"
 
@@ -1671,6 +1716,112 @@ class AgentOrchestrator:
                 "partial_results": getattr(workflow, "results", {})
                 if "workflow" in locals()
                 else {},
+            }
+
+    async def _orchestrate_with_langchain(
+        self,
+        incident: Incident,
+        recent_events: List[Event],
+        db_session=None,
+    ) -> Dict[str, Any]:
+        """
+        Orchestrate incident response using LangChain ReAct agent.
+
+        This provides intelligent reasoning and action selection using GPT-4.
+
+        Args:
+            incident: The incident to respond to
+            recent_events: Recent events related to the incident
+            db_session: Database session for persistence
+
+        Returns:
+            Orchestration results compatible with standard workflow output
+        """
+        if not LANGCHAIN_ORCHESTRATOR_AVAILABLE or not orchestrate_with_langchain:
+            return {"success": False, "error": "LangChain not available"}
+
+        try:
+            # Convert events to dict format for LangChain
+            events_data = [
+                {
+                    "event_type": e.eventid,
+                    "message": e.message,
+                    "timestamp": str(e.ts) if e.ts else None,
+                    "dst_port": e.dst_port,
+                    "src_port": getattr(e, "src_port", None),
+                }
+                for e in recent_events[:20]  # Limit to recent 20
+            ]
+
+            # Get threat info from incident
+            threat_type = incident.threat_category or incident.reason or "Unknown"
+            confidence = incident.ml_confidence or 0.5
+            severity = incident.escalation_level or "medium"
+
+            # Get ML analysis from triage note if available
+            ml_analysis = None
+            if incident.triage_note:
+                if isinstance(incident.triage_note, dict):
+                    ml_analysis = incident.triage_note
+                else:
+                    try:
+                        ml_analysis = json.loads(incident.triage_note)
+                    except:
+                        pass
+
+            # Extract features for ML-Agent bridge
+            features = None
+            try:
+                from .ml_feature_extractor import ml_feature_extractor
+
+                features = ml_feature_extractor.extract_features(
+                    incident.src_ip, recent_events
+                )
+            except Exception as e:
+                logger.debug(f"Feature extraction for LangChain failed: {e}")
+
+            # Call LangChain orchestrator
+            result = await orchestrate_with_langchain(
+                src_ip=incident.src_ip,
+                threat_type=threat_type,
+                confidence=confidence,
+                severity=severity,
+                events=events_data,
+                ml_analysis=ml_analysis,
+                features=features,
+                incident_id=incident.id,  # NEW: Pass incident_id for investigation tracking
+            )
+
+            # Convert OrchestrationResult to standard workflow output format
+            return {
+                "success": result.success,
+                "workflow_id": f"langchain_{incident.id}_{int(datetime.utcnow().timestamp())}",
+                "orchestration_method": "langchain_react",
+                "results": {
+                    "final_decision": {
+                        "verdict": result.final_verdict,
+                        "should_contain": result.final_verdict
+                        in ["CONTAINED", "ESCALATE"],
+                        "priority_level": severity,
+                        "reasoning": result.reasoning,
+                        "confidence": result.confidence,
+                    },
+                    "actions_taken": result.actions_taken,
+                    "recommendations": result.recommendations,
+                    "agent_trace": result.agent_trace,
+                },
+                "execution_time": result.processing_time_ms / 1000,
+                "agents_involved": ["langchain_orchestrator"],
+                "langchain_verdict": result.final_verdict,
+                "langchain_reasoning": result.reasoning,
+            }
+
+        except Exception as e:
+            self.logger.error(f"LangChain orchestration failed: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e),
+                "orchestration_method": "langchain_react",
             }
 
     async def enhanced_orchestrate_incident_response(

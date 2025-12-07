@@ -11,26 +11,16 @@ import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-try:
-    from langchain.agents import AgentType, Tool, initialize_agent
-    from langchain.memory import ConversationBufferMemory
-    from langchain.schema import HumanMessage, SystemMessage
-    from langchain_openai import ChatOpenAI, OpenAI
-except ImportError:
-    # Fallback if LangChain is not available
-    logging.warning("LangChain not available, using basic agent implementation")
-    initialize_agent = None
-    Tool = None
-    AgentType = None
-    OpenAI = None
-    ChatOpenAI = None
-    ConversationBufferMemory = None
+from langchain_core.messages import HumanMessage
+from langchain_core.tools import Tool
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
 
+from .. import models as db_models
 from ..config import settings
 from ..enhanced_containment import ContainmentDecision, EnhancedContainmentEngine
 from ..external_intel import ThreatIntelligence
 from ..ml_engine import EnsembleMLDetector
-from ..models import Action, Event, Incident
 from ..responder import block_ip, unblock_ip
 
 logger = logging.getLogger(__name__)
@@ -52,11 +42,11 @@ class ContainmentAgent:
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
         # Initialize LangChain agent if available
-        if initialize_agent and self.llm_client:
+        if self.llm_client:
             self._init_langchain_agent()
         else:
             self.agent = None
-            self.logger.warning("Using basic agent implementation without LangChain")
+            self.logger.warning("LLM client not initialized - agent disabled")
 
     def _init_llm_client(self):
         """Initialize LLM client based on settings"""
@@ -108,26 +98,20 @@ class ContainmentAgent:
                 ),
             ]
 
-            # Initialize memory
-            memory = ConversationBufferMemory(memory_key="chat_history")
-
-            # Initialize agent
-            self.agent = initialize_agent(
-                tools,
+            # Initialize agent using LangGraph
+            self.agent = create_react_agent(
                 self.llm_client,
-                agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-                memory=memory,
-                verbose=True,
+                tools,
             )
 
-            self.logger.info("LangChain containment agent initialized")
+            self.logger.info("LangGraph containment agent initialized")
 
         except Exception as e:
             self.logger.error(f"Failed to initialize LangChain agent: {e}")
             self.agent = None
 
     async def orchestrate_response(
-        self, incident: Incident, recent_events: List[Event], db_session=None
+        self, incident, recent_events: List, db_session=None
     ) -> Dict[str, Any]:
         """
         Agent-orchestrated containment: LLM decides actions based on engine input
@@ -211,11 +195,11 @@ class ContainmentAgent:
 
     async def _langchain_orchestrate(
         self,
-        incident: Incident,
+        incident,
         decision: ContainmentDecision,
         ml_score: float,
         intel_result: Any,
-        recent_events: List[Event],
+        recent_events: List,
     ) -> Dict[str, Any]:
         """Use LangChain agent for orchestration"""
 
@@ -277,12 +261,17 @@ class ContainmentAgent:
 
         try:
             # Execute agent
-            response = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: self.agent.run(prompt)
-            )
+            # LangGraph agent expects a list of messages
+            inputs = {"messages": [HumanMessage(content=prompt)]}
+
+            response = await self.agent.ainvoke(inputs)
+
+            # Extract the last message content (AIMessage)
+            last_message = response["messages"][-1]
+            agent_response_text = last_message.content
 
             # Parse response
-            agent_output = self._parse_agent_response(response)
+            agent_output = self._parse_agent_response(agent_response_text)
 
             # Execute actions
             executed_actions = await self._execute_actions(
@@ -303,7 +292,7 @@ class ContainmentAgent:
 
     async def _basic_orchestrate(
         self,
-        incident: Incident,
+        incident,
         decision: ContainmentDecision,
         ml_score: float,
         intel_result: Any,
@@ -386,7 +375,7 @@ class ContainmentAgent:
         }
 
     def _build_critical_playbook(
-        self, threat_category: str, incident: Incident
+        self, threat_category: str, incident: Any
     ) -> Optional[Dict[str, Any]]:
         """Return an enriched response playbook for critical threats"""
         if not threat_category:
@@ -574,7 +563,7 @@ class ContainmentAgent:
         return None
 
     async def _launch_advanced_playbook(
-        self, incident: Incident, playbook: Dict[str, Any], db_session
+        self, incident: Any, playbook: Dict[str, Any], db_session
     ) -> Optional[Dict[str, Any]]:
         """Launch an advanced response workflow for the incident"""
         try:
@@ -639,7 +628,7 @@ class ContainmentAgent:
         }
 
     async def _execute_actions(
-        self, actions: List[str], incident: Incident, decision: ContainmentDecision
+        self, actions: List[str], incident: Any, decision: ContainmentDecision
     ) -> List[Dict[str, Any]]:
         """Execute the list of actions"""
         executed_actions = []
@@ -1700,7 +1689,7 @@ class ContainmentAgent:
             }
 
     async def _fallback_containment(
-        self, incident: Incident, decision: Optional[ContainmentDecision]
+        self, incident: Any, decision: Optional[ContainmentDecision]
     ) -> Dict[str, Any]:
         """Fallback to basic containment if agent fails"""
         try:
@@ -2354,7 +2343,7 @@ class RollbackAgent:
         return None
 
     async def evaluate_for_rollback(
-        self, incident: Incident, hours_since_action: float, db_session=None
+        self, incident: Any, hours_since_action: float, db_session=None
     ) -> Dict[str, Any]:
         """
         Comprehensive evaluation for rollback decision
@@ -2398,7 +2387,7 @@ class RollbackAgent:
                 "error": True,
             }
 
-    async def _get_incident_events(self, incident: Incident, db_session) -> List[Event]:
+    async def _get_incident_events(self, incident: Any, db_session) -> List:
         """Get events related to the incident"""
         if not db_session:
             return []
@@ -2421,7 +2410,7 @@ class RollbackAgent:
         return await asyncio.get_event_loop().run_in_executor(None, query.all)
 
     async def _analyze_false_positive_indicators(
-        self, incident: Incident, events: List[Event], hours_since_action: float
+        self, incident, events: List, hours_since_action: float
     ) -> Dict[str, Any]:
         """Analyze indicators that suggest false positive"""
 
@@ -2461,9 +2450,7 @@ class RollbackAgent:
             "indicators": indicators_found,
         }
 
-    async def _analyze_temporal_patterns(
-        self, incident: Incident, events: List[Event]
-    ) -> float:
+    async def _analyze_temporal_patterns(self, incident, events: List) -> float:
         """Analyze temporal patterns that might indicate legitimate activity"""
         if not events:
             return 0.0
@@ -2499,7 +2486,7 @@ class RollbackAgent:
 
         return min(score, 1.0)
 
-    async def _analyze_behavioral_patterns(self, events: List[Event]) -> float:
+    async def _analyze_behavioral_patterns(self, events: List) -> float:
         """Analyze behavioral patterns for legitimacy indicators"""
         if not events:
             return 0.0
@@ -2557,7 +2544,7 @@ class RollbackAgent:
         entropy = -sum([p * np.log2(p) for p in prob])
         return entropy
 
-    async def _analyze_threat_intel_consistency(self, incident: Incident) -> float:
+    async def _analyze_threat_intel_consistency(self, incident: Any) -> float:
         """Check if threat intelligence is consistent with the containment decision"""
         if not self.threat_intel:
             return 0.0
@@ -2587,7 +2574,7 @@ class RollbackAgent:
             return 0.0
 
     async def _assess_rollback_impact(
-        self, incident: Incident, db_session
+        self, incident: Any, db_session
     ) -> Dict[str, Any]:
         """Assess the impact of rolling back the containment action"""
         impact_analysis = {
@@ -2641,8 +2628,8 @@ class RollbackAgent:
 
     async def _ai_rollback_evaluation(
         self,
-        incident: Incident,
-        events: List[Event],
+        incident,
+        events: List,
         fp_analysis: Dict[str, Any],
         impact_analysis: Dict[str, Any],
     ) -> Dict[str, Any]:
@@ -2784,7 +2771,7 @@ class RollbackAgent:
         }
 
     async def _update_learning_data(
-        self, incident: Incident, rollback_decision: Dict[str, Any]
+        self, incident: Any, rollback_decision: Dict[str, Any]
     ):
         """Update learning data for future false positive detection improvement"""
 
@@ -2818,7 +2805,7 @@ class RollbackAgent:
         self.logger.info(f"Updated learning data for IP {incident.src_ip}")
 
     async def execute_rollback(
-        self, incident: Incident, rollback_decision: Dict[str, Any], db_session=None
+        self, incident: Any, rollback_decision: Dict[str, Any], db_session=None
     ) -> Dict[str, Any]:
         """Execute the rollback action if recommended"""
 

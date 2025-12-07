@@ -12,6 +12,8 @@ This package contains specialized AI agents for autonomous security operations:
 - Predictive Hunter: Proactive threat hunting, behavioral analysis, hypothesis generation
 - NLP Analyzer: Natural language processing for security events
 - Ingestion Agent: Data ingestion and normalization
+- LangChain Orchestrator: ReAct-style agent orchestration using GPT-4
+- LangChain Tools: Standardized tool wrappers for agent capabilities
 """
 
 # Core agents
@@ -37,6 +39,22 @@ from .ingestion_agent import IngestionAgent
 from .nlp_analyzer import NaturalLanguageThreatAnalyzer as NLPAnalyzer
 from .predictive_hunter import PredictiveThreatHunter as PredictiveHuntingAgent
 
+# LangChain integration (Phase 3)
+try:
+    from .langchain_orchestrator import (
+        LangChainOrchestrator,
+        OrchestrationResult,
+        langchain_orchestrator,
+        orchestrate_with_langchain,
+    )
+    from .tools import create_xdr_tools, get_tool_descriptions
+
+    LANGCHAIN_AGENTS_AVAILABLE = True
+except ImportError:
+    LANGCHAIN_AGENTS_AVAILABLE = False
+    langchain_orchestrator = None
+    orchestrate_with_langchain = None
+
 __all__ = [
     # Core agent classes
     "AttributionAgent",
@@ -61,4 +79,12 @@ __all__ = [
     "CoordinationContext",
     "CoordinationStrategy",
     "ConflictResolutionStrategy",
+    # LangChain integration
+    "LangChainOrchestrator",
+    "OrchestrationResult",
+    "langchain_orchestrator",
+    "orchestrate_with_langchain",
+    "create_xdr_tools",
+    "get_tool_descriptions",
+    "LANGCHAIN_AGENTS_AVAILABLE",
 ]

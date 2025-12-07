@@ -11,8 +11,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# Import models directly from models.py to avoid circular import issues
+from . import models as db_models
 from .config import settings
-from .models import ContainmentPolicy, Event, Incident
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ class EnhancedContainmentEngine:
         }
 
     async def evaluate_containment(
-        self, incident: Incident, recent_events: List[Event], db: AsyncSession = None
+        self, incident, recent_events: List, db: AsyncSession = None
     ) -> ContainmentDecision:
         """
         Comprehensive containment evaluation using multiple factors
@@ -153,9 +154,7 @@ class EnhancedContainmentEngine:
             threat_category=threat_category,
         )
 
-    async def _evaluate_threshold_risk(
-        self, incident: Incident, recent_events: List[Event]
-    ) -> float:
+    async def _evaluate_threshold_risk(self, incident, recent_events: List) -> float:
         """Evaluate risk based on traditional thresholds"""
 
         # Count failed login attempts
@@ -180,7 +179,7 @@ class EnhancedContainmentEngine:
 
         return risk_score
 
-    async def _analyze_behavioral_patterns(self, recent_events: List[Event]) -> float:
+    async def _analyze_behavioral_patterns(self, recent_events: List) -> float:
         """Analyze behavioral patterns for risk assessment"""
         if not recent_events:
             return 0.0
@@ -223,15 +222,15 @@ class EnhancedContainmentEngine:
         return max(risk_indicators) if risk_indicators else 0.1
 
     async def _check_policy_overrides(
-        self, incident: Incident, risk_factors: Dict[str, float], db: AsyncSession
+        self, incident, risk_factors: Dict[str, float], db: AsyncSession
     ) -> Optional[Dict[str, Any]]:
         """Check for policy-based containment overrides"""
         try:
             # Query active policies ordered by priority
             query = (
-                select(ContainmentPolicy)
-                .where(ContainmentPolicy.status == "active")
-                .order_by(ContainmentPolicy.priority)
+                select(db_models.ContainmentPolicy)
+                .where(db_models.ContainmentPolicy.status == "active")
+                .order_by(db_models.ContainmentPolicy.priority)
             )
 
             result = await db.execute(query)
@@ -259,8 +258,8 @@ class EnhancedContainmentEngine:
 
     async def _policy_matches_incident(
         self,
-        policy: ContainmentPolicy,
-        incident: Incident,
+        policy,
+        incident,
         risk_factors: Dict[str, float],
     ) -> bool:
         """Check if a policy matches the current incident"""
@@ -333,9 +332,7 @@ class EnhancedContainmentEngine:
 
         return min(weighted_sum / max(total_weight, 0.1), 1.0)
 
-    def _determine_escalation_level(
-        self, risk_score: float, incident: Incident = None
-    ) -> str:
+    def _determine_escalation_level(self, risk_score: float, incident=None) -> str:
         """Determine escalation level based on risk score and threat indicators"""
         base_level = "low"
 

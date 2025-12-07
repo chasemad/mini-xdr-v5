@@ -23,15 +23,10 @@ import logging
 import time
 from typing import Any, Dict, Literal
 
-try:
-    from langgraph.checkpoint.memory import MemorySaver
-    from langgraph.graph import END, StateGraph
+from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.graph import END, StateGraph
 
-    LANGGRAPH_AVAILABLE = True
-except ImportError:
-    LANGGRAPH_AVAILABLE = False
-    END = "END"  # Define END as string when LangGraph not available
-    logging.warning("LangGraph not available - orchestrator will not function")
+LANGGRAPH_AVAILABLE = True
 
 from app.council.gemini_judge import gemini_judge_node
 from app.council.grok_intel import grok_intel_node
@@ -289,11 +284,19 @@ def build_council_workflow() -> StateGraph:
 
     workflow.add_edge("decision_finalizer", END)
 
-    # Add memory checkpointing (optional, for debugging)
-    memory = MemorySaver()
+    # Add persistent checkpointing with SQLite
+    # Checkpoints are saved to disk and survive server restarts
+    import os
+
+    checkpoint_dir = "/var/lib/mini-xdr"
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    checkpoint_path = os.path.join(checkpoint_dir, "council_checkpoints.db")
+
+    checkpointer = SqliteSaver(checkpoint_path)
+    logger.info(f"Council workflow using persistent checkpoints: {checkpoint_path}")
 
     # Compile workflow
-    app = workflow.compile(checkpointer=memory)
+    app = workflow.compile(checkpointer=checkpointer)
 
     logger.info("Council workflow built successfully")
 

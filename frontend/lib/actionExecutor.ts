@@ -24,6 +24,17 @@ import {
   socEnforceMFA,
   socEnableDLP,
   socNotifyStakeholders,
+  socDnsSinkhole,
+  socTrafficRedirection,
+  socNetworkSegmentation,
+  socMemoryDump,
+  socKillProcess,
+  socMalwareRemoval,
+  socRegistryHardening,
+  socSystemRecovery,
+  socAttributionAnalysis,
+  socPrivilegedAccessReview,
+  socEncryptSensitiveData,
   executeSingleResponseAction,
 } from "@/app/lib/api";
 
@@ -175,11 +186,16 @@ export const ACTION_EXECUTORS: Record<string, ActionDefinition> = {
     requiresApproval: false,
     impact: "Domains unresolvable for all users.",
     executor: async (context) => {
-      return executeViaResponseEngine("dns_sinkhole", "DNS Sinkhole", context, {
-        domains: context.additionalParams?.domains || [context.domain],
-        sinkhole_ip: "127.0.0.1",
-        ttl: 3600,
-      });
+      const startTime = Date.now();
+      try {
+        const domains = context.additionalParams?.domains
+          ? (context.additionalParams.domains as string).split(',').map(d => d.trim())
+          : context.domain ? [context.domain] : undefined;
+        const response = await socDnsSinkhole(context.incidentId, domains);
+        return wrapResult("dns_sinkhole", "DNS Sinkhole", startTime, response);
+      } catch (error) {
+        return wrapResult("dns_sinkhole", "DNS Sinkhole", startTime, null, error);
+      }
     },
   },
 
@@ -191,11 +207,14 @@ export const ACTION_EXECUTORS: Record<string, ActionDefinition> = {
     requiresApproval: true,
     impact: "Traffic latency may increase.",
     executor: async (context) => {
-      return executeViaResponseEngine("traffic_redirection", "Traffic Redirection", context, {
-        source_criteria: { ip: context.sourceIp },
-        destination: "honeypot",
-        monitoring_level: "full",
-      });
+      const startTime = Date.now();
+      try {
+        const destination = context.additionalParams?.destination as string || "honeypot";
+        const response = await socTrafficRedirection(context.incidentId, destination);
+        return wrapResult("traffic_redirection", "Traffic Redirection", startTime, response);
+      } catch (error) {
+        return wrapResult("traffic_redirection", "Traffic Redirection", startTime, null, error);
+      }
     },
   },
 
@@ -207,10 +226,14 @@ export const ACTION_EXECUTORS: Record<string, ActionDefinition> = {
     requiresApproval: true,
     impact: "Inter-VLAN traffic blocked.",
     executor: async (context) => {
-      return executeViaResponseEngine("network_segmentation", "Network Segmentation", context, {
-        segment_type: context.additionalParams?.segment_type || "vlan",
-        isolation_level: "full",
-      });
+      const startTime = Date.now();
+      try {
+        const segmentType = context.additionalParams?.segment_type as string || "vlan";
+        const response = await socNetworkSegmentation(context.incidentId, segmentType);
+        return wrapResult("network_segmentation", "Network Segmentation", startTime, response);
+      } catch (error) {
+        return wrapResult("network_segmentation", "Network Segmentation", startTime, null, error);
+      }
     },
   },
 
@@ -279,11 +302,13 @@ export const ACTION_EXECUTORS: Record<string, ActionDefinition> = {
     requiresApproval: false,
     impact: "System freeze during dump (~30s).",
     executor: async (context) => {
-      return executeViaResponseEngine("memory_dump_collection", "Memory Dump", context, {
-        target_hosts: [context.targetHost],
-        dump_type: "full",
-        encryption: true,
-      });
+      const startTime = Date.now();
+      try {
+        const response = await socMemoryDump(context.incidentId, context.targetHost);
+        return wrapResult("memory_dump_collection", "Memory Dump", startTime, response);
+      } catch (error) {
+        return wrapResult("memory_dump_collection", "Memory Dump", startTime, null, error);
+      }
     },
   },
 
@@ -295,11 +320,17 @@ export const ACTION_EXECUTORS: Record<string, ActionDefinition> = {
     requiresApproval: false,
     impact: "Process stopped immediately.",
     executor: async (context) => {
-      return executeViaResponseEngine("process_termination", "Kill Process", context, {
-        process_criteria: context.additionalParams?.process_criteria || {},
-        force_level: "normal",
-        confirmation: true,
-      });
+      const startTime = Date.now();
+      try {
+        const processCriteria = {
+          process_name: context.additionalParams?.process_name,
+          pid: context.additionalParams?.pid,
+        };
+        const response = await socKillProcess(context.incidentId, processCriteria);
+        return wrapResult("process_termination", "Kill Process", startTime, response);
+      } catch (error) {
+        return wrapResult("process_termination", "Kill Process", startTime, null, error);
+      }
     },
   },
 
@@ -311,11 +342,14 @@ export const ACTION_EXECUTORS: Record<string, ActionDefinition> = {
     requiresApproval: true,
     impact: "System restart may be required.",
     executor: async (context) => {
-      return executeViaResponseEngine("registry_hardening", "Registry Hardening", context, {
-        hardening_profile: "security_baseline",
-        target_systems: [context.targetHost],
-        backup: true,
-      });
+      const startTime = Date.now();
+      try {
+        const hardeningProfile = context.additionalParams?.hardening_profile as string || "security_baseline";
+        const response = await socRegistryHardening(context.incidentId, hardeningProfile, true);
+        return wrapResult("registry_hardening", "Registry Hardening", startTime, response);
+      } catch (error) {
+        return wrapResult("registry_hardening", "Registry Hardening", startTime, null, error);
+      }
     },
   },
 
@@ -327,10 +361,14 @@ export const ACTION_EXECUTORS: Record<string, ActionDefinition> = {
     requiresApproval: true,
     impact: "Data since last backup lost.",
     executor: async (context) => {
-      return executeViaResponseEngine("system_recovery", "System Recovery", context, {
-        recovery_point: "latest_clean",
-        target_systems: [context.targetHost],
-      });
+      const startTime = Date.now();
+      try {
+        const recoveryPoint = context.additionalParams?.recovery_point as string || "latest_clean";
+        const response = await socSystemRecovery(context.incidentId, recoveryPoint);
+        return wrapResult("system_recovery", "System Recovery", startTime, response);
+      } catch (error) {
+        return wrapResult("system_recovery", "System Recovery", startTime, null, error);
+      }
     },
   },
 
@@ -342,11 +380,13 @@ export const ACTION_EXECUTORS: Record<string, ActionDefinition> = {
     requiresApproval: false,
     impact: "File deletion.",
     executor: async (context) => {
-      return executeViaResponseEngine("malware_removal", "Malware Removal", context, {
-        scan_type: "deep",
-        auto_quarantine: true,
-        target_systems: [context.targetHost],
-      });
+      const startTime = Date.now();
+      try {
+        const response = await socMalwareRemoval(context.incidentId, context.targetHost);
+        return wrapResult("malware_removal", "Malware Removal", startTime, response);
+      } catch (error) {
+        return wrapResult("malware_removal", "Malware Removal", startTime, null, error);
+      }
     },
   },
 
@@ -470,10 +510,13 @@ export const ACTION_EXECUTORS: Record<string, ActionDefinition> = {
     requiresApproval: false,
     impact: "Read-only analysis.",
     executor: async (context) => {
-      return executeViaResponseEngine("attribution_analysis", "Attribution Analysis", context, {
-        include_osint: true,
-        ml_confidence_threshold: 0.7,
-      });
+      const startTime = Date.now();
+      try {
+        const response = await socAttributionAnalysis(context.incidentId);
+        return wrapResult("attribution_analysis", "Attribution Analysis", startTime, response);
+      } catch (error) {
+        return wrapResult("attribution_analysis", "Attribution Analysis", startTime, null, error);
+      }
     },
   },
 
@@ -558,10 +601,14 @@ export const ACTION_EXECUTORS: Record<string, ActionDefinition> = {
     requiresApproval: false,
     impact: "Read-only audit.",
     executor: async (context) => {
-      return executeViaResponseEngine("privileged_access_review", "Privilege Review", context, {
-        scope: "all_privileged",
-        generate_report: true,
-      });
+      const startTime = Date.now();
+      try {
+        const scope = context.additionalParams?.scope as string || "all_privileged";
+        const response = await socPrivilegedAccessReview(context.incidentId, scope, true);
+        return wrapResult("privileged_access_review", "Privilege Review", startTime, response);
+      } catch (error) {
+        return wrapResult("privileged_access_review", "Privilege Review", startTime, null, error);
+      }
     },
   },
 
@@ -610,10 +657,15 @@ export const ACTION_EXECUTORS: Record<string, ActionDefinition> = {
     requiresApproval: true,
     impact: "Data temporarily unavailable.",
     executor: async (context) => {
-      return executeViaResponseEngine("encrypt_sensitive_data", "Data Encryption", context, {
-        encryption_algorithm: "AES-256",
-        key_management: "hsm",
-      });
+      const startTime = Date.now();
+      try {
+        const algorithm = context.additionalParams?.encryption_algorithm as string || "AES-256";
+        const keyManagement = context.additionalParams?.key_management as string || "hsm";
+        const response = await socEncryptSensitiveData(context.incidentId, algorithm, keyManagement);
+        return wrapResult("encrypt_sensitive_data", "Data Encryption", startTime, response);
+      } catch (error) {
+        return wrapResult("encrypt_sensitive_data", "Data Encryption", startTime, null, error);
+      }
     },
   },
 

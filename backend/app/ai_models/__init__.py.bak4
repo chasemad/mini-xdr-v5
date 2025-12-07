@@ -1,0 +1,55 @@
+"""
+Revolutionary ML Models for Mini-XDR
+
+This package contains state-of-the-art deep learning models for
+cybersecurity threat detection:
+
+- FT-Transformer: Feature Tokenizer Transformer for tabular data
+- EnsembleDetector: Uncertainty-weighted ensemble combining multiple models
+- EvidentialHead: Dirichlet-based uncertainty quantification
+"""
+
+from .ft_transformer import (
+    FTTransformer,
+    FTTransformerConfig,
+    FTTransformerDetector,
+    EvidentialHead,
+    get_ft_transformer_detector,
+)
+
+from .ensemble import (
+    EnsembleDetector,
+    EnsembleConfig,
+    TemporalLSTM,
+    XGBoostWrapper,
+    get_ensemble_detector,
+)
+
+# Import from main models.py for compatibility
+try:
+    from ..models import ThreatIntelSource, Event, Incident, ContainmentPolicy
+except ImportError:
+    ThreatIntelSource = None
+    Event = None
+    Incident = None
+    ContainmentPolicy = None
+__all__ = [
+    # FT-Transformer
+    "FTTransformer",
+    "FTTransformerConfig",
+    "FTTransformerDetector",
+    "EvidentialHead",
+    "get_ft_transformer_detector",
+    # Ensemble
+    "EnsembleDetector",
+    "EnsembleConfig",
+    "TemporalLSTM",
+    "XGBoostWrapper",
+    "get_ensemble_detector",
+    # Compatibility imports
+    "ThreatIntelSource",
+    "Event",
+    "Incident",
+    "ContainmentPolicy",
+]
+

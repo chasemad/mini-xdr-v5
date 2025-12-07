@@ -25,7 +25,7 @@ Complete guide for managing AWS VM honeypots with automatic startup/stop capabil
 # Start services
 ~/.mini-xdr/honeypot-management/start.sh
 
-# Stop services  
+# Stop services
 ~/.mini-xdr/honeypot-management/stop.sh
 
 # Restart services
@@ -70,7 +70,7 @@ Complete guide for managing AWS VM honeypots with automatic startup/stop capabil
 
 ### Additional Honeypot Ports
 - **FTP**: Port 21
-- **Telnet**: Port 23  
+- **Telnet**: Port 23
 - **SMTP**: Port 25
 - **DNS**: Port 53
 - **POP3**: Port 110
@@ -128,7 +128,7 @@ systemctl status honeypot-startup.service
 # Enable auto-startup
 sudo systemctl enable honeypot-startup.service
 
-# Disable auto-startup  
+# Disable auto-startup
 sudo systemctl disable honeypot-startup.service
 
 # View startup logs
@@ -216,7 +216,7 @@ ssh admin@<PUBLIC_IP>  # This goes to Cowrie honeypot
 # Main login honeypot
 http://<PUBLIC_IP>/login.php
 
-# WordPress admin simulation  
+# WordPress admin simulation
 http://<PUBLIC_IP>/wp-admin/
 
 # phpMyAdmin simulation
@@ -289,7 +289,7 @@ sudo cat /etc/fluent-bit/fluent-bit.conf
 # Test log forwarding
 curl -X POST http://YOUR_XDR_IP:8000/ingest/multi \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer aws-honeypot-enhanced-key' \
+  -H 'Authorization: Bearer demo-honeypot-key' \
   -d '{"test": "message"}'
 ```
 
@@ -451,7 +451,7 @@ For issues with the honeypot management system:
 ## 🔗 Related Documentation
 
 - [Mini-XDR Setup Guide](../docs/SETUP_GUIDE.md)
-- [Attack Testing Guide](../docs/ATTACK_TESTING_GUIDE.md)  
+- [Attack Testing Guide](../docs/ATTACK_TESTING_GUIDE.md)
 - [Deployment Guide](../docs/DEPLOYMENT.md)
 - [Cowrie Documentation](https://cowrie.readthedocs.io/)
 - [AWS EC2 Documentation](https://docs.aws.amazon.com/ec2/)

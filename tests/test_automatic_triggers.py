@@ -2,23 +2,22 @@
 Test Automatic Workflow Triggers End-to-End
 Tests that incoming events trigger workflows automatically
 """
-import requests
-import time
-import json
-import hmac
 import hashlib
+import hmac
+import json
+import time
 from datetime import datetime, timezone
+
+import requests
 
 # Configuration
 BASE_URL = "http://localhost:8000"
 API_KEY = "demo-minixdr-api-key"  # From .env
 
+
 def simple_api_request(method, endpoint, data=None):
     """Make API request with simple API key auth"""
-    headers = {
-        "Content-Type": "application/json",
-        "x-api-key": API_KEY
-    }
+    headers = {"Content-Type": "application/json", "x-api-key": API_KEY}
 
     url = f"{BASE_URL}{endpoint}"
 
@@ -31,28 +30,24 @@ def simple_api_request(method, endpoint, data=None):
 
     return response
 
+
 def send_authenticated_events(events):
     """Send events via /ingest/cowrie with HMAC auth"""
     # For now, send via /ingest/multi with API key (HMAC would require device credentials)
     # The trigger evaluator works regardless of ingestion method
-    payload = {
-        "source_type": "cowrie",
-        "hostname": "test-honeypot",
-        "events": events
-    }
+    payload = {"source_type": "cowrie", "hostname": "test-honeypot", "events": events}
 
-    headers = {
-        "Content-Type": "application/json"
-    }
+    headers = {"Content-Type": "application/json"}
 
     response = requests.post(f"{BASE_URL}/ingest/multi", headers=headers, json=payload)
     return response
 
+
 def test_ssh_brute_force_trigger():
     """Test that SSH brute force events automatically trigger workflow"""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("🧪 TEST: SSH Brute Force Automatic Workflow Trigger")
-    print("="*80)
+    print("=" * 80)
 
     # Step 1: Check initial trigger stats
     print("\n📊 Step 1: Checking initial trigger stats...")
@@ -72,7 +67,9 @@ def test_ssh_brute_force_trigger():
         triggers = response.json()
         print(f"   ✓ Found {len(triggers)} enabled triggers")
         for trigger in triggers:
-            print(f"     - {trigger['name']} (ID: {trigger['id']}, Auto-execute: {trigger['auto_execute']})")
+            print(
+                f"     - {trigger['name']} (ID: {trigger['id']}, Auto-execute: {trigger['auto_execute']})"
+            )
     else:
         print(f"   ✗ Failed to list triggers: {response.status_code}")
         return False
@@ -83,14 +80,16 @@ def test_ssh_brute_force_trigger():
 
     events = []
     for i in range(8):  # Trigger threshold is 6, send 8 to be sure
-        events.append({
-            "eventid": "cowrie.login.failed",
-            "src_ip": test_ip,
-            "dst_port": 2222,
-            "username": "admin",
-            "password": f"password{i}",
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        })
+        events.append(
+            {
+                "eventid": "cowrie.login.failed",
+                "src_ip": test_ip,
+                "dst_port": 2222,
+                "username": "admin",
+                "password": f"password{i}",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
     response = send_authenticated_events(events)
     if response.status_code == 200:
@@ -122,15 +121,22 @@ def test_ssh_brute_force_trigger():
         print(f"   ✓ Total workflows: {len(workflows)}")
 
         # Find recent workflows for our incident
-        recent_workflows = [w for w in workflows if
-                          w.get("incident_id") == incident_id or
-                          "auto_trigger" in str(w.get("triggered_by", ""))]
+        recent_workflows = [
+            w
+            for w in workflows
+            if w.get("incident_id") == incident_id
+            or "auto_trigger" in str(w.get("triggered_by", ""))
+        ]
 
         if recent_workflows:
             print(f"   ✓ Found {len(recent_workflows)} workflows from auto-triggers:")
             for wf in recent_workflows[:3]:  # Show first 3
-                print(f"     - Workflow {wf.get('workflow_id')}: {wf.get('playbook_name')}")
-                print(f"       Status: {wf.get('status')}, Priority: {wf.get('priority')}")
+                print(
+                    f"     - Workflow {wf.get('workflow_id')}: {wf.get('playbook_name')}"
+                )
+                print(
+                    f"       Status: {wf.get('status')}, Priority: {wf.get('priority')}"
+                )
         else:
             print("   ⚠️  No workflows found from auto-triggers")
     else:
@@ -148,7 +154,9 @@ def test_ssh_brute_force_trigger():
         print(f"   ✓ New executions: {new_executions}")
 
         if new_executions > 0:
-            print(f"\n   🎉 SUCCESS! Automatic triggers executed {new_executions} time(s)!")
+            print(
+                f"\n   🎉 SUCCESS! Automatic triggers executed {new_executions} time(s)!"
+            )
             return True
         else:
             print(f"\n   ⚠️  No new trigger executions detected")
@@ -161,11 +169,12 @@ def test_ssh_brute_force_trigger():
         print(f"   ✗ Failed to get stats: {response.status_code}")
         return False
 
+
 def test_trigger_details():
     """Check individual trigger metrics"""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("📈 Checking Individual Trigger Metrics")
-    print("="*80)
+    print("=" * 80)
 
     response = simple_api_request("GET", "/api/triggers")
     if response.status_code == 200:
@@ -180,17 +189,18 @@ def test_trigger_details():
             print(f"   Executions: {trigger['trigger_count']}")
             print(f"   Success Rate: {trigger['success_rate']:.1f}%")
             print(f"   Avg Response Time: {trigger['avg_response_time_ms']:.1f}ms")
-            if trigger.get('last_triggered_at'):
+            if trigger.get("last_triggered_at"):
                 print(f"   Last Triggered: {trigger['last_triggered_at']}")
             print()
     else:
         print(f"✗ Failed to fetch triggers: {response.status_code}")
 
+
 if __name__ == "__main__":
     print("\n🚀 AUTOMATIC WORKFLOW TRIGGER TEST SUITE")
-    print("="*80)
+    print("=" * 80)
     print("Testing end-to-end automatic workflow triggering")
-    print("="*80)
+    print("=" * 80)
 
     # Run main test
     success = test_ssh_brute_force_trigger()
@@ -199,10 +209,12 @@ if __name__ == "__main__":
     test_trigger_details()
 
     # Final result
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     if success:
         print("✅ TEST PASSED: Automatic triggers are working!")
     else:
         print("⚠️  TEST INCONCLUSIVE: Check logs for details")
-        print("   Backend log: /Users/chasemad/Desktop/mini-xdr/backend/logs/backend.log")
-    print("="*80)
+        print(
+            "   Backend log: /Users/chasemad/Desktop/mini-xdr/backend/logs/backend.log"
+        )
+    print("=" * 80)

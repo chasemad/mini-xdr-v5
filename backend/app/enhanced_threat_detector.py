@@ -7,6 +7,8 @@ Strategic improvements to the existing 97.98% accuracy model:
 3. OpenAI Integration: Novel attack detection for uncertain cases
 4. Explainable AI: SHAP/LIME for transparency
 5. Ensemble Methods: Multiple models with confidence calibration
+6. Specialist Model Routing: Binary classifiers for high-FP attack types
+7. Temperature Scaling: Confidence calibration to reduce overconfidence
 """
 
 import asyncio
@@ -30,6 +32,10 @@ from .models import Event
 
 logger = logging.getLogger(__name__)
 
+# Temperature scaling factor for confidence calibration
+# Higher values = less confident predictions (reduces false positives)
+DEFAULT_TEMPERATURE = 1.5
+
 
 @dataclass
 class PredictionResult:
@@ -43,6 +49,316 @@ class PredictionResult:
     explanation: Dict[str, Any]
     openai_enhanced: bool = False
     feature_importance: Dict[str, float] = None
+    specialist_verified: bool = False
+    specialist_confidence: float = None
+
+
+class SpecialistModelManager:
+    """
+    Manages specialist binary classifier models for high-FP attack types.
+
+    Specialist models are trained specifically for:
+    - DDoS detection (93.29% accuracy)
+    - Brute Force detection (90.52% accuracy)
+    - Web Attack detection (95.29% accuracy)
+
+    These provide verification when the general model predicts these classes,
+    reducing false positives from the general model's lower precision.
+    """
+
+    # Map general model class IDs to specialist model names
+    CLASS_TO_SPECIALIST = {
+        1: "ddos",  # DDoS/DoS Attack
+        3: "brute_force",  # Brute Force Attack
+        4: "web_attacks",  # Web Application Attack
+    }
+
+    # Minimum specialist confidence to confirm detection
+    SPECIALIST_CONFIRMATION_THRESHOLD = 0.85
+
+    def __init__(
+        self, models_dir: str = "/Users/chasemad/Desktop/mini-xdr/models/local_trained"
+    ):
+        self.models_dir = Path(models_dir)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.specialists: Dict[str, nn.Module] = {}
+        self.scalers: Dict[str, Any] = {}
+        self.metadata: Dict[str, Dict] = {}
+        self._loaded = False
+
+    def load_specialists(self) -> bool:
+        """Load all specialist models."""
+        if self._loaded:
+            return True
+
+        try:
+            for class_id, specialist_name in self.CLASS_TO_SPECIALIST.items():
+                model_path = (
+                    self.models_dir
+                    / specialist_name
+                    / f"{specialist_name}_specialist"
+                    / "threat_detector.pth"
+                )
+                metadata_path = (
+                    self.models_dir
+                    / specialist_name
+                    / f"{specialist_name}_specialist"
+                    / "model_metadata.json"
+                )
+
+                if not model_path.exists():
+                    logger.warning(f"Specialist model not found: {model_path}")
+                    continue
+
+                # Load metadata
+                if metadata_path.exists():
+                    with open(metadata_path) as f:
+                        self.metadata[specialist_name] = json.load(f)
+                else:
+                    self.metadata[specialist_name] = {
+                        "hidden_dims": [512, 256, 128, 64],
+                        "num_classes": 2,
+                        "dropout_rate": 0.3,
+                        "use_attention": True,
+                    }
+
+                # Create and load model
+                meta = self.metadata[specialist_name]
+                model = self._create_specialist_model(
+                    input_dim=79,
+                    hidden_dims=meta.get("hidden_dims", [512, 256, 128, 64]),
+                    num_classes=meta.get("num_classes", 2),
+                    dropout_rate=meta.get("dropout_rate", 0.3),
+                    use_attention=meta.get("use_attention", True),
+                )
+
+                state_dict = torch.load(model_path, map_location=self.device)
+                model.load_state_dict(state_dict)
+                model.to(self.device)
+                model.eval()
+
+                self.specialists[specialist_name] = model
+                logger.info(
+                    f"Loaded specialist model: {specialist_name} (accuracy: {meta.get('best_val_accuracy', 'N/A')})"
+                )
+
+            self._loaded = True
+            logger.info(f"Specialist models loaded: {list(self.specialists.keys())}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to load specialist models: {e}", exc_info=True)
+            return False
+
+    def _create_specialist_model(
+        self,
+        input_dim: int,
+        hidden_dims: List[int],
+        num_classes: int,
+        dropout_rate: float,
+        use_attention: bool,
+    ) -> nn.Module:
+        """Create a specialist model architecture matching training."""
+        # Use the same architecture as the general model but with binary output
+        return _SpecialistDetector(
+            input_dim=input_dim,
+            hidden_dims=hidden_dims,
+            num_classes=num_classes,
+            dropout_rate=dropout_rate,
+            use_attention=use_attention,
+        )
+
+    def verify_prediction(
+        self,
+        predicted_class: int,
+        features: np.ndarray,
+        temperature: float = DEFAULT_TEMPERATURE,
+    ) -> Tuple[bool, float, str]:
+        """
+        Verify a general model prediction using the appropriate specialist.
+
+        Args:
+            predicted_class: Class predicted by general model
+            features: Feature vector (79-dimensional)
+            temperature: Temperature for confidence calibration
+
+        Returns:
+            Tuple of (confirmed: bool, specialist_confidence: float, reason: str)
+        """
+        specialist_name = self.CLASS_TO_SPECIALIST.get(predicted_class)
+
+        if specialist_name is None:
+            # No specialist for this class - auto-confirm
+            return True, 1.0, "no_specialist_needed"
+
+        if specialist_name not in self.specialists:
+            # Specialist not loaded - use general model prediction
+            logger.warning(f"Specialist {specialist_name} not loaded, cannot verify")
+            return True, 0.5, "specialist_unavailable"
+
+        try:
+            model = self.specialists[specialist_name]
+
+            # Prepare input
+            input_tensor = torch.tensor(features, dtype=torch.float32).to(self.device)
+            if input_tensor.dim() == 1:
+                input_tensor = input_tensor.unsqueeze(0)
+
+            # Get specialist prediction
+            with torch.no_grad():
+                logits, uncertainty = model(input_tensor)
+
+                # Apply temperature scaling
+                scaled_logits = logits / temperature
+                probabilities = F.softmax(scaled_logits, dim=1)
+
+                # Class 1 is the attack class in binary specialist
+                attack_probability = probabilities[0, 1].item()
+
+            # Determine if specialist confirms
+            confirmed = attack_probability >= self.SPECIALIST_CONFIRMATION_THRESHOLD
+
+            reason = "specialist_confirmed" if confirmed else "specialist_rejected"
+
+            logger.info(
+                f"Specialist {specialist_name} verification: "
+                f"attack_prob={attack_probability:.3f}, "
+                f"threshold={self.SPECIALIST_CONFIRMATION_THRESHOLD}, "
+                f"confirmed={confirmed}"
+            )
+
+            return confirmed, attack_probability, reason
+
+        except Exception as e:
+            logger.error(f"Specialist verification failed: {e}", exc_info=True)
+            return True, 0.5, f"verification_error: {str(e)}"
+
+
+class _SpecialistDetector(nn.Module):
+    """
+    Specialist detector architecture for binary classification.
+    Matches the architecture used during specialist model training.
+    """
+
+    def __init__(
+        self,
+        input_dim: int = 79,
+        hidden_dims: List[int] = [512, 256, 128, 64],
+        num_classes: int = 2,
+        dropout_rate: float = 0.3,
+        use_attention: bool = True,
+    ):
+        super().__init__()
+
+        self.input_dim = input_dim
+        self.num_classes = num_classes
+        self.use_attention = use_attention
+
+        # Feature interaction layer
+        self.feature_interaction = nn.Linear(input_dim, input_dim)
+
+        # Optional attention
+        if use_attention:
+            self.attention = _SpecialistAttention(input_dim, attention_dim=64)
+
+        # Build layers with uncertainty blocks
+        layers = []
+        prev_dim = input_dim
+        for hidden_dim in hidden_dims:
+            layers.append(
+                _SpecialistUncertaintyBlock(prev_dim, hidden_dim, dropout_rate)
+            )
+            prev_dim = hidden_dim
+        self.feature_extractor = nn.ModuleList(layers)
+
+        # Skip connections
+        self.skip_connections = nn.ModuleList(
+            [
+                nn.Linear(input_dim, hidden_dims[-1]),
+                nn.Linear(hidden_dims[0], hidden_dims[-1]),
+            ]
+        )
+
+        # Output layers
+        self.classifier = nn.Linear(prev_dim, num_classes)
+        self.uncertainty_head = nn.Linear(prev_dim, 1)
+        self.mc_dropout = nn.Dropout(dropout_rate)
+
+    def forward(self, x, return_features: bool = False):
+        # Feature interaction
+        x_interact = torch.relu(self.feature_interaction(x))
+        x = x + x_interact
+
+        # Attention
+        if self.use_attention:
+            x_attended = self.attention(x)
+            x = x_attended
+
+        x_input = x
+        x_mid = None
+
+        # Forward through feature extractor
+        for i, layer in enumerate(self.feature_extractor):
+            x = layer(x)
+            if i == 0:
+                x_mid = x
+
+        # Skip connections
+        skip1 = torch.relu(self.skip_connections[0](x_input))
+        skip2 = torch.relu(self.skip_connections[1](x_mid))
+        x = x + skip1 + skip2
+
+        features = x
+        logits = self.classifier(features)
+        uncertainty = torch.sigmoid(self.uncertainty_head(self.mc_dropout(features)))
+
+        if return_features:
+            return logits, uncertainty, features
+
+        return logits, uncertainty
+
+
+class _SpecialistAttention(nn.Module):
+    """Attention layer for specialist models."""
+
+    def __init__(self, input_dim: int, attention_dim: int = 64):
+        super().__init__()
+        self.attention_dim = attention_dim
+        self.query = nn.Linear(input_dim, attention_dim)
+        self.key = nn.Linear(input_dim, attention_dim)
+        self.value = nn.Linear(input_dim, attention_dim)
+        self.output = nn.Linear(attention_dim, input_dim)
+        self.dropout = nn.Dropout(0.1)
+
+    def forward(self, x):
+        q = self.query(x).unsqueeze(1)
+        k = self.key(x).unsqueeze(1)
+        v = self.value(x).unsqueeze(1)
+
+        attention_weights = torch.softmax(
+            torch.matmul(q, k.transpose(-2, -1)) / (self.attention_dim**0.5), dim=-1
+        )
+        attended = torch.matmul(attention_weights, v).squeeze(1)
+        output = self.output(attended)
+        output = self.dropout(output)
+        return output + x
+
+
+class _SpecialistUncertaintyBlock(nn.Module):
+    """Uncertainty block for specialist models."""
+
+    def __init__(self, in_dim: int, out_dim: int, dropout_rate: float):
+        super().__init__()
+        self.linear = nn.Linear(in_dim, out_dim)
+        self.dropout = nn.Dropout(dropout_rate)
+        self.batch_norm = nn.BatchNorm1d(out_dim)
+
+    def forward(self, x):
+        x = self.linear(x)
+        x = self.batch_norm(x)
+        x = F.relu(x)
+        x = self.dropout(x)
+        return x
 
 
 class AttentionLayer(nn.Module):
@@ -644,17 +960,27 @@ class EnhancedThreatDetectionSystem:
     """
     Complete enhanced threat detection system combining:
     - Enhanced ML model with uncertainty
+    - Specialist model verification for high-FP classes
+    - Temperature scaling for confidence calibration
     - OpenAI analysis for uncertain cases
     - Explainable AI for transparency
     - Feature quality enhancement
     """
 
-    def __init__(self, model_path: str = None):
+    def __init__(
+        self, model_path: str = None, temperature: float = DEFAULT_TEMPERATURE
+    ):
         self.model = None
         self.feature_enhancer = FeatureEnhancer()
         self.openai_analyzer = OpenAIThreatAnalyzer()
         self.explainer = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # Temperature for confidence calibration (reduces overconfidence)
+        self.temperature = temperature
+
+        # Specialist models for verifying high-FP classes
+        self.specialist_manager = SpecialistModelManager()
 
         # Threat class mapping
         self.threat_classes = {
@@ -718,6 +1044,9 @@ class EnhancedThreatDetectionSystem:
                 )
                 self.feature_enhancer.scaler = enhancer_data.get("scaler")
                 logger.info("Feature enhancer loaded")
+
+            # Load specialist models for high-FP class verification
+            self.specialist_manager.load_specialists()
 
             return True
 
@@ -807,14 +1136,20 @@ class EnhancedThreatDetectionSystem:
                     aleatoric_uncertainty,
                 ) = self.model.predict_with_uncertainty(input_tensor)
 
-                # Get primary prediction
-                predicted_class = torch.argmax(probabilities, dim=1).item()
-                confidence = probabilities[0, predicted_class].item()
-                class_probabilities = probabilities[0].cpu().numpy().tolist()
+                # Apply temperature scaling to calibrate confidence
+                # Higher temperature = less confident predictions (reduces FPs)
+                logits = torch.log(probabilities + 1e-10)  # Convert back to logits
+                scaled_logits = logits / self.temperature
+                calibrated_probabilities = F.softmax(scaled_logits, dim=1)
+
+                # Get primary prediction from calibrated probabilities
+                predicted_class = torch.argmax(calibrated_probabilities, dim=1).item()
+                confidence = calibrated_probabilities[0, predicted_class].item()
+                class_probabilities = calibrated_probabilities[0].cpu().numpy().tolist()
 
                 # Debug: Log class probabilities
                 logger.info(
-                    f"🔍 MODEL DEBUG - Class probabilities: {[f'{p:.3f}' for p in class_probabilities]}"
+                    f"🔍 MODEL DEBUG - Class probabilities (temp={self.temperature}): {[f'{p:.3f}' for p in class_probabilities]}"
                 )
                 logger.info(
                     f"🔍 MODEL DEBUG - Classes: Normal={class_probabilities[0]:.3f}, DDoS={class_probabilities[1]:.3f}, Recon={class_probabilities[2]:.3f}, BruteForce={class_probabilities[3]:.3f}, WebAttack={class_probabilities[4]:.3f}, Malware={class_probabilities[5]:.3f}, APT={class_probabilities[6]:.3f}"
@@ -827,6 +1162,39 @@ class EnhancedThreatDetectionSystem:
                     epistemic_uncertainty + aleatoric_uncertainty
                 ) / 2
 
+            # Specialist verification for high-FP classes (1=DDoS, 3=BruteForce, 4=WebAttack)
+            specialist_verified = False
+            specialist_confidence = None
+            specialist_reason = None
+
+            if predicted_class in SpecialistModelManager.CLASS_TO_SPECIALIST:
+                (
+                    confirmed,
+                    spec_conf,
+                    reason,
+                ) = self.specialist_manager.verify_prediction(
+                    predicted_class=predicted_class,
+                    features=enhanced_features,
+                    temperature=self.temperature,
+                )
+                specialist_verified = True
+                specialist_confidence = spec_conf
+                specialist_reason = reason
+
+                if not confirmed:
+                    # Specialist rejected - reduce confidence significantly
+                    original_confidence = confidence
+                    confidence = min(confidence * 0.3, 0.30)  # Cap at 30%
+                    logger.warning(
+                        f"🚫 Specialist rejected prediction: {self.threat_classes.get(predicted_class)} "
+                        f"(specialist_conf={spec_conf:.3f}, original_conf={original_confidence:.3f}, new_conf={confidence:.3f})"
+                    )
+                else:
+                    logger.info(
+                        f"✅ Specialist confirmed prediction: {self.threat_classes.get(predicted_class)} "
+                        f"(specialist_conf={spec_conf:.3f})"
+                    )
+
             # Create initial prediction result
             prediction = PredictionResult(
                 predicted_class=predicted_class,
@@ -835,6 +1203,8 @@ class EnhancedThreatDetectionSystem:
                 uncertainty_score=combined_uncertainty,
                 threat_type=self.threat_classes.get(predicted_class, "Unknown"),
                 explanation={},  # Will be populated below if explainer is available
+                specialist_verified=specialist_verified,
+                specialist_confidence=specialist_confidence,
             )
 
             # Generate explanation

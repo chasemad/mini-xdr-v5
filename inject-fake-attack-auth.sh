@@ -53,12 +53,12 @@ EOF
 
     # Try with auth, fall back to no auth
     if [ -n "$AUTH_HEADER" ]; then
-        response=$(curl -s -X POST "$API_URL/api/ingest/cowrie" \
+        response=$(curl -s -X POST "$API_URL/ingest/cowrie" \
             -H "Content-Type: application/json" \
             -H "X-API-Key: $API_KEY" \
             -d "$event" 2>&1)
     else
-        response=$(curl -s -X POST "$API_URL/api/ingest/cowrie" \
+        response=$(curl -s -X POST "$API_URL/ingest/cowrie" \
             -H "Content-Type: application/json" \
             -d "$event" 2>&1)
     fi

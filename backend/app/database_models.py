@@ -453,7 +453,7 @@ class ResponseWorkflow(Base):
     workflow_id = Column(
         String(64), unique=True, index=True
     )  # Unique workflow identifier
-    incident_id = Column(Integer, ForeignKey("incidents.id"), index=True)
+    incident_id = Column(Integer, ForeignKey("incidents.id"), index=True, nullable=True)
     playbook_name = Column(String(128), index=True)
     playbook_version = Column(String(16), default="v1.0")
 
@@ -467,6 +467,7 @@ class ResponseWorkflow(Base):
 
     # Workflow definition and execution
     steps = Column(JSON)  # Array of workflow steps with configuration
+    visual_graph = Column(JSON, nullable=True)  # React Flow nodes and edges
     execution_log = Column(JSON, nullable=True)  # Detailed execution log
     current_step_data = Column(JSON, nullable=True)  # Current step execution data
 
@@ -779,6 +780,7 @@ class WorkflowTrigger(Base):
     # Response workflow definition
     playbook_name = Column(String(128), index=True)  # Name of playbook to execute
     workflow_steps = Column(JSON, nullable=False)  # Steps to execute
+    visual_graph = Column(JSON, nullable=True)  # React Flow nodes and edges
 
     # NLP metadata (for NLP-generated triggers)
     source = Column(String(16), default="manual", index=True)  # nlp|manual|template|api
@@ -924,6 +926,8 @@ class DiscoveredAsset(Base):
     classification_confidence = Column(Float, default=0.0)
 
     # Network information
+    attack_chain = Column(JSON, nullable=True)  # Attack pattern chain/stack
+    discovery_metadata = Column(JSON, nullable=True)  # Additional metadata
     open_ports = Column(JSON, nullable=True)  # List of open port numbers
     services = Column(JSON, nullable=True)  # Service details per port
 
@@ -1181,3 +1185,150 @@ class TrainingSample(Base):
     __table_args__ = (
         Index("ix_training_samples_unused", "used_for_training", "created_at"),
     )
+
+
+# =============================================================================
+# INVESTIGATION RESULTS MODEL
+# =============================================================================
+
+
+class InvestigationResult(Base):
+    """Investigation tool execution results and findings"""
+
+    __tablename__ = "investigation_results"
+
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Investigation identification
+    investigation_id = Column(String(64), unique=True, index=True)
+    incident_id = Column(Integer, ForeignKey("incidents.id"), index=True)
+
+    # Tool execution details
+    tool_name = Column(String(128), index=True)
+    tool_category = Column(String(64))
+    status = Column(String(32), default="running", index=True)
+
+    # Timing
+    started_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    execution_time_ms = Column(Integer, nullable=True)
+
+    # Tool parameters and results
+    parameters = Column(JSON)
+    results = Column(JSON, nullable=True)
+
+    # Findings summary
+    findings_count = Column(Integer, default=0)
+    iocs_discovered = Column(JSON, nullable=True)
+    severity = Column(String(16), nullable=True)
+    confidence_score = Column(Float, default=0.0)
+
+    # Execution context
+    triggered_by = Column(String(128))
+    triggered_by_user_id = Column(Integer, nullable=True)
+    auto_triggered = Column(Boolean, default=False)
+
+    # Error handling
+    error_message = Column(Text, nullable=True)
+    retry_count = Column(Integer, default=0)
+
+    # Export and reporting
+    exported = Column(Boolean, default=False)
+    export_formats = Column(JSON, nullable=True)
+
+    # Relationships
+    incident = relationship("Incident", backref="investigation_results")
+
+
+class NLPWorkflowSuggestion(Base):
+    """Suggestions for workflows generated from NLP"""
+
+    __tablename__ = "nlp_workflow_suggestions"
+    __table_args__ = {"extend_existing": True}
+
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    prompt = Column(Text)
+    incident_id = Column(Integer, ForeignKey("incidents.id"), nullable=True, index=True)
+
+    request_type = Column(String(32), index=True)  # response|investigation|automation
+    priority = Column(String(16))
+    confidence = Column(Float)
+    fallback_used = Column(Boolean, default=False)
+
+    workflow_steps = Column(JSON)
+    detected_actions = Column(JSON)
+    missing_actions = Column(JSON)
+
+    parser_version = Column(String(16))
+    parser_diagnostics = Column(JSON)
+
+    status = Column(
+        String(16), default="pending", index=True
+    )  # pending|approved|dismissed
+    reviewed_by = Column(String(64), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+
+    trigger_id = Column(Integer, ForeignKey("workflow_triggers.id"), nullable=True)
+
+
+# =============================================================================
+# INTENT-BASED ACTION SYSTEM (AI Orchestration)
+# =============================================================================
+
+
+class IntegrationConfig(Base):
+    """
+    Configuration for third-party security tool integrations.
+    Defines what vendors are available and their capabilities for AI orchestration.
+    """
+
+    __tablename__ = "integration_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    vendor = Column(
+        String(64), unique=True, index=True
+    )  # e.g., "palo_alto", "crowdstrike"
+    vendor_display_name = Column(String(128))  # e.g., "Palo Alto Networks"
+    category = Column(
+        String(32), index=True
+    )  # "firewall", "edr", "iam", "email", "siem"
+    enabled = Column(Boolean, default=True, index=True)
+    priority = Column(Integer, default=5)  # Lower = higher priority (1 is highest)
+
+    # What intents this vendor can handle
+    # Example: ["block_ip", "block_domain", "allow_ip"]
+    capabilities = Column(JSON)
+
+    # Connection/API configuration (sensitive data should use vault references)
+    # Example: {"api_endpoint": "https://firewall.company.com", "api_key_vault_ref": "vault://palo-key"}
+    config = Column(JSON)
+
+    # Health monitoring
+    health_status = Column(
+        String(16), default="unknown", index=True
+    )  # "healthy", "degraded", "offline", "unknown"
+    last_health_check = Column(DateTime(timezone=True), nullable=True)
+    health_details = Column(JSON, nullable=True)  # Detailed health check results
+
+    # Usage statistics
+    total_executions = Column(Integer, default=0)
+    successful_executions = Column(Integer, default=0)
+    failed_executions = Column(Integer, default=0)
+    average_response_time_ms = Column(Float, nullable=True)
+
+    # Metadata
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_by = Column(String(64), nullable=True)
+
+    def __repr__(self):
+        return f"<IntegrationConfig(vendor={self.vendor}, category={self.category}, enabled={self.enabled})>"

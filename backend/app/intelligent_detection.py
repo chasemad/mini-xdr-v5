@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 from sqlalchemy import and_, asc, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,6 +37,30 @@ except ImportError:
     logging.warning(
         "Council orchestrator not available - running without Council verification"
     )
+
+# Vector Memory for false positive learning
+try:
+    from .learning.vector_memory import (
+        check_similar_false_positives,
+        store_false_positive,
+    )
+
+    VECTOR_MEMORY_AVAILABLE = True
+except ImportError:
+    VECTOR_MEMORY_AVAILABLE = False
+    logging.warning(
+        "Vector memory not available - running without FP similarity detection"
+    )
+
+# Multi-Gate Detection System (Phase 3 - optional alternative architecture)
+try:
+    from .multi_gate_detector import MultiGateResult, multi_gate_detector
+
+    MULTI_GATE_AVAILABLE = True
+except ImportError:
+    MULTI_GATE_AVAILABLE = False
+    multi_gate_detector = None
+    logging.info("Multi-gate detector not available - using inline detection logic")
 
 logger = logging.getLogger(__name__)
 
@@ -89,15 +114,29 @@ class DetectionConfig:
 
     def __post_init__(self):
         if self.confidence_thresholds is None:
-            # Default confidence thresholds per threat class (lowered for testing)
+            # Per-class confidence thresholds based on training precision metrics:
+            # - Higher thresholds for classes with low precision (to reduce FPs)
+            # - Lower thresholds for classes with high precision
+            #
+            # Training metrics from models/local_trained/training_summary.json:
+            # Class 0 (Normal):      Precision 99.9%, Recall 83.4% → Keep high
+            # Class 1 (DDoS):        Precision 73.2%, Recall 99.8% → Moderate
+            # Class 2 (Recon):       Precision 73.3%, Recall 68.8% → Moderate
+            # Class 3 (BruteForce):  Precision 17.8%, Recall 80.3% → HIGH (many FPs!)
+            # Class 4 (WebAttack):   Precision 32.4%, Recall 28.8% → HIGH (many FPs!)
+            # Class 5 (Malware):     Precision 84.2%, Recall 41.3% → Lower OK
+            # Class 6 (APT):         Precision 46.9%, Recall 52.4% → Moderate
+            #
+            # NOTE: With specialist model verification enabled, thresholds can be
+            # slightly lower since specialists provide a second verification gate.
             self.confidence_thresholds = {
                 0: 0.95,  # Normal - very high threshold to avoid FPs
-                1: 0.3,  # DDoS/DoS - LOWERED for testing
-                2: 0.3,  # Network Reconnaissance - LOWERED for testing
-                3: 0.3,  # Brute Force Attack - LOWERED for testing
-                4: 0.3,  # Web Application Attack - LOWERED for testing
-                5: 0.3,  # Malware/Botnet - LOWERED for testing
-                6: 0.3,  # Advanced Persistent Threat - LOWERED for testing
+                1: 0.50,  # DDoS/DoS - 73% precision, specialist verified
+                2: 0.50,  # Network Reconnaissance - 73% precision
+                3: 0.80,  # Brute Force Attack - RAISED due to 17.8% precision!
+                4: 0.75,  # Web Application Attack - RAISED due to 32.4% precision!
+                5: 0.45,  # Malware/Botnet - 84% precision, can be lower
+                6: 0.60,  # Advanced Persistent Threat - 47% precision
             }
 
 
@@ -186,12 +225,22 @@ class IntelligentDetectionEngine:
             # Step 1.5: Council of Models verification for ALL predictions
             # Previously only triggered for 0.50-0.90, now triggers for any detection
             council_data = None
+            features = None
             if classification.confidence >= 0.30:  # Run council for most detections
                 self.logger.info(
                     f"Routing {src_ip} to Council: confidence={classification.confidence:.2%}"
                 )
+
+                # Extract features for ML-Agent bridge
+                try:
+                    from .ml_feature_extractor import ml_feature_extractor
+
+                    features = ml_feature_extractor.extract_features(src_ip, events)
+                except Exception as e:
+                    self.logger.debug(f"Feature extraction for council failed: {e}")
+
                 council_data = await self._route_through_council(
-                    src_ip, events, classification
+                    src_ip, events, classification, features
                 )
 
                 if council_data:
@@ -236,6 +285,56 @@ class IntelligentDetectionEngine:
                     "classification": asdict(classification),
                     "reason": should_create_incident["reason"],
                 }
+
+            # Step 2.5: Vector Memory FP Check - is this similar to past false positives?
+            if VECTOR_MEMORY_AVAILABLE:
+                try:
+                    from .ml_feature_extractor import ml_feature_extractor
+
+                    features = ml_feature_extractor.extract_features(src_ip, events)
+
+                    is_similar_to_fp, fp_details = await check_similar_false_positives(
+                        features=features,
+                        ml_prediction=classification.threat_type,
+                        threshold=0.90,  # High similarity threshold
+                    )
+
+                    if is_similar_to_fp and fp_details:
+                        self.logger.warning(
+                            f"⚠️ Pattern similar to past false positive "
+                            f"(similarity: {fp_details['similarity_score']:.3f}): "
+                            f"Previous FP was '{fp_details['original_prediction']}'"
+                        )
+
+                        # Reduce confidence significantly for similar patterns
+                        original_confidence = classification.confidence
+                        classification.confidence = min(
+                            classification.confidence * 0.4, 0.35
+                        )
+                        classification.indicators["similar_to_past_fp"] = {
+                            "similarity_score": fp_details["similarity_score"],
+                            "original_prediction": fp_details["original_prediction"],
+                            "reasoning": fp_details.get("reasoning", ""),
+                        }
+
+                        # Re-check if should create incident with reduced confidence
+                        should_create_incident = await self._should_create_incident(
+                            classification, events
+                        )
+
+                        if not should_create_incident["create"]:
+                            self.logger.info(
+                                f"Incident blocked due to FP similarity: "
+                                f"confidence reduced from {original_confidence:.3f} to {classification.confidence:.3f}"
+                            )
+                            return {
+                                "incident_created": False,
+                                "classification": asdict(classification),
+                                "reason": f"Pattern similar to past false positive (similarity: {fp_details['similarity_score']:.3f})",
+                                "fp_similarity": fp_details,
+                            }
+                except Exception as e:
+                    self.logger.warning(f"Vector memory FP check failed: {e}")
 
             # Step 3: Enhanced analysis with OpenAI (if enabled and needed)
             if (
@@ -416,6 +515,12 @@ class IntelligentDetectionEngine:
         """
         Analyze actual event types to determine the true attack signature.
         Returns override information if events clearly indicate a specific attack type.
+
+        Enhanced with:
+        - Time-based analysis (automated single-type events != DDoS)
+        - Command content analysis (specific malware signatures)
+        - Session correlation (attack phases)
+        - Username pattern analysis (common vs unique)
         """
         # Count event types
         event_counts = {}
@@ -439,6 +544,145 @@ class IntelligentDetectionEngine:
             "reason": None,
             "evidence": {},
         }
+
+        # ===== TIME-BASED ANALYSIS =====
+        # High event rate with single event type is likely automated scanning, NOT DDoS
+        if len(events) > 1:
+            try:
+                timestamps = [e.ts for e in events if e.ts]
+                if len(timestamps) >= 2:
+                    time_span = (max(timestamps) - min(timestamps)).total_seconds()
+                    events_per_second = len(events) / max(time_span, 1)
+                    unique_event_types = len(
+                        set(e.eventid for e in events if e.eventid)
+                    )
+
+                    # High rate + single event type = automated, not DDoS
+                    if events_per_second > 5 and unique_event_types == 1:
+                        single_type = events[0].eventid or ""
+                        if "login.failed" in single_type:
+                            result["override_needed"] = True
+                            result["actual_attack_type"] = "brute_force"
+                            result["confidence"] = 0.90
+                            result[
+                                "reason"
+                            ] = f"High-rate automated login attempts ({events_per_second:.1f}/sec) - brute force, not DDoS"
+                            result["evidence"] = {
+                                "events_per_second": events_per_second,
+                                "single_event_type": single_type,
+                                "time_span_seconds": time_span,
+                            }
+                            return result
+            except Exception as e:
+                self.logger.debug(f"Time-based analysis failed: {e}")
+
+        # ===== COMMAND CONTENT ANALYSIS =====
+        # Check for specific malware signatures in commands
+        malware_commands = []
+        recon_commands = []
+        persistence_commands = []
+
+        for e in events:
+            msg = (e.message or "").lower()
+
+            # Malware download signatures
+            if any(
+                p in msg
+                for p in ["wget ", "curl ", "tftp ", "ftp ", "scp ", "nc -e", "bash -i"]
+            ):
+                malware_commands.append(msg[:100])
+
+            # Reconnaissance signatures
+            if any(
+                p in msg
+                for p in [
+                    "uname",
+                    "whoami",
+                    "id;",
+                    "cat /etc/passwd",
+                    "ps aux",
+                    "netstat",
+                    "ifconfig",
+                    "ip addr",
+                ]
+            ):
+                recon_commands.append(msg[:100])
+
+            # Persistence signatures
+            if any(
+                p in msg
+                for p in [
+                    "crontab",
+                    "chmod +x",
+                    "systemctl",
+                    "rc.local",
+                    ".bashrc",
+                    "/etc/init",
+                ]
+            ):
+                persistence_commands.append(msg[:100])
+
+        # ===== USERNAME PATTERN ANALYSIS =====
+        usernames = [
+            getattr(e, "username", None) for e in events if getattr(e, "username", None)
+        ]
+        unique_usernames = set(usernames)
+        common_usernames = {
+            "root",
+            "admin",
+            "user",
+            "guest",
+            "test",
+            "oracle",
+            "postgres",
+            "mysql",
+        }
+
+        # Many unique usernames = dictionary attack (brute force)
+        if len(unique_usernames) > 5:
+            uncommon_usernames = unique_usernames - common_usernames
+            if len(uncommon_usernames) > 3:
+                result["override_needed"] = True
+                result["actual_attack_type"] = "brute_force"
+                result["confidence"] = 0.88
+                result[
+                    "reason"
+                ] = f"Dictionary attack detected: {len(unique_usernames)} unique usernames tried"
+                result["evidence"] = {
+                    "unique_usernames": len(unique_usernames),
+                    "sample_usernames": list(unique_usernames)[:5],
+                }
+                return result
+
+        # ===== ATTACK PHASE CORRELATION =====
+        # Check for multi-phase attacks (recon → exploit → persistence)
+        phases_detected = []
+        if recon_commands:
+            phases_detected.append("reconnaissance")
+        if failed_logins > 0 or success_logins > 0:
+            phases_detected.append("initial_access")
+        if malware_commands:
+            phases_detected.append("execution")
+        if persistence_commands:
+            phases_detected.append("persistence")
+        if file_uploads > 0:
+            phases_detected.append("exfiltration")
+
+        # Multi-phase = APT
+        if len(phases_detected) >= 3:
+            result["override_needed"] = True
+            result["actual_attack_type"] = "apt"
+            result["confidence"] = 0.92
+            result[
+                "reason"
+            ] = f"Multi-phase attack detected: {', '.join(phases_detected)}"
+            result["evidence"] = {
+                "phases": phases_detected,
+                "recon_commands": len(recon_commands),
+                "malware_commands": len(malware_commands),
+                "persistence_commands": len(persistence_commands),
+            }
+            return result
 
         # Priority 1: Brute Force - clear signature is multiple failed logins with eventual success
         if failed_logins >= 5:
@@ -465,8 +709,8 @@ class IntelligentDetectionEngine:
 
             return result
 
-        # Priority 2: Malware/Data Exfiltration - file operations after compromise
-        if file_downloads > 0 or file_uploads > 0:
+        # Priority 2: Malware/Data Exfiltration - file operations or malware commands
+        if file_downloads > 0 or file_uploads > 0 or malware_commands:
             if file_uploads > 0:
                 result["override_needed"] = True
                 result["actual_attack_type"] = "data_exfiltration"
@@ -476,6 +720,17 @@ class IntelligentDetectionEngine:
                 ] = f"Detected {file_uploads} file uploads - data exfiltration pattern"
                 result["evidence"] = {
                     "file_uploads": file_uploads,
+                    "file_downloads": file_downloads,
+                }
+            elif malware_commands:
+                result["override_needed"] = True
+                result["actual_attack_type"] = "malware"
+                result["confidence"] = 0.90
+                result[
+                    "reason"
+                ] = f"Detected {len(malware_commands)} malware download commands"
+                result["evidence"] = {
+                    "malware_commands": malware_commands[:3],
                     "file_downloads": file_downloads,
                 }
             else:
@@ -488,14 +743,23 @@ class IntelligentDetectionEngine:
 
         # Priority 3: Web attacks - HTTP-based attacks
         if http_requests >= 3:
-            # Check for SQL injection or XSS patterns in event messages
+            # Check for SQL injection, XSS, or path traversal patterns
             sql_patterns = sum(
                 1
                 for e in events
                 if e.message
                 and any(
                     p in e.message.lower()
-                    for p in ["sql", "union", "select", "drop", "injection"]
+                    for p in [
+                        "sql",
+                        "union",
+                        "select",
+                        "drop",
+                        "injection",
+                        "' or ",
+                        "1=1",
+                        "--",
+                    ]
                 )
             )
             xss_patterns = sum(
@@ -504,25 +768,56 @@ class IntelligentDetectionEngine:
                 if e.message
                 and any(
                     p in e.message.lower()
-                    for p in ["<script", "xss", "onerror", "javascript:"]
+                    for p in [
+                        "<script",
+                        "xss",
+                        "onerror",
+                        "javascript:",
+                        "onclick",
+                        "onload",
+                    ]
+                )
+            )
+            path_traversal = sum(
+                1
+                for e in events
+                if e.message
+                and any(
+                    p in e.message.lower()
+                    for p in [
+                        "../",
+                        "..\\",
+                        "/etc/passwd",
+                        "/etc/shadow",
+                        "c:\\windows",
+                    ]
                 )
             )
 
-            if sql_patterns > 0 or xss_patterns > 0:
+            if sql_patterns > 0 or xss_patterns > 0 or path_traversal > 0:
                 result["override_needed"] = True
                 result["actual_attack_type"] = "web_attack"
-                result["confidence"] = 0.82
+                result["confidence"] = 0.85
                 result[
                     "reason"
-                ] = f"Detected web attack patterns: {sql_patterns} SQLi, {xss_patterns} XSS"
+                ] = f"Detected web attack patterns: {sql_patterns} SQLi, {xss_patterns} XSS, {path_traversal} path traversal"
                 result["evidence"] = {
                     "http_requests": http_requests,
                     "sql_patterns": sql_patterns,
                     "xss_patterns": xss_patterns,
+                    "path_traversal": path_traversal,
                 }
                 return result
 
-        # Priority 4: Reconnaissance - many connections to different ports without login attempts
+        # Priority 4: Reconnaissance - recon commands or port scanning
+        if recon_commands:
+            result["override_needed"] = True
+            result["actual_attack_type"] = "reconnaissance"
+            result["confidence"] = 0.82
+            result["reason"] = f"Detected {len(recon_commands)} reconnaissance commands"
+            result["evidence"] = {"recon_commands": recon_commands[:3]}
+            return result
+
         unique_ports = len(set(e.dst_port for e in events if e.dst_port))
         if unique_ports >= 8 and failed_logins < 3:
             result["override_needed"] = True
@@ -980,6 +1275,13 @@ class IntelligentDetectionEngine:
                 f"Boosted ML confidence from {classification.confidence:.2f} to {boosted_confidence:.2f}"
             )
 
+        # Determine detection method from indicators
+        detection_method = "standard"
+        if classification.indicators.get("multi_gate_detection"):
+            detection_method = "multi_gate"
+        elif classification.openai_enhanced:
+            detection_method = "local_ml_openai_enhanced"
+
         # Create comprehensive triage note
         triage_note = {
             "summary": f"{classification.threat_type} detected from {src_ip}",
@@ -990,9 +1292,16 @@ class IntelligentDetectionEngine:
             "event_count": len(events),
             "analysis_method": "local_ml"
             + ("_openai_enhanced" if classification.openai_enhanced else ""),
+            "detection_method": detection_method,
             "recommendation": self._get_response_recommendation(classification),
             "indicators": classification.indicators,
             "rationale": f"ML model classified with {boosted_confidence:.1%} confidence as {classification.threat_type}. Escalation elevated due to critical threat indicators.",
+            # Include gate results and escalation reasons if from multi-gate detection
+            "gate_results": classification.indicators.get("gate_results"),
+            "escalation_reasons": classification.indicators.get(
+                "escalation_reasons", []
+            ),
+            "gates_passed": classification.indicators.get("gates_passed", []),
         }
 
         # Generate AI Agent Actions for UI Checklist (v2 UI)
@@ -1309,6 +1618,37 @@ class IntelligentDetectionEngine:
             incident.reason = (
                 f"{classification.threat_type} (ML Confidence: {new_confidence:.1%})"
             )
+
+        # Update Council data if provided
+        if council_data:
+
+            def _serialize_if_needed(value):
+                if isinstance(value, (dict, list)):
+                    return json.dumps(value)
+                return value
+
+            incident.council_verdict = council_data.get("final_verdict")
+            incident.council_reasoning = council_data.get("council_reasoning")
+            incident.council_confidence = council_data.get("council_confidence")
+            incident.routing_path = _serialize_if_needed(
+                council_data.get("routing_path")
+            )
+            incident.api_calls_made = _serialize_if_needed(
+                council_data.get("api_calls_made")
+            )
+            incident.processing_time_ms = council_data.get("processing_time_ms")
+            incident.gemini_analysis = _serialize_if_needed(
+                council_data.get("gemini_analysis")
+            )
+            incident.grok_intel = _serialize_if_needed(council_data.get("grok_intel"))
+            incident.openai_remediation = _serialize_if_needed(
+                council_data.get("openai_remediation")
+            )
+
+            # Update triage note
+            updated_triage["council_verified"] = True
+            updated_triage["council_verdict"] = council_data.get("final_verdict")
+            incident.triage_note = updated_triage
 
         await db.commit()
         await db.refresh(incident)
@@ -1709,7 +2049,11 @@ class IntelligentDetectionEngine:
         return analysis
 
     async def _route_through_council(
-        self, src_ip: str, events: List[Event], classification: ThreatClassification
+        self,
+        src_ip: str,
+        events: List[Event],
+        classification: ThreatClassification,
+        features: Optional[np.ndarray] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Route uncertain ML predictions through Council of Models for verification.
@@ -1905,6 +2249,144 @@ class IntelligentDetectionEngine:
                 self.logger.info(
                     f"Increased threshold for class {threat_class}: {current_threshold:.3f} -> {new_threshold:.3f}"
                 )
+
+    async def analyze_with_multi_gate(
+        self, db: AsyncSession, src_ip: str, events: List[Event] = None
+    ) -> Dict[str, Any]:
+        """
+        Alternative analysis method using the Multi-Gate Detection System.
+
+        This method uses the modular multi-gate architecture instead of inline
+        gating logic. Each gate (heuristic, ML, specialist, vector memory, council)
+        is executed sequentially with early termination on FAIL.
+
+        Args:
+            db: Database session
+            src_ip: Source IP to analyze
+            events: Optional list of events (fetched if not provided)
+
+        Returns:
+            Dict with detection results and gate information
+        """
+        if not MULTI_GATE_AVAILABLE or not multi_gate_detector:
+            self.logger.warning(
+                "Multi-gate detector not available, using standard detection"
+            )
+            return await self.analyze_and_create_incidents(db, src_ip, events)
+
+        try:
+            # Get events if not provided
+            if events is None:
+                events = await self._get_recent_events(db, src_ip)
+
+            if len(events) < self.config.min_events_required:
+                return {
+                    "incident_created": False,
+                    "reason": f"Insufficient events ({len(events)} < {self.config.min_events_required})",
+                    "detection_method": "multi_gate",
+                }
+
+            # Run through multi-gate detector
+            result = await multi_gate_detector.detect(src_ip, events)
+
+            # Log gate results
+            for gate_result in result.gate_results:
+                self.logger.info(
+                    f"Gate '{gate_result.gate_name}': {gate_result.verdict.value} "
+                    f"({gate_result.reason})"
+                )
+
+            if not result.should_create_incident:
+                return {
+                    "incident_created": False,
+                    "reason": f"Blocked by gate: {result.blocking_gate or 'threshold'}",
+                    "detection_method": "multi_gate",
+                    "gate_results": [
+                        {
+                            "gate": gr.gate_name,
+                            "verdict": gr.verdict.value,
+                            "reason": gr.reason,
+                        }
+                        for gr in result.gate_results
+                    ],
+                    "final_confidence": result.final_confidence,
+                    "threat_type": result.threat_type,
+                    "processing_time_ms": result.total_processing_time_ms,
+                }
+
+            # Build gate results for storage
+            gate_results_data = [
+                {
+                    "gate": gr.gate_name,
+                    "verdict": gr.verdict.value,
+                    "reason": gr.reason,
+                    "confidence_modifier": gr.confidence_modifier,
+                    "processing_time_ms": gr.processing_time_ms,
+                    "details": gr.details,
+                }
+                for gr in result.gate_results
+            ]
+
+            # Create incident using standard method with classification from multi-gate
+            classification = ThreatClassification(
+                threat_type=result.threat_type,
+                threat_class=result.threat_class,
+                confidence=result.final_confidence,
+                anomaly_score=0.0,  # Multi-gate doesn't provide anomaly score
+                severity=self._get_severity_for_class(result.threat_class),
+                indicators={
+                    "multi_gate_detection": True,
+                    "gates_passed": [
+                        gr.gate_name
+                        for gr in result.gate_results
+                        if gr.verdict.value in ["pass", "escalate"]
+                    ],
+                    "escalation_reasons": result.escalation_reasons,
+                    "gate_results": gate_results_data,
+                    "blocking_gate": result.blocking_gate,
+                    "total_processing_time_ms": result.total_processing_time_ms,
+                },
+            )
+
+            incident_id = await self._create_intelligent_incident(
+                db, src_ip, events, classification
+            )
+
+            return {
+                "incident_created": True,
+                "incident_id": incident_id,
+                "detection_method": "multi_gate",
+                "threat_type": result.threat_type,
+                "confidence": result.final_confidence,
+                "gate_results": [
+                    {
+                        "gate": gr.gate_name,
+                        "verdict": gr.verdict.value,
+                        "reason": gr.reason,
+                    }
+                    for gr in result.gate_results
+                ],
+                "escalation_reasons": result.escalation_reasons,
+                "processing_time_ms": result.total_processing_time_ms,
+            }
+
+        except Exception as e:
+            self.logger.error(f"Multi-gate detection failed: {e}", exc_info=True)
+            # Fall back to standard detection
+            return await self.analyze_and_create_incidents(db, src_ip, events)
+
+    def _get_severity_for_class(self, threat_class: int) -> ThreatSeverity:
+        """Get severity level for a threat class."""
+        severity_mapping = {
+            0: ThreatSeverity.INFO,  # Normal
+            1: ThreatSeverity.HIGH,  # DDoS/DoS
+            2: ThreatSeverity.MEDIUM,  # Reconnaissance
+            3: ThreatSeverity.HIGH,  # Brute Force
+            4: ThreatSeverity.MEDIUM,  # Web Attack
+            5: ThreatSeverity.CRITICAL,  # Malware/Botnet
+            6: ThreatSeverity.CRITICAL,  # APT
+        }
+        return severity_mapping.get(threat_class, ThreatSeverity.LOW)
 
 
 # Global instance

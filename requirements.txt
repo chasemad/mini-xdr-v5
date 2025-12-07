@@ -1,0 +1,7 @@
+# Mini-XDR consolidated dependencies
+# Source of truth lives in backend/requirements.txt (generated from service imports)
+-r backend/requirements.txt
+
+# Optional developer tools
+pre-commit>=3.5
+pytest>=8.0

@@ -1,10 +1,19 @@
 import React from 'react';
-import { BrainCircuit, ChevronRight, Sparkles, AlertCircle, ShieldCheck, ArrowRight, RefreshCw, Loader2, Zap } from 'lucide-react';
+import { BrainCircuit, ChevronRight, Sparkles, AlertCircle, ShieldCheck, ArrowRight, RefreshCw, Loader2, Zap, Shield, CheckCircle2, XCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+
+interface GateResult {
+  gate: string;
+  verdict: string;
+  reason: string;
+  confidence_modifier?: number;
+  processing_time_ms?: number;
+  details?: Record<string, any>;
+}
 
 interface AIAnalysisCardProps {
   triageNote: {
@@ -17,6 +26,9 @@ interface AIAnalysisCardProps {
     event_count?: number;
     key_events_count?: number;
     last_updated?: string;
+    detection_method?: string;
+    gate_results?: GateResult[];
+    escalation_reasons?: string[];
   } | null;
   analysis?: {
     summary?: string;
@@ -36,6 +48,10 @@ interface AIAnalysisCardProps {
     escalation_level?: string;
     generated_at?: string;
   } | null;
+  // New detection metadata props
+  gateResults?: GateResult[];
+  escalationReasons?: string[];
+  detectionMethod?: string;
   isLoading?: boolean;
   onRefresh?: () => void;
   onShowDeepAnalysis: () => void;
@@ -45,6 +61,9 @@ interface AIAnalysisCardProps {
 export default function AIAnalysisCard({
   triageNote,
   analysis,
+  gateResults,
+  escalationReasons,
+  detectionMethod,
   isLoading,
   onRefresh,
   onShowDeepAnalysis,
@@ -53,6 +72,19 @@ export default function AIAnalysisCard({
   // Use enhanced analysis if available, otherwise fall back to triage note
   const summary = analysis?.summary || triageNote?.summary || "Automated analysis detected anomalous behavior consistent with known attack patterns.";
   const recommendation = analysis?.recommendation || triageNote?.recommendation || "Investigate source IP and block if malicious.";
+
+  // Get detection metadata from props or triage_note
+  const effectiveDetectionMethod = detectionMethod || triageNote?.detection_method || "standard";
+  const effectiveGateResults = gateResults || triageNote?.gate_results || [];
+  const effectiveEscalationReasons = escalationReasons || triageNote?.escalation_reasons || [];
+
+  // Format detection method for display
+  const detectionMethodLabels: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
+    multi_gate: { label: "Multi-Gate", variant: "default" },
+    standard: { label: "Standard ML", variant: "secondary" },
+    local_ml_openai_enhanced: { label: "ML + OpenAI", variant: "default" },
+  };
+  const methodDisplay = detectionMethodLabels[effectiveDetectionMethod] || { label: effectiveDetectionMethod, variant: "secondary" as const };
 
   // Build rationale from available data
   const rationale: string[] = [];
@@ -139,6 +171,11 @@ export default function AIAnalysisCard({
             AI Threat Analysis
           </CardTitle>
           <div className="flex items-center gap-2">
+            {/* Detection Method Badge */}
+            <Badge variant={methodDisplay.variant} className="text-[10px] font-medium">
+              <Shield className="w-2.5 h-2.5 mr-1" />
+              {methodDisplay.label}
+            </Badge>
             {eventCount > 0 && (
               <Badge variant="outline" className="text-[10px] font-medium">
                 {keyEventCount > 0 ? `${keyEventCount} key / ` : ""}{eventCount} events
@@ -207,6 +244,61 @@ export default function AIAnalysisCard({
                 ))}
               </ul>
             </div>
+
+            {/* Escalation Reasons (from multi-gate detection) */}
+            {effectiveEscalationReasons.length > 0 && (
+              <div className="space-y-1.5">
+                <h4 className="text-[10px] font-bold text-destructive uppercase tracking-wider flex items-center gap-1.5">
+                  <Zap className="w-3 h-3 shrink-0" />
+                  Escalation Triggers
+                </h4>
+                <div className="rounded-md border border-destructive/20 bg-destructive/5 p-2">
+                  <ul className="space-y-1">
+                    {effectiveEscalationReasons.map((reason, idx) => (
+                      <li key={idx} className="text-xs text-destructive/80 flex gap-2 items-start">
+                        <span className="text-destructive mt-1 shrink-0">•</span>
+                        <span className="leading-snug">{reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {/* Gate Summary (if multi-gate detection) */}
+            {effectiveGateResults.length > 0 && (
+              <div className="space-y-1.5">
+                <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                  <Shield className="w-3 h-3 shrink-0" />
+                  Detection Gates
+                </h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {effectiveGateResults.map((gate, idx) => {
+                    const isPassed = gate.verdict === "pass" || gate.verdict === "escalate";
+                    const isFailed = gate.verdict === "fail" || gate.verdict === "block";
+                    return (
+                      <Badge
+                        key={idx}
+                        variant="outline"
+                        className={cn(
+                          "text-[9px] py-0.5 px-1.5",
+                          isPassed && "border-green-500/50 text-green-600 bg-green-500/5",
+                          isFailed && "border-red-500/50 text-red-600 bg-red-500/5",
+                          !isPassed && !isFailed && "border-yellow-500/50 text-yellow-600 bg-yellow-500/5"
+                        )}
+                      >
+                        {isPassed ? (
+                          <CheckCircle2 className="w-2.5 h-2.5 mr-0.5" />
+                        ) : isFailed ? (
+                          <XCircle className="w-2.5 h-2.5 mr-0.5" />
+                        ) : null}
+                        {gate.gate.replace("_", " ")}
+                      </Badge>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </>
         )}
       </CardContent>

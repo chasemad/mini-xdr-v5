@@ -104,5 +104,3 @@ echo "✅ Examples endpoint working"
 echo ""
 echo "🎯 Next: Open http://localhost:3000/workflows and test the UI"
 echo ""
-
-

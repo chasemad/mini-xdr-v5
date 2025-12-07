@@ -319,12 +319,24 @@ _vector_memory: Optional[VectorMemory] = None
 
 
 async def get_vector_memory() -> VectorMemory:
-    """Get or create global vector memory instance."""
+    """
+    Get or create global vector memory instance.
+
+    This function is safe to call even when Qdrant is unavailable.
+    The VectorMemory instance will track its initialization state
+    and gracefully handle unavailability.
+    """
     global _vector_memory
 
     if _vector_memory is None:
         _vector_memory = VectorMemory()
-        await _vector_memory.initialize()
+        try:
+            await _vector_memory.initialize()
+        except Exception as e:
+            logger.warning(
+                f"Vector memory initialization failed (Qdrant may be unavailable): {e}"
+            )
+            # Instance is created but not fully initialized - methods will check _initialized flag
 
     return _vector_memory
 
@@ -361,10 +373,166 @@ async def store_council_correction(state: XDRState):
     state["embedding_stored"] = True
 
 
+async def check_similar_false_positives(
+    features: np.ndarray,
+    ml_prediction: str,
+    threshold: float = 0.90,
+) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    """
+    Check if current event pattern is similar to past false positives.
+
+    This is used to prevent repeated false positives by learning from
+    Council corrections and user feedback.
+
+    Args:
+        features: 79-dimensional feature vector
+        ml_prediction: Current ML prediction class name
+        threshold: Cosine similarity threshold (0.90 = very similar)
+
+    Returns:
+        Tuple of (is_similar_to_fp: bool, similar_incident_details: dict or None)
+
+    Note:
+        Gracefully returns (False, None) when vector memory is unavailable.
+        This ensures detection continues even without Qdrant.
+    """
+    try:
+        memory = await get_vector_memory()
+
+        if not memory._initialized or not memory.client:
+            logger.debug("Vector memory not initialized, skipping FP check")
+            return False, None
+    except Exception as e:
+        logger.debug(f"Vector memory unavailable: {e}")
+        return False, None
+
+    try:
+        # Search false_positives collection using feature vector
+        if EMBEDDINGS_AVAILABLE and memory.embedding_model is not None:
+            # Create text representation for semantic search
+            text = f"ML prediction: {ml_prediction}"
+            query_vector = memory.embedding_model.encode(text)
+        else:
+            # Use raw feature vector
+            query_vector = features.flatten()[:79]  # Ensure 79 dimensions
+
+            # Pad to expected vector size if needed
+            if len(query_vector) < 79:
+                query_vector = np.pad(query_vector, (0, 79 - len(query_vector)))
+
+        # Search false_positives collection
+        results = memory.client.search(
+            collection_name="false_positives",
+            query_vector=query_vector.tolist(),
+            limit=1,
+            score_threshold=threshold,
+        )
+
+        if results and len(results) > 0:
+            top_result = results[0]
+            payload = top_result.payload
+
+            logger.info(
+                f"Found similar false positive (score: {top_result.score:.3f}): "
+                f"ML predicted '{payload.get('ml_prediction')}' but was marked FP"
+            )
+
+            return True, {
+                "similarity_score": top_result.score,
+                "original_prediction": payload.get("ml_prediction"),
+                "gemini_verdict": payload.get("gemini_verdict"),
+                "reasoning": payload.get("gemini_reasoning", "")[:200],
+                "timestamp": payload.get("timestamp"),
+            }
+
+        return False, None
+
+    except Exception as e:
+        logger.error(f"FP similarity check failed: {e}", exc_info=True)
+        return False, None
+
+
+async def store_false_positive(
+    features: np.ndarray,
+    ml_prediction: str,
+    src_ip: str,
+    reasoning: str = "",
+    incident_id: int = None,
+) -> bool:
+    """
+    Store a confirmed false positive for future similarity detection.
+
+    Args:
+        features: 79-dimensional feature vector
+        ml_prediction: What the ML model predicted
+        src_ip: Source IP that triggered the FP
+        reasoning: Why this was marked as FP
+        incident_id: Optional incident ID for reference
+
+    Returns:
+        True if stored successfully, False otherwise
+
+    Note:
+        Gracefully returns False when vector memory is unavailable.
+        This ensures the system continues operating even without Qdrant.
+    """
+    try:
+        memory = await get_vector_memory()
+
+        if not memory._initialized or not memory.client:
+            logger.debug("Vector memory not initialized - skipping FP storage")
+            return False
+    except Exception as e:
+        logger.debug(f"Vector memory unavailable for storage: {e}")
+        return False
+
+    try:
+        # Create embedding
+        if EMBEDDINGS_AVAILABLE and memory.embedding_model is not None:
+            text = f"False positive: {ml_prediction} from {src_ip}. {reasoning}"
+            embedding = memory.embedding_model.encode(text)
+        else:
+            # Use feature vector directly
+            embedding = features.flatten()[:79]
+            if len(embedding) < 79:
+                embedding = np.pad(embedding, (0, 79 - len(embedding)))
+
+        # Create point
+        from datetime import datetime
+
+        point_id = incident_id or hash(
+            f"{src_ip}_{ml_prediction}_{datetime.now().timestamp()}"
+        )
+
+        point = PointStruct(
+            id=abs(point_id) % (2**63),  # Ensure positive int64
+            vector=embedding.tolist(),
+            payload={
+                "src_ip": src_ip,
+                "ml_prediction": ml_prediction,
+                "reasoning": reasoning[:1000],
+                "timestamp": datetime.now().isoformat(),
+                "gemini_verdict": "FALSE_POSITIVE",
+                "incident_id": incident_id,
+            },
+        )
+
+        memory.client.upsert(collection_name="false_positives", points=[point])
+
+        logger.info(f"Stored false positive: {ml_prediction} from {src_ip}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to store false positive: {e}", exc_info=True)
+        return False
+
+
 # Export
 __all__ = [
     "VectorMemory",
     "get_vector_memory",
     "search_similar_incidents",
     "store_council_correction",
+    "check_similar_false_positives",
+    "store_false_positive",
 ]

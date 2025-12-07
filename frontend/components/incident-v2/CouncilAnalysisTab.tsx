@@ -6,15 +6,29 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ShieldAlert, ShieldCheck, Search, Sparkles, Zap, Bot, ArrowRight, RefreshCw, Loader2 } from "lucide-react";
+import { ShieldAlert, ShieldCheck, Search, Sparkles, Zap, Bot, ArrowRight, RefreshCw, Loader2, BrainCircuit, ListChecks, Activity } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface CouncilAnalysisTabProps {
   incident: any;
   onRefresh?: () => void;
   autoRun?: boolean; // Auto-run analysis when tab opens
+  // LangChain orchestration data
+  langchainVerdict?: string;
+  langchainReasoning?: string;
+  langchainActions?: any[];
+  langchainTrace?: string;
 }
 
-export function CouncilAnalysisTab({ incident, onRefresh, autoRun = true }: CouncilAnalysisTabProps) {
+export function CouncilAnalysisTab({
+  incident,
+  onRefresh,
+  autoRun = true,
+  langchainVerdict,
+  langchainReasoning,
+  langchainActions,
+  langchainTrace
+}: CouncilAnalysisTabProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const hasAutoRun = useRef(false);
@@ -28,11 +42,20 @@ export function CouncilAnalysisTab({ incident, onRefresh, autoRun = true }: Coun
   const grokIntel = incident.grok_intel;
   const openaiRemediation = incident.openai_remediation;
 
+  // Get LangChain data from props or incident
+  const effectiveLangchainVerdict = langchainVerdict || incident.triage_note?.langchain_verdict;
+  const effectiveLangchainReasoning = langchainReasoning || incident.triage_note?.langchain_reasoning;
+  const effectiveLangchainActions = langchainActions || incident.triage_note?.langchain_actions || [];
+  const effectiveLangchainTrace = langchainTrace || incident.triage_note?.langchain_trace;
+  const hasLangchainData = effectiveLangchainVerdict || effectiveLangchainReasoning || effectiveLangchainActions.length > 0;
+
   // Check for fallback modes
   const isFallbackMode =
     (geminiAnalysis?.fallback_used) ||
     (grokIntel?.status === "grok_api_not_configured") ||
     (openaiRemediation?.template_used);
+
+  const langchainFallback = incident.triage_note?.langchain_fallback;
 
   const runCouncilAnalysis = async () => {
     setIsAnalyzing(true);
@@ -182,7 +205,7 @@ export function CouncilAnalysisTab({ incident, onRefresh, autoRun = true }: Coun
       </Card>
 
       {/* Analysis Grid */}
-      <div className="grid md:grid-cols-3 gap-4">
+      <div className="grid md:grid-cols-2 gap-4">
         {/* Gemini Judge */}
         <Card className="border-blue-500/20 bg-blue-500/5">
             <CardHeader>
@@ -245,6 +268,90 @@ export function CouncilAnalysisTab({ incident, onRefresh, autoRun = true }: Coun
                         )) || <li>No actions recommended</li>}
                     </ul>
                 ) : <p className="text-muted-foreground">No plan available</p>}
+            </CardContent>
+        </Card>
+
+        {/* LangChain Orchestrator */}
+        <Card className="border-orange-500/20 bg-orange-500/5">
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-orange-600 dark:text-orange-400">
+                    <BrainCircuit className="h-5 w-5" />
+                    LangChain Orchestrator
+                    {langchainFallback && (
+                        <Badge variant="outline" className="ml-2 text-xs border-yellow-500/50 text-yellow-600">
+                            Fallback
+                        </Badge>
+                    )}
+                </CardTitle>
+                <CardDescription>ReAct Agent Response</CardDescription>
+            </CardHeader>
+            <CardContent className="text-sm space-y-3">
+                {hasLangchainData ? (
+                    <>
+                        {/* Verdict */}
+                        {effectiveLangchainVerdict && (
+                            <div className="flex items-center gap-2">
+                                <strong>Verdict:</strong>
+                                <Badge
+                                    variant={effectiveLangchainVerdict === "THREAT" ? "destructive" :
+                                            effectiveLangchainVerdict === "FALSE_POSITIVE" ? "outline" : "secondary"}
+                                    className={effectiveLangchainVerdict === "FALSE_POSITIVE" ? "border-green-500 text-green-600" : ""}
+                                >
+                                    {effectiveLangchainVerdict}
+                                </Badge>
+                            </div>
+                        )}
+
+                        {/* Reasoning */}
+                        {effectiveLangchainReasoning && (
+                            <div>
+                                <strong className="block mb-1">Reasoning:</strong>
+                                <p className="text-xs text-muted-foreground italic">"{effectiveLangchainReasoning}"</p>
+                            </div>
+                        )}
+
+                        {/* Actions Taken */}
+                        {effectiveLangchainActions.length > 0 && (
+                            <div>
+                                <div className="flex items-center gap-1 mb-1">
+                                    <ListChecks className="h-3 w-3" />
+                                    <strong className="text-xs">Actions Taken:</strong>
+                                </div>
+                                <ul className="list-disc pl-4 space-y-0.5 text-xs text-muted-foreground">
+                                    {effectiveLangchainActions.map((action: any, i: number) => (
+                                        <li key={i}>
+                                            {typeof action === 'string' ? action : action.action || action.tool || JSON.stringify(action)}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+
+                        {/* Agent Trace */}
+                        {effectiveLangchainTrace && (
+                            <div>
+                                <div className="flex items-center gap-1 mb-1">
+                                    <Activity className="h-3 w-3" />
+                                    <strong className="text-xs">Agent Trace:</strong>
+                                </div>
+                                <ScrollArea className="h-[80px] rounded border border-orange-500/20 bg-background/50 p-2">
+                                    <pre className="text-[10px] text-muted-foreground whitespace-pre-wrap font-mono">
+                                        {effectiveLangchainTrace}
+                                    </pre>
+                                </ScrollArea>
+                            </div>
+                        )}
+                    </>
+                ) : (
+                    <div className="text-muted-foreground space-y-2">
+                        <p>LangChain orchestration not available.</p>
+                        <p className="text-xs">
+                            {langchainFallback
+                                ? "Using rule-based fallback logic."
+                                : "Configure OPENAI_API_KEY for GPT-4 agent orchestration."}
+                        </p>
+                    </div>
+                )}
             </CardContent>
         </Card>
       </div>

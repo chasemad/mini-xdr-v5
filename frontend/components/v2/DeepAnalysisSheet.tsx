@@ -15,6 +15,16 @@ import { BrainCircuit, Shield, Users, Activity } from "lucide-react";
 import { OverviewTab } from "../incident-v2/OverviewTab";
 import { CouncilAnalysisTab } from "../incident-v2/CouncilAnalysisTab";
 import { AIAgentsTab } from "../incident-v2/AIAgentsTab";
+import { ComprehensiveAnalysisTab } from "../incident-v2/ComprehensiveAnalysisTab";
+
+interface GateResult {
+  gate: string;
+  verdict: string;
+  reason: string;
+  confidence_modifier?: number;
+  processing_time_ms?: number;
+  details?: Record<string, any>;
+}
 
 interface DeepAnalysisSheetProps {
   isOpen: boolean;
@@ -23,6 +33,15 @@ interface DeepAnalysisSheetProps {
   coordination: any;
   coordinationLoading: boolean;
   onRefreshIncident?: () => void;
+  // Detection metadata props
+  gateResults?: GateResult[];
+  escalationReasons?: string[];
+  detectionMethod?: string;
+  // LangChain orchestration props
+  langchainVerdict?: string;
+  langchainReasoning?: string;
+  langchainActions?: any[];
+  langchainTrace?: string;
 }
 
 export default function DeepAnalysisSheet({
@@ -31,7 +50,14 @@ export default function DeepAnalysisSheet({
   incident,
   coordination,
   coordinationLoading,
-  onRefreshIncident
+  onRefreshIncident,
+  gateResults,
+  escalationReasons,
+  detectionMethod,
+  langchainVerdict,
+  langchainReasoning,
+  langchainActions,
+  langchainTrace
 }: DeepAnalysisSheetProps) {
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
@@ -47,15 +73,22 @@ export default function DeepAnalysisSheet({
         </SheetHeader>
 
         <div className="flex-1 overflow-hidden bg-background/50">
-          <Tabs defaultValue="overview" className="h-full flex flex-col">
+          <Tabs defaultValue="comprehensive" className="h-full flex flex-col">
             <div className="px-6 pt-4 border-b bg-background">
               <TabsList className="w-full justify-start h-12 bg-transparent p-0 space-x-6">
+                <TabsTrigger
+                  value="comprehensive"
+                  className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none h-full px-0 font-medium"
+                >
+                  <BrainCircuit className="w-4 h-4 mr-2" />
+                  Complete Analysis
+                </TabsTrigger>
                 <TabsTrigger
                   value="overview"
                   className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none h-full px-0 font-medium"
                 >
                   <Activity className="w-4 h-4 mr-2" />
-                  ML Overview
+                  ML Details
                 </TabsTrigger>
                 <TabsTrigger
                   value="council"
@@ -69,18 +102,34 @@ export default function DeepAnalysisSheet({
                   className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none h-full px-0 font-medium"
                 >
                   <Users className="w-4 h-4 mr-2" />
-                  Agent Coordination
+                  Agent Actions
                 </TabsTrigger>
               </TabsList>
             </div>
 
             <ScrollArea className="flex-1 p-6">
+              <TabsContent value="comprehensive" className="m-0 space-y-6">
+                <ComprehensiveAnalysisTab incident={incident} />
+              </TabsContent>
+
               <TabsContent value="overview" className="m-0 space-y-6">
-                <OverviewTab incident={incident} />
+                <OverviewTab
+                  incident={incident}
+                  gateResults={gateResults}
+                  escalationReasons={escalationReasons}
+                  detectionMethod={detectionMethod}
+                />
               </TabsContent>
 
               <TabsContent value="council" className="m-0 space-y-6">
-                <CouncilAnalysisTab incident={incident} onRefresh={onRefreshIncident} />
+                <CouncilAnalysisTab
+                  incident={incident}
+                  onRefresh={onRefreshIncident}
+                  langchainVerdict={langchainVerdict}
+                  langchainReasoning={langchainReasoning}
+                  langchainActions={langchainActions}
+                  langchainTrace={langchainTrace}
+                />
               </TabsContent>
 
               <TabsContent value="agents" className="m-0 space-y-6">

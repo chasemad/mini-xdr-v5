@@ -35,7 +35,7 @@ cd /Users/chasemad/Desktop/mini-xdr
 # Create .env file
 cat > .env << 'EOF'
 # Required: OpenAI API key for AI analysis
-OPENAI_API_KEY=sk-your-actual-key-here
+OPENAI_API_KEY=your-openai-api-key
 
 # Optional but recommended
 ABUSEIPDB_API_KEY=your-key-here

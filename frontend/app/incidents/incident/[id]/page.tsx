@@ -52,12 +52,33 @@ export default function IncidentPage({ params }: { params: Promise<{ id: string 
   const [coordination, setCoordination] = useState<IncidentCoordination | null>(null);
   const [coordinationLoading, setCoordinationLoading] = useState(true);
 
-  // Enhanced AI Analysis state
+  // Enhanced AI Analysis state with detection metadata
   const [aiAnalysis, setAiAnalysis] = useState<{
     analysis: any;
     triage_note: any;
     event_count: number;
     ai_analysis_timestamp: string | null;
+    // Multi-gate detection data
+    gate_results?: Array<{
+      gate: string;
+      verdict: string;
+      reason: string;
+      confidence_modifier?: number;
+      processing_time_ms?: number;
+      details?: Record<string, any>;
+    }>;
+    escalation_reasons?: string[];
+    detection_method?: string;
+    // LangChain orchestration data
+    langchain_verdict?: string;
+    langchain_reasoning?: string;
+    langchain_actions?: any[];
+    langchain_trace?: string;
+    // Council data
+    council_verdict?: string;
+    council_reasoning?: string;
+    council_confidence?: number;
+    ml_confidence?: number;
   } | null>(null);
   const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
   const lastEventCountRef = useRef<number>(0);
@@ -520,6 +541,16 @@ export default function IncidentPage({ params }: { params: Promise<{ id: string 
         incident={activeIncident}
         coordination={coordination}
         coordinationLoading={coordinationLoading}
+        onRefreshIncident={refreshIncident}
+        // Pass detection metadata
+        gateResults={aiAnalysis?.gate_results}
+        escalationReasons={aiAnalysis?.escalation_reasons}
+        detectionMethod={aiAnalysis?.detection_method}
+        // Pass LangChain data
+        langchainVerdict={aiAnalysis?.langchain_verdict}
+        langchainReasoning={aiAnalysis?.langchain_reasoning}
+        langchainActions={aiAnalysis?.langchain_actions}
+        langchainTrace={aiAnalysis?.langchain_trace}
       />
 
       {/* Events History Sheet */}
@@ -638,6 +669,9 @@ export default function IncidentPage({ params }: { params: Promise<{ id: string 
             <AIAnalysisCard
               triageNote={aiAnalysis?.triage_note || activeIncident.triage_note}
               analysis={aiAnalysis?.analysis}
+              gateResults={aiAnalysis?.gate_results}
+              escalationReasons={aiAnalysis?.escalation_reasons}
+              detectionMethod={aiAnalysis?.detection_method}
               isLoading={aiAnalysisLoading}
               onRefresh={() => fetchAiAnalysis(true)}
               onShowDeepAnalysis={() => setIsDeepAnalysisOpen(true)}

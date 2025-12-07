@@ -252,12 +252,55 @@ async def get_incident_coordination(
             ]
         )
 
+    # Extract LangChain orchestration data if available
+    langchain_data = triage_note.get("langchain", {}) if triage_note else {}
+    langchain_verdict = (
+        langchain_data.get("verdict") or triage_note.get("langchain_verdict")
+        if triage_note
+        else None
+    )
+    langchain_reasoning = (
+        langchain_data.get("reasoning") or triage_note.get("langchain_reasoning")
+        if triage_note
+        else None
+    )
+    langchain_actions = (
+        langchain_data.get("actions_taken") or triage_note.get("langchain_actions", [])
+        if triage_note
+        else []
+    )
+    langchain_trace = (
+        langchain_data.get("agent_trace") or triage_note.get("langchain_trace", [])
+        if triage_note
+        else []
+    )
+
+    # Add LangChain to participating agents if available
+    if langchain_verdict:
+        # Add LangChain event to timeline
+        coordination_timeline.append(
+            {
+                "timestamp": incident.created_at.isoformat(),
+                "event": "langchain_orchestration",
+                "details": f"LangChain verdict: {langchain_verdict}",
+                "verdict": langchain_verdict,
+                "agents": ["langchain_orchestrator"],
+            }
+        )
+        # Add LangChain recommendations if present
+        if langchain_data.get("recommendations"):
+            recommendations.extend(langchain_data["recommendations"][:3])
+
     # Determine participating agents
     participating_agents = [
         agent
         for agent in ["attribution", "containment", "forensics", "deception"]
         if agent in agents_data
     ]
+
+    # Add langchain_orchestrator to participating agents if available
+    if langchain_verdict:
+        participating_agents.append("langchain_orchestrator")
 
     # Determine coordination status
     coordination_status = "completed" if participating_agents else "pending"
@@ -274,8 +317,13 @@ async def get_incident_coordination(
         "agent_decisions": agent_decisions,
         "coordination_timeline": coordination_timeline,
         "recommendations": recommendations[:5],  # Limit to top 5
-        "strategy_used": "parallel",  # Could be extracted from metadata
+        "strategy_used": "langchain_react" if langchain_verdict else "parallel",
         "confidence_score": incident.council_confidence
         or incident.ml_confidence
         or 0.0,
+        # LangChain orchestration data
+        "langchain_verdict": langchain_verdict,
+        "langchain_reasoning": langchain_reasoning,
+        "langchain_actions": langchain_actions,
+        "langchain_trace": langchain_trace,
     }
