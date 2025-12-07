@@ -9,7 +9,7 @@ An autonomous threat detection and response platform with multi-agent orchestrat
 
 *Personal lab project for learning & portfolio. Not affiliated with any employer.*
 
-[![Watch Demo](https://img.youtube.com/vi/Zq6WAtTNOcY/maxresdefault.jpg)](https://www.youtube.com/watch?v=Zq6WAtTNOcY)
+[![Watch Demo](https://img.youtube.com/vi/Zq6WAtTNOcY/hqdefault.jpg)](https://www.youtube.com/watch?v=Zq6WAtTNOcY)
 
 ---
 
